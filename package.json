@@ -1,0 +1,26 @@
+{
+  "name": "giromesa-saas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SaaS multi-tenant para gestao de bares, restaurantes e food service.",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build --concurrency=1",
+    "typecheck": "turbo typecheck --concurrency=1",
+    "test": "turbo test --concurrency=1",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "db:generate": "pnpm --filter @giromesa/db db:generate",
+    "db:migrate": "pnpm --filter @giromesa/db db:migrate"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "turbo": "^2.5.0",
+    "typescript": "5.8.3"
+  }
+}
