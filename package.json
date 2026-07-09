@@ -13,13 +13,21 @@
     "build": "turbo build --concurrency=1",
     "typecheck": "turbo typecheck --concurrency=1",
     "test": "turbo test --concurrency=1",
+    "test:integration": "node scripts/run-api-integration-tests.mjs",
+    "test:e2e:preflight": "node scripts/e2e-preflight.mjs",
+    "test:e2e:dev": "node scripts/run-playwright-dev.mjs",
+    "test:e2e": "pnpm --filter @giromesa/web build && playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "security:preflight": "node scripts/security-preflight.mjs",
     "lint": "biome check .",
     "format": "biome check --write .",
     "db:generate": "pnpm --filter @giromesa/db db:generate",
-    "db:migrate": "pnpm --filter @giromesa/db db:migrate"
+    "db:migrate": "pnpm --filter @giromesa/db db:migrate",
+    "demo:reset": "pnpm db:migrate && pnpm --filter @giromesa/db db:seed"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
+    "@playwright/test": "^1.61.1",
     "turbo": "^2.5.0",
     "typescript": "5.8.3"
   }

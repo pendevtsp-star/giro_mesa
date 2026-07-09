@@ -11,6 +11,7 @@
     "test": "vitest run --passWithNoTests --pool=threads --maxWorkers=1 --minWorkers=1"
   },
   "dependencies": {
+    "@giromesa/domain": "workspace:*",
     "@giromesa/ui": "workspace:*",
     "lucide-react": "^0.468.0",
     "next": "^15.3.0",

@@ -2,74 +2,91 @@ import {
   ArrowRight,
   BarChart3,
   ChefHat,
-  ClipboardList,
+  ClipboardCheck,
+  Clock3,
   CreditCard,
   QrCode,
   ShieldCheck,
   Soup,
+  Sparkles,
+  Store,
   Warehouse,
 } from "lucide-react";
 
 const features = [
   {
-    icon: ClipboardList,
-    title: "PDV, mesas e comandas",
-    body: "Venda no balcao, por mesa ou comanda com divisao de conta, descontos permitidos e auditoria.",
+    icon: ClipboardCheck,
+    title: "PDV de salao e balcao",
+    body: "Mesas, comandas, itens, observacoes, descontos controlados e fechamento sem perder historico.",
   },
   {
     icon: ChefHat,
-    title: "KDS por estacao",
-    body: "Cozinha, bar, chapa e expedicao acompanham pedidos em tempo real com alerta de atraso.",
+    title: "KDS simples e claro",
+    body: "Cozinha e bar recebem tickets por estacao, com prioridade, tempo de preparo e cancelamentos visiveis.",
   },
   {
     icon: QrCode,
-    title: "Cardapio QR",
-    body: "Cardapio publico por unidade, mesa e canal, pronto para pedido pelo cliente quando habilitado.",
+    title: "Cardapio QR por unidade",
+    body: "Menu publico elegante, preparado para evoluir para pedido pelo cliente e chamada de garcom.",
   },
   {
     icon: Warehouse,
-    title: "Estoque e ficha tecnica",
-    body: "Baixa automatica por receita, CMV basico, estoque minimo e movimentos reversos em cancelamentos.",
+    title: "Estoque com ficha tecnica",
+    body: "Baixa de insumos por receita, estoque minimo, reversoes auditadas e visao de ruptura.",
   },
   {
     icon: CreditCard,
     title: "Caixa e pagamentos",
-    body: "Formas manuais no MVP, Asaas para assinatura SaaS e arquitetura pronta para Pix online.",
+    body: "Pagamentos manuais no MVP, conciliacao de turno e base pronta para Asaas e Pix online.",
   },
   {
     icon: ShieldCheck,
-    title: "Multi-tenant seguro",
-    body: "Isolamento por tenant, RBAC backend, logs sanitizados e auditoria append-only.",
+    title: "Seguranca multi-tenant",
+    body: "Tenant no backend, permissoes por perfil, auditoria append-only e webhooks idempotentes.",
   },
 ];
 
+const liveMetrics = [
+  ["R$ 8.742", "vendidos hoje"],
+  ["18/30", "mesas ocupadas"],
+  ["11 min", "tempo medio KDS"],
+  ["2", "alertas criticos"],
+] as const;
+
+const operations = [
+  ["Mesa M12", "2 burgers, 1 chopp, 1 brownie", "preparando", "14 min"],
+  ["Comanda C07", "Pizza meia lua, soda italiana", "pronto", "08 min"],
+  ["Balcao 03", "Combo executivo", "pagamento", "R$ 42"],
+] as const;
+
 const plans = [
   ["Starter", "R$ 149", "PDV, mesas, cardapio QR e relatorios basicos."],
-  ["Professional", "R$ 299", "KDS, estoque, ficha tecnica, caixa avancado e automacoes."],
-  ["Premium", "R$ 499", "Multi-filial, WhatsApp, dashboards e integracoes prioritarias."],
-  ["Enterprise", "Sob consulta", "Limites customizados, suporte dedicado e arquitetura isolada."],
-];
+  ["Professional", "R$ 299", "KDS, estoque, ficha tecnica e caixa completo."],
+  ["Premium", "R$ 499", "Multi-filial, automacoes, WhatsApp e dashboards."],
+  ["Enterprise", "Sob consulta", "Ambiente dedicado, suporte prioritario e limites customizados."],
+] as const;
 
 export default function HomePage() {
   return (
     <main className="site-shell">
       <header className="topbar">
-        <a className="brand" href="/">
+        <a className="brand" href="/" aria-label="GiroMesa">
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
         <nav className="nav-links" aria-label="Navegacao principal">
-          <a href="#beneficios">Beneficios</a>
+          <a href="#operacao">Operacao</a>
+          <a href="#modulos">Modulos</a>
           <a href="#planos">Planos</a>
-          <a href="#faq">FAQ</a>
+          <a href="/manual">Manual</a>
           <a href="/app">Demo</a>
         </nav>
         <div className="nav-actions">
           <a className="button ghost" href="/login">
             Login
           </a>
-          <a className="button primary" href="/login">
-            Comecar
+          <a className="button primary" href="/app">
+            Ver demo <ArrowRight size={17} />
           </a>
         </div>
       </header>
@@ -77,30 +94,110 @@ export default function HomePage() {
       <section className="hero">
         <div className="hero-content">
           <span className="eyebrow">
-            <Soup size={18} /> SaaS para operacao food service
+            <Soup size={18} /> SaaS para bares, restaurantes e pubs
           </span>
           <h1>GiroMesa</h1>
           <p>
-            Controle salao, cozinha, caixa, cardapio digital, estoque e financeiro em uma plataforma
-            comercial preparada para crescer com cada estabelecimento.
+            Uma operacao de salao, cozinha, caixa e cardapio digital com a velocidade que o turno
+            exige e o controle que a gestao precisa.
           </p>
           <div className="hero-actions">
-            <a className="button primary" href="/login">
-              Comecar agora <ArrowRight size={18} />
+            <a className="button primary" href="/app">
+              Abrir demo operacional <ArrowRight size={18} />
             </a>
-            <a className="button secondary" href="/app">
-              Ver demo operacional
+            <a className="button secondary on-dark" href="/m/bar-aurora-demo">
+              Ver cardapio QR
             </a>
+          </div>
+        </div>
+        <aside className="hero-brief" aria-label="Resumo operacional do demo">
+          <div>
+            <span>Bar Aurora</span>
+            <strong>Turno jantar em andamento</strong>
+          </div>
+          <div className="hero-brief-grid">
+            {liveMetrics.map(([value, label]) => (
+              <span key={label}>
+                <strong>{value}</strong>
+                {label}
+              </span>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section className="section operation-section" id="operacao">
+        <div className="section-header split">
+          <div>
+            <span className="section-kicker">Produto de operacao</span>
+            <h2>O turno inteiro em uma tela que da para usar sob pressao.</h2>
+          </div>
+          <p>
+            A demo prioriza o essencial para vender, produzir, receber e auditar sem trocar de
+            sistema no meio do atendimento.
+          </p>
+        </div>
+        <div className="operation-board">
+          <div className="board-column">
+            <div className="board-header">
+              <Store size={18} />
+              <strong>Salao agora</strong>
+            </div>
+            {operations.map(([code, items, status, detail]) => (
+              <article className="order-card" key={code}>
+                <div>
+                  <strong>{code}</strong>
+                  <p>{items}</p>
+                </div>
+                <span>{status}</span>
+                <small>{detail}</small>
+              </article>
+            ))}
+          </div>
+          <div className="board-column emphasis">
+            <div className="board-header">
+              <ChefHat size={18} />
+              <strong>KDS</strong>
+            </div>
+            <article className="kitchen-card">
+              <Clock3 size={20} />
+              <div>
+                <strong>Chapa em atencao</strong>
+                <p>M12 esta perto do SLA e precisa de prioridade.</p>
+              </div>
+            </article>
+            <article className="kitchen-card calm">
+              <Sparkles size={20} />
+              <div>
+                <strong>Bar sem gargalo</strong>
+                <p>4 tickets prontos nos ultimos 10 minutos.</p>
+              </div>
+            </article>
+          </div>
+          <div className="board-column">
+            <div className="board-header">
+              <BarChart3 size={18} />
+              <strong>Gestao</strong>
+            </div>
+            <div className="mini-ledger">
+              <span>Ticket medio</span>
+              <strong>R$ 74,20</strong>
+              <span>CMV estimado</span>
+              <strong>31,8%</strong>
+              <span>Caixa atual</span>
+              <strong>R$ 2.184</strong>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="section" id="beneficios">
+      <section className="section" id="modulos">
         <div className="section-header">
-          <h2>Operacao conectada do pedido ao caixa</h2>
+          <span className="section-kicker">MVP comercial</span>
+          <h2>Modulos prontos para demonstrar valor desde o primeiro cliente.</h2>
           <p>
-            O MVP prioriza o que faz o estabelecimento vender, produzir, receber e auditar sem
-            perder controle entre salao, cozinha e gestao.
+            O foco inicial e um produto cloud-first, auditavel e preparado para integracoes
+            brasileiras sem antecipar complexidade fiscal ou TEF antes da validacao.
           </p>
         </div>
         <div className="grid">
@@ -117,39 +214,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section">
-        <div className="section-header">
-          <h2>Indicadores que importam no turno</h2>
+      <section className="section pricing-band" id="planos">
+        <div className="section-header split">
+          <div>
+            <span className="section-kicker">Planos iniciais</span>
+            <h2>Preco simples para validar mercado sem travar evolucao.</h2>
+          </div>
           <p>
-            Dashboards densos para decisao rapida: vendas, pedidos atrasados, mesas, estoque, caixa,
-            integracoes e falhas operacionais.
-          </p>
-        </div>
-        <div className="metrics">
-          <div className="metric">
-            <BarChart3 size={22} />
-            <span>Vendas hoje</span>
-            <strong>R$ 8.742</strong>
-          </div>
-          <div className="metric">
-            <ChefHat size={22} />
-            <span>Tempo medio KDS</span>
-            <strong>11 min</strong>
-          </div>
-          <div className="metric">
-            <QrCode size={22} />
-            <span>Acessos QR</span>
-            <strong>126</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="section" id="planos">
-        <div className="section-header">
-          <h2>Planos comerciais iniciais</h2>
-          <p>
-            Valores de referencia para validacao. Precificacao final depende de suporte, fiscal e
-            integracoes.
+            Valores de referencia para venda piloto. Fiscal real, WhatsApp, iFood, TEF e offline
+            completo entram em fases controladas.
           </p>
         </div>
         <div className="grid plans">
@@ -163,18 +236,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section" id="faq">
-        <div className="section-header">
-          <h2>FAQ</h2>
-          <p>
-            Fiscal, pagamentos online, iFood, TEF e offline completo entram por fases para evitar
-            risco juridico, operacional e tecnico antes da validacao comercial.
-          </p>
-        </div>
-      </section>
-
       <footer className="footer">
-        GiroMesa - templates legais, fiscal e LGPD precisam de revisao juridica, contabil e fiscal.
+        GiroMesa - operacao food service, SaaS multi-tenant e integracoes brasileiras por fases.
       </footer>
     </main>
   );

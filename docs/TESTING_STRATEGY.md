@@ -16,6 +16,7 @@
 - Pedido completo.
 - Pagamento manual e Asaas mock.
 - Caixa.
+- Relatorios com filtros de metodo, variancia e status de caixa.
 - Estoque.
 - Fiscal provider mock.
 - Webhooks.
@@ -33,6 +34,13 @@
 - Pagamento misto.
 - Fechar caixa.
 - Cardapio QR.
+- Revisao de waiter, reports, manual e security em navegador autenticado.
+
+### Preflight recomendado
+
+- `pnpm test:e2e:preflight`
+- `pnpm demo:reset`
+- `pnpm test:e2e:dev`
 
 ## Seguranca e concorrencia
 

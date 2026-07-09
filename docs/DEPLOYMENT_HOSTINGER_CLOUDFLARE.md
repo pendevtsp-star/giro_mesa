@@ -16,9 +16,26 @@
 6. Configurar WAF, rate limits e Turnstile em login/cadastro.
 7. Configurar monitoramento e backup.
 
+## Comandos operacionais
+
+```bash
+scripts/backup-postgres.sh
+scripts/deploy-prod.sh
+docker compose -f docker-compose.prod.yml ps
+```
+
+O primeiro deploy pode pular o backup pre-deploy se o banco ainda nao estiver rodando. A partir do segundo deploy, o backup deve ser criado antes da troca dos containers.
+
+Para restore:
+
+```bash
+scripts/restore-postgres.sh backups/giromesa-YYYYMMDD-HHMMSS.sql.gz
+```
+
 ## Cuidados
 
 - Nunca expor Postgres/Redis publicamente.
 - Limitar SSH por chave e firewall.
 - Usar secrets no GitHub Actions para deploy.
 - Testar rollback antes de producao.
+- Manter `backups/` fora do Git e copiar backups para storage externo.

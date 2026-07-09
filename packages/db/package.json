@@ -18,7 +18,8 @@
     "test": "vitest run --passWithNoTests --pool=threads --maxWorkers=1 --minWorkers=1",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx src/seed.ts"
+    "db:seed": "tsx src/seed.ts",
+    "db:reset-demo": "pnpm db:seed"
   },
   "dependencies": {
     "argon2": "^0.44.0",

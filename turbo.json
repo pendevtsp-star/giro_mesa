@@ -1,5 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "API_URL",
+    "DATABASE_URL",
+    "NEXT_PUBLIC_API_URL",
+    "npm_execpath",
+    "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
+    "WEB_URL",
+    "PLAYWRIGHT_SKIP_WEB_SERVER"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

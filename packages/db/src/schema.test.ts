@@ -9,6 +9,7 @@ import {
   deliveryOrders,
   diningTables,
   fiscalDocuments,
+  fiscalSettings,
   floorPlans,
   integrationAccounts,
   inventoryItems,
@@ -21,6 +22,9 @@ import {
   orders,
   outboxEvents,
   payments,
+  printerDevices,
+  printJobs,
+  printRoutes,
   products,
   recipeItems,
   recipes,
@@ -44,6 +48,7 @@ const tenantScopedTables = {
   deliveryOrders,
   diningTables,
   fiscalDocuments,
+  fiscalSettings,
   floorPlans,
   integrationAccounts,
   inventoryItems,
@@ -56,6 +61,9 @@ const tenantScopedTables = {
   orders,
   outboxEvents,
   payments,
+  printerDevices,
+  printJobs,
+  printRoutes,
   products,
   recipeItems,
   recipes,
@@ -75,5 +83,50 @@ describe("multi-tenant schema", () => {
     for (const [name, table] of Object.entries(tenantScopedTables)) {
       expect(Object.keys(getTableColumns(table)), name).toContain("tenantId");
     }
+  });
+
+  it("exposes club eligibility fields on products", () => {
+    const columns = Object.keys(getTableColumns(products));
+
+    expect(columns).toContain("isClubEligible");
+    expect(columns).toContain("bottleVolumeMl");
+    expect(columns).toContain("defaultDoseMl");
+    expect(columns).toContain("spiritType");
+  });
+
+  it("stores integration API keys as hashes, not plaintext tokens", () => {
+    const columns = Object.keys(getTableColumns(integrationAccounts));
+
+    expect(columns).toContain("apiKeyHash");
+    expect(columns).toContain("apiKeyLastFour");
+    expect(columns).toContain("apiKeyCreatedAt");
+    expect(columns).not.toContain("apiKey");
+  });
+
+  it("keeps fiscal product and branch configuration fields available", () => {
+    const productColumns = Object.keys(getTableColumns(products));
+    const settingColumns = Object.keys(getTableColumns(fiscalSettings));
+    const documentColumns = Object.keys(getTableColumns(fiscalDocuments));
+
+    expect(productColumns).toContain("fiscalNcm");
+    expect(productColumns).toContain("fiscalCfop");
+    expect(productColumns).toContain("fiscalCsosn");
+    expect(settingColumns).toContain("certificateSecretRef");
+    expect(settingColumns).toContain("cscSecretRef");
+    expect(documentColumns).toContain("accessKey");
+    expect(documentColumns).toContain("danfeUrl");
+  });
+
+  it("keeps printing hardware and queue tables tenant scoped", () => {
+    const deviceColumns = Object.keys(getTableColumns(printerDevices));
+    const routeColumns = Object.keys(getTableColumns(printRoutes));
+    const jobColumns = Object.keys(getTableColumns(printJobs));
+
+    expect(deviceColumns).toContain("branchId");
+    expect(deviceColumns).toContain("connectionType");
+    expect(routeColumns).toContain("printerDeviceId");
+    expect(routeColumns).toContain("stationId");
+    expect(jobColumns).toContain("idempotencyKey");
+    expect(jobColumns).toContain("renderedText");
   });
 });

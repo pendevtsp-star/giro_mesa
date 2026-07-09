@@ -67,6 +67,12 @@ export const tableStatuses = [
 
 export type TableStatus = (typeof tableStatuses)[number];
 
+export const printJobStatuses = ["pending", "printing", "printed", "failed", "canceled"] as const;
+export type PrintJobStatus = (typeof printJobStatuses)[number];
+
+export const printerRoles = ["kitchen", "bar", "cashier", "conference", "fiscal"] as const;
+export type PrinterRole = (typeof printerRoles)[number];
+
 export const paymentMethods = [
   "cash",
   "pix_manual",
@@ -81,3 +87,24 @@ export const paymentMethods = [
 ] as const;
 
 export type PaymentMethod = (typeof paymentMethods)[number];
+
+export const clubWhiskyStockMovementTypes = [
+  "club_bottle_sale",
+  "club_combo_sale",
+  "club_dose_consumed",
+  "club_adjustment",
+  "club_refund",
+] as const;
+
+export type ClubWhiskyStockMovementType = (typeof clubWhiskyStockMovementTypes)[number];
+
+export const clubWhiskyEventTopics = [
+  "product.updated",
+  "stock.updated",
+  "order.closed",
+  "payment.confirmed",
+  "customer.updated",
+  "club.stock_movement.created",
+] as const;
+
+export type ClubWhiskyEventTopic = (typeof clubWhiskyEventTopics)[number];

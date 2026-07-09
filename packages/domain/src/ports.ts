@@ -4,6 +4,7 @@ export type TenantContext = {
   userId?: string;
   requestId: string;
   permissions: string[];
+  mfaRequired?: boolean;
 };
 
 export type ProviderResult<T> = {
@@ -38,6 +39,10 @@ export interface FiscalProvider {
     tenantId: string;
     orderId: string;
     fiscalDocumentId: string;
+    model?: "nfce" | "nfe" | "nfse";
+    environment?: "homologation" | "production";
+    number?: number | null;
+    payload?: Record<string, unknown>;
   }): Promise<ProviderResult<{ accessKey?: string; xmlUrl?: string; danfeUrl?: string }>>;
 
   cancelDocument(input: {
@@ -45,6 +50,24 @@ export interface FiscalProvider {
     fiscalDocumentId: string;
     reason: string;
   }): Promise<ProviderResult<{ canceledAt: string }>>;
+}
+
+export interface PrintProvider {
+  renderKitchenTicket(input: {
+    tenantName?: string;
+    stationName: string;
+    orderCode: string;
+    orderChannel: string;
+    tableCode?: string;
+    items: Array<{
+      name: string;
+      quantity: string;
+      notes?: string | null;
+    }>;
+    createdAt: string;
+    copies: number;
+    charactersPerLine: number;
+  }): ProviderResult<{ renderedText: string }>;
 }
 
 export interface WhatsAppProvider {
@@ -80,6 +103,28 @@ export interface MarketplaceProvider {
     tenantId: string;
     accountId: string;
   }): Promise<ProviderResult<{ count: number }>>;
+}
+
+export interface ClubWhiskyProvider {
+  publishEvent(input: {
+    tenantId: string;
+    branchId?: string;
+    topic:
+      | "product.updated"
+      | "stock.updated"
+      | "order.closed"
+      | "payment.confirmed"
+      | "customer.updated"
+      | "club.stock_movement.created";
+    payload: Record<string, unknown>;
+    idempotencyKey: string;
+  }): Promise<ProviderResult<{ queued: boolean }>>;
+
+  verifyCustomerLink(input: {
+    tenantId: string;
+    customerId: string;
+    externalCustomerId: string;
+  }): Promise<ProviderResult<{ linked: boolean }>>;
 }
 
 export interface AuditLogger {

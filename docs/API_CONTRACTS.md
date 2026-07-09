@@ -5,25 +5,126 @@
 - `GET /health`
 - `POST /api/v1/tenants`
 - `POST /api/v1/auth/login`
+- `GET /api/v1/auth/google/start?returnTo=/app|/platform`
+- `GET /api/v1/auth/google/callback`
+- `POST /api/v1/auth/google/mfa/complete`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/oauth/accounts`
+- `POST /api/v1/auth/oauth/google/unlink`
+- `GET /api/v1/tenants/branding`
+- `PATCH /api/v1/tenants/branding`
+- `POST /api/v1/tenants/branding/logo`
+- `DELETE /api/v1/tenants/branding/logo`
+- `GET /api/v1/auth/roles`
+- `PATCH /api/v1/auth/roles/:roleId`
+- `GET /api/v1/auth/users`
+- `POST /api/v1/auth/users/:userId/roles`
+- `GET /api/v1/auth/invitations`
 - `POST /api/v1/auth/invitations`
+- `POST /api/v1/auth/invitations/:invitationId/resend`
+- `POST /api/v1/auth/invitations/:invitationId/cancel`
+- `POST /api/v1/auth/invitations/accept`
+- `POST /api/v1/auth/password/change`
+- `POST /api/v1/auth/password/reset/request`
+- `POST /api/v1/auth/password/reset/complete`
+- `POST /api/v1/auth/mfa/configure`
+- `POST /api/v1/auth/mfa/setup`
+- `POST /api/v1/auth/mfa/verify`
+- `POST /api/v1/auth/mfa/recovery-codes/regenerate`
+- `GET /api/v1/catalog/categories`
 - `GET /api/v1/catalog/products`
 - `POST /api/v1/catalog/categories`
+- `PATCH /api/v1/catalog/categories/:categoryId`
 - `POST /api/v1/catalog/products`
+- `PATCH /api/v1/catalog/products/:productId`
 - `GET /api/v1/catalog/products/:productId/modifiers`
+- `GET /api/v1/catalog/public/menu/:tenantSlug`
+- `GET /api/v1/catalog/public/qr/:tableCode?tenantSlug=:tenantSlug`
+- `POST /api/v1/catalog/public/qr/:tableCode/orders`
+- `POST /api/v1/catalog/public/qr/:tableCode/call-waiter`
+- `POST /api/v1/catalog/public/qr/:tableCode/pre-bill`
 - `GET /api/v1/pos/tables?branchId=:branchId`
+- `GET /api/v1/pos/tables/:tableId/history?limit=:limit`
+- `GET /api/v1/pos/events?branchId=:branchId` - SSE operacional baseado em mudancas de auditoria, KDS e outbox.
+- `GET /api/v1/pos/orders/qr-pending?branchId=:branchId`
 - `POST /api/v1/pos/orders/open`
 - `POST /api/v1/pos/orders/:orderId/items`
 - `POST /api/v1/pos/orders/:orderId/send-to-kitchen`
+- `PATCH /api/v1/pos/orders/:orderId/qr-items/:itemId`
+- `POST /api/v1/pos/orders/:orderId/qr-items/:itemId/cancel`
+- `POST /api/v1/pos/orders/:orderId/qr-reject`
 - `POST /api/v1/pos/orders/:orderId/split`
 - `POST /api/v1/pos/orders/:orderId/payments`
 - `POST /api/v1/pos/orders/:orderId/close`
+- `POST /api/v1/pos/orders/:orderId/print-bill-preview`
+  - Cria job auditado de pre-conta usando rota ativa `bill_preview`.
+- `POST /api/v1/pos/orders/:orderId/print-payment-receipt`
+  - Cria job auditado de comprovante fisico usando rota ativa `payment_receipt`.
 - `POST /api/v1/pos/cash-sessions/open`
+- `GET /api/v1/pos/cash-sessions/summary?branchId=:branchId`
 - `POST /api/v1/pos/cash-sessions/:cashSessionId/close`
+- `POST /api/v1/pos/cash-sessions/:cashSessionId/print-summary`
+  - Cria job auditado de resumo de caixa usando rota ativa `cash_summary`.
+- `GET /api/v1/reports/financial?branchId=:branchId&period=today|week|month|shift|custom&dateFrom=:iso&dateTo=:iso&paymentMethod=:method&variance=all|divergent|balanced&cashSessionStatus=open|closed|reconciled|disputed`
+  - Retorna recebidos por metodo, ticket medio, mix percentual de pagamentos, comparativo com periodo anterior, receita por canal, leitura por operador/caixa, pedidos em aberto, DRE simples, margem operacional estimada e prontidao de fechamento.
+  - Aceita opcional `cashSessionId` para isolar um caixa especifico.
+  - Agora inclui consolidado gerencial de fechamento: caixas abertos/fechados, divergencias e taxa de conferencia.
+  - Aceita filtro de metodo de pagamento, variancia de caixa e status de sessao para leituras executivas mais precisas.
+- `GET /platform/support`
+  - Modulo visual do backoffice para operar fila de suporte com filtros, contadores e alertas comerciais.
+- `GET /api/v1/inventory/summary?branchId=:branchId`
+- `GET /api/v1/inventory/alerts?branchId=:branchId`
+- `GET /api/v1/inventory/locations?branchId=:branchId`
+- `POST /api/v1/inventory/items`
+- `POST /api/v1/inventory/adjustments`
+- `POST /api/v1/inventory/recipes`
+- `GET /api/v1/fiscal/documents`
+- `GET /api/v1/fiscal/settings?branchId=:branchId`
+- `POST /api/v1/fiscal/settings`
+- `POST /api/v1/fiscal/orders/:orderId/issue`
+- `POST /api/v1/fiscal/documents/:documentId/retry`
+- `POST /api/v1/fiscal/documents/:documentId/cancel`
 - `GET /api/v1/kds/tickets`
 - `PATCH /api/v1/kds/tickets/:ticketId`
+- `GET /api/v1/printing/devices`
+- `POST /api/v1/printing/devices`
+- `GET /api/v1/printing/routes`
+- `POST /api/v1/printing/routes`
+- `GET /api/v1/printing/jobs`
+- `POST /api/v1/printing/jobs/:jobId/retry`
+- `POST /api/v1/printing/jobs/:jobId/reprint`
+- `POST /api/v1/printing/jobs/:jobId/start`
+- `POST /api/v1/printing/jobs/:jobId/complete`
+- `POST /api/v1/printing/jobs/:jobId/fail`
+- `POST /api/v1/printing/connectors/heartbeat`
+- `GET /api/v1/printing/connectors/config`
+- `POST /api/v1/printing/connectors/configure`
+- `POST /api/v1/printing/connectors/revoke`
+- `GET /api/v1/integrations/outbox?status=:status`
+- `GET /api/v1/audit/events?action=:action&userId=:userId&entityType=:entityType&dateFrom=:dateFrom&dateTo=:dateTo`
+- `GET /api/v1/platform/tenants`
+  - Retorna saude, dias restantes de trial, status de cobranca, checklist de onboarding e proximo passo Asaas.
+- `GET /api/v1/platform/summary`
+  - Retorna leitura consolidada do backoffice SaaS para cards, pipeline comercial, fila de suporte, agenda do dia e comunicacoes recentes.
+- `GET /api/v1/platform/communications?tenantId=:tenantId&type=:trial_ending|past_due|support_follow_up&limit=:n`
+  - Retorna historico global de comunicacoes disparadas pelo backoffice SaaS com tenant, destino, provider e data.
+- `GET /api/v1/platform/tenants/:tenantId`
+  - Detalhe do tenant com plano, trial, cobranca, onboarding, unidades, usuarios, timeline e suporte.
+- `POST /api/v1/platform/tenants`
+- `PATCH /api/v1/platform/tenants/:tenantId/status`
+- `PATCH /api/v1/platform/tenants/:tenantId/support`
+  - Persiste prioridade de suporte, notas comerciais, responsavel do relacionamento, SLA, proximo follow-up e historico resumido de contatos no backoffice.
+  - Inclui `supportStatus` para operar fila simples de suporte: `queued`, `in_progress`, `waiting_customer`, `resolved`.
+- `POST /api/v1/platform/tenants/:tenantId/communications`
+  - Dispara comunicacao email padronizada para o tenant em tres modos: `trial_ending`, `past_due` e `support_follow_up`.
+  - Gera auditoria append-only com recipient, provider e messageId.
+- `POST /api/v1/platform/tenants/:tenantId/asaas/checkout`
+  - Prepara checkout Asaas com fallback mock; quando `ASAAS_API_KEY` existe, tenta criar checkout hospedado real no ambiente configurado.
+- `POST /api/v1/platform/tenants/:tenantId/asaas/simulate-past-due`
+  - Simula inadimplencia para testar suspensao e fluxo comercial.
 - `POST /webhooks/asaas`
+  - Aceita idempotencia por evento, valida token do header `asaas-access-token` quando configurado e atualiza status comercial do tenant por referencia externa `gm-sub-*`.
 - `POST /webhooks/meta`
 - `POST /webhooks/ifood`
 

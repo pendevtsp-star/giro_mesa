@@ -11,6 +11,28 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({ logger: env.NODE_ENV !== "test" }),
+    { rawBody: true },
+  );
+
+  const fastify = app.getHttpAdapter().getInstance();
+  fastify.addHook(
+    "onSend",
+    async (
+      _request: unknown,
+      reply: { header: (key: string, value: string) => void },
+      payload: unknown,
+    ) => {
+      reply.header("x-content-type-options", "nosniff");
+      reply.header("x-frame-options", "DENY");
+      reply.header("referrer-policy", "same-origin");
+      reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
+      reply.header("cross-origin-opener-policy", "same-origin");
+      reply.header(
+        "content-security-policy",
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' http: https: ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      );
+      return payload;
+    },
   );
 
   app.enableCors({
@@ -24,6 +46,7 @@ async function bootstrap() {
       { path: "webhooks/asaas", method: RequestMethod.POST },
       { path: "webhooks/meta", method: RequestMethod.POST },
       { path: "webhooks/ifood", method: RequestMethod.POST },
+      { path: "webhooks/club-whisky", method: RequestMethod.POST },
     ],
   });
 

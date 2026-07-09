@@ -8,6 +8,19 @@ import { DatabaseService } from "../database/database.service";
 export class KdsService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
+  async listStations(context: TenantContext) {
+    return this.database.db
+      .select({
+        id: kdsStations.id,
+        branchId: kdsStations.branchId,
+        name: kdsStations.name,
+        type: kdsStations.type,
+        isActive: kdsStations.isActive,
+      })
+      .from(kdsStations)
+      .where(eq(kdsStations.tenantId, context.tenantId));
+  }
+
   async listTickets(context: TenantContext) {
     return this.database.db
       .select({
@@ -49,7 +62,7 @@ export class KdsService {
         bumpedAt: status === "ready" ? new Date() : ticket.bumpedAt,
         updatedAt: new Date(),
       })
-      .where(eq(kdsTickets.id, ticketId))
+      .where(and(eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.id, ticketId)))
       .returning();
 
     return {

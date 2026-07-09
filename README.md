@@ -24,7 +24,7 @@ pnpm dev
 
 URLs padrao:
 
-- Web: http://localhost:3000
+- Web demo: http://localhost:3002
 - API: http://localhost:3333
 - API health: http://localhost:3333/health
 - PostgreSQL local Docker: `localhost:55432`
@@ -36,10 +36,11 @@ URLs padrao:
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:e2e
 pnpm build
 pnpm db:generate
 pnpm db:migrate
-pnpm --filter @giromesa/db db:seed
+pnpm demo:reset
 ```
 
 ## Demo local
@@ -48,11 +49,12 @@ Depois de subir Postgres e Redis:
 
 ```bash
 docker compose up -d postgres redis
-pnpm db:migrate
-pnpm --filter @giromesa/db db:seed
+pnpm demo:reset
 pnpm --filter @giromesa/api dev
-pnpm --filter @giromesa/web exec next dev --hostname 0.0.0.0 --port 3002
+pnpm --filter @giromesa/web exec next dev --hostname localhost --port 3002
 ```
+
+Use `localhost` para web e API durante o desenvolvimento local. Misturar `localhost` e `127.0.0.1` pode impedir que o cookie `gm_session` seja enviado nos `fetch` autenticados. O comando `pnpm demo:reset` aplica migrations e recria o tenant `bar-aurora-demo` para manter produtos, mesas, estoque e credenciais demo previsiveis. O E2E builda a web, inicia `next start` em `3004` e executa o fluxo real da API quando `3333` esta disponivel.
 
 Credenciais seed:
 
