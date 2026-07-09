@@ -1,4 +1,7 @@
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3333";
+const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+
+export const apiBaseUrl =
+  configuredApiBaseUrl ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3333");
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";

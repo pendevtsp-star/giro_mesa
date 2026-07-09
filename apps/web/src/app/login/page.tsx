@@ -3,7 +3,13 @@
 import { ArrowRight, LifeBuoy, LockKeyhole, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { ApiError, completeGoogleMfa, login, requestPasswordReset } from "../../lib/giromesa-api";
+import {
+  ApiError,
+  apiBaseUrl,
+  completeGoogleMfa,
+  login,
+  requestPasswordReset,
+} from "../../lib/giromesa-api";
 
 const accessModes = {
   restaurant: {
@@ -246,7 +252,7 @@ function LoginPageContent() {
           </button>
           <a
             className="button secondary full"
-            href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3333"}/api/v1/auth/google/start?returnTo=${encodeURIComponent(
+            href={`${apiBaseUrl}/api/v1/auth/google/start?returnTo=${encodeURIComponent(
               accessMode === "platform" ? "/platform" : "/app",
             )}`}
           >
