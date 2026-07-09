@@ -2,7 +2,7 @@
 
 import { ArrowRight, LifeBuoy, LockKeyhole, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { ApiError, completeGoogleMfa, login, requestPasswordReset } from "../../lib/giromesa-api";
 
 const accessModes = {
@@ -27,6 +27,36 @@ const accessModes = {
 type AccessMode = keyof typeof accessModes;
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageSkeleton />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageSkeleton() {
+  return (
+    <main className="login-page">
+      <section className="login-art">
+        <a className="brand" href="/" aria-label="GiroMesa">
+          <span className="brand-mark">G</span>
+          <span>GiroMesa</span>
+        </a>
+      </section>
+      <section className="login-panel">
+        <form className="form">
+          <div>
+            <span className="section-kicker">Acesso demo</span>
+            <h2>Acessar GiroMesa</h2>
+            <p>Carregando ambiente de acesso...</p>
+          </div>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [accessMode, setAccessMode] = useState<AccessMode>("restaurant");
