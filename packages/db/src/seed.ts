@@ -52,6 +52,19 @@ const passwordPepper = process.env.PASSWORD_PEPPER ?? "local-development-passwor
 const pool = new Pool({ connectionString: databaseUrl });
 const db = drizzle(pool);
 
+type DemoRoleSeed = {
+  code: string;
+  name: string;
+  permissions: string[];
+};
+
+type DemoUserSeed = {
+  email: string;
+  name: string;
+  password: string;
+  roleCode: string;
+};
+
 async function resetDemoTenant() {
   const [existingTenant] = await db
     .select({ id: tenants.id })
@@ -183,10 +196,8 @@ async function upsertDemo() {
     currentPeriodEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
   });
 
-  const [ownerRole] = await db
-    .insert(roles)
-    .values({
-      tenantId: tenant.id,
+  const demoRoles: DemoRoleSeed[] = [
+    {
       code: "owner",
       name: "Proprietario",
       permissions: [
@@ -206,48 +217,181 @@ async function upsertDemo() {
         "inventory:manage",
         "reports:read",
       ],
-    })
-    .returning();
+    },
+    {
+      code: "manager",
+      name: "Gerente",
+      permissions: [
+        "catalog:manage",
+        "pos:operate",
+        "pos:qr_review",
+        "pos:kds_send",
+        "pos:payment_manage",
+        "pos:close_order",
+        "kds:operate",
+        "cash:manage",
+        "fiscal:read",
+        "hardware:manage",
+        "print:operate",
+        "inventory:manage",
+        "reports:read",
+      ],
+    },
+    {
+      code: "cashier",
+      name: "Caixa",
+      permissions: [
+        "pos:operate",
+        "pos:qr_review",
+        "pos:payment_manage",
+        "pos:close_order",
+        "cash:manage",
+        "fiscal:read",
+        "print:operate",
+        "reports:read",
+      ],
+    },
+    {
+      code: "waiter",
+      name: "Garcom",
+      permissions: ["pos:operate", "pos:qr_review", "pos:kds_send"],
+    },
+    {
+      code: "kitchen",
+      name: "Cozinha",
+      permissions: ["kds:operate", "print:operate"],
+    },
+    {
+      code: "bar",
+      name: "Bar",
+      permissions: ["kds:operate", "print:operate"],
+    },
+    {
+      code: "finance",
+      name: "Financeiro",
+      permissions: ["cash:manage", "fiscal:read", "reports:read"],
+    },
+  ];
 
-  if (!ownerRole) {
-    throw new Error("Failed to seed owner role");
+  const roleByCode = new Map<string, { id: string; code: string; name: string }>();
+  for (const roleSeed of demoRoles) {
+    const [role] = await db
+      .insert(roles)
+      .values({
+        tenantId: tenant.id,
+        code: roleSeed.code,
+        name: roleSeed.name,
+        permissions: roleSeed.permissions,
+      })
+      .returning();
+
+    if (!role) {
+      throw new Error(`Failed to seed role ${roleSeed.code}`);
+    }
+
+    roleByCode.set(roleSeed.code, role);
   }
 
-  const passwordHash = await argon2.hash(`Demo@12345${passwordPepper}`, {
-    type: argon2.argon2id,
-    memoryCost: 19_456,
-    timeCost: 2,
-    parallelism: 1,
-  });
-
-  const [owner] = await db
-    .insert(users)
-    .values({
-      tenantId: tenant.id,
+  const demoUsers: DemoUserSeed[] = [
+    {
       email: "admin@bar-aurora-demo.local",
       name: "Admin Demo",
-      passwordHash,
-    })
-    .onConflictDoUpdate({
-      target: [users.email, users.tenantId],
-      set: {
-        name: "Admin Demo",
-        passwordHash,
-        isActive: true,
-      },
-    })
-    .returning();
+      password: "Demo@12345",
+      roleCode: "owner",
+    },
+    {
+      email: "gerente@bar-aurora-demo.local",
+      name: "Gerente Demo",
+      password: "Gerente@12345",
+      roleCode: "manager",
+    },
+    {
+      email: "caixa@bar-aurora-demo.local",
+      name: "Caixa Demo",
+      password: "Caixa@12345",
+      roleCode: "cashier",
+    },
+    {
+      email: "garcom@bar-aurora-demo.local",
+      name: "Garcom Demo",
+      password: "Garcom@12345",
+      roleCode: "waiter",
+    },
+    {
+      email: "cozinha@bar-aurora-demo.local",
+      name: "Cozinha Demo",
+      password: "Cozinha@12345",
+      roleCode: "kitchen",
+    },
+    {
+      email: "bar@bar-aurora-demo.local",
+      name: "Bar Demo",
+      password: "BarDemo@12345",
+      roleCode: "bar",
+    },
+    {
+      email: "financeiro@bar-aurora-demo.local",
+      name: "Financeiro Demo",
+      password: "Financeiro@12345",
+      roleCode: "finance",
+    },
+  ];
 
-  if (!owner) {
-    throw new Error("Failed to seed owner");
+  const seededUsers: Array<{ email: string; password: string; roleCode: string }> = [];
+  let ownerId: string | null = null;
+
+  for (const userSeed of demoUsers) {
+    const passwordHash = await argon2.hash(`${userSeed.password}${passwordPepper}`, {
+      type: argon2.argon2id,
+      memoryCost: 19_456,
+      timeCost: 2,
+      parallelism: 1,
+    });
+
+    const [user] = await db
+      .insert(users)
+      .values({
+        tenantId: tenant.id,
+        email: userSeed.email,
+        name: userSeed.name,
+        passwordHash,
+      })
+      .onConflictDoUpdate({
+        target: [users.email, users.tenantId],
+        set: {
+          name: userSeed.name,
+          passwordHash,
+          isActive: true,
+        },
+      })
+      .returning();
+
+    const role = roleByCode.get(userSeed.roleCode);
+    if (!user || !role) {
+      throw new Error(`Failed to seed user ${userSeed.email}`);
+    }
+
+    await db.insert(userRoles).values({
+      tenantId: tenant.id,
+      userId: user.id,
+      roleId: role.id,
+      branchId: branch.id,
+    });
+
+    seededUsers.push({
+      email: userSeed.email,
+      password: userSeed.password,
+      roleCode: userSeed.roleCode,
+    });
+
+    if (userSeed.roleCode === "owner") {
+      ownerId = user.id;
+    }
   }
 
-  await db.insert(userRoles).values({
-    tenantId: tenant.id,
-    userId: owner.id,
-    roleId: ownerRole.id,
-    branchId: branch.id,
-  });
+  if (!ownerId) {
+    throw new Error("Failed to seed owner");
+  }
 
   const [kitchen] = await db
     .insert(kdsStations)
@@ -776,16 +920,22 @@ async function upsertDemo() {
   const [existingRole] = await db
     .select()
     .from(userRoles)
-    .where(and(eq(userRoles.userId, owner.id), eq(userRoles.roleId, ownerRole.id)))
+    .where(
+      and(
+        eq(userRoles.userId, ownerId),
+        eq(userRoles.roleId, roleByCode.get("owner")?.id ?? ""),
+      ),
+    )
     .limit(1);
 
   return {
     tenant: tenant.slug,
     branch: branch.name,
-    adminEmail: owner.email,
+    adminEmail: "admin@bar-aurora-demo.local",
     adminPassword: "Demo@12345",
     platformEmail: "owner@giromesa.local",
     platformPassword: "Platform@12345",
+    testUsers: seededUsers,
     alreadyHadRole: Boolean(existingRole),
   };
 }
