@@ -28,6 +28,7 @@ tmp/
 storage/
 uploads/
 backups/
+artifacts/
 
 # Logs
 *.log
