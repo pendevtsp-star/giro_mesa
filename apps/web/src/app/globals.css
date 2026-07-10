@@ -272,7 +272,6 @@ button {
 
 .onboarding-page { min-height: 100vh; background: #f4f7f4; }.onboarding-topbar { background: #fff; }.onboarding-topbar .brand { position: absolute; left: 50%; transform: translateX(-50%); }.onboarding-hero, .onboarding-list, .onboarding-progress, .onboarding-note { width: min(100% - 36px, 920px); margin-right: auto; margin-left: auto; }.onboarding-hero { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 28px; align-items: center; padding-top: clamp(42px, 7vw, 74px); }.onboarding-hero h1 { margin: 8px 0 0; font-size: clamp(2.2rem, 4.5vw, 4rem); line-height: 1.02; }.onboarding-hero p { max-width: 640px; margin: 16px 0 0; color: var(--muted); line-height: 1.6; }.onboarding-hero aside { display: grid; justify-items: center; gap: 4px; padding: 22px; border-radius: 8px; background: #13231e; color: #fff; }.onboarding-hero aside svg { color: #9ee1c8; }.onboarding-hero aside strong { font-size: 1.55rem; }.onboarding-hero aside span { color: #c1d1c9; font-size: 0.84rem; }.onboarding-progress { height: 8px; margin-top: 32px; overflow: hidden; border-radius: 99px; background: #dce7e1; }.onboarding-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 240ms ease; }.onboarding-list { display: grid; gap: 12px; margin-top: 26px; }.onboarding-step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 20px; border: 1px solid #dbe4df; border-radius: 8px; background: #fff; }.onboarding-step-icon { color: #81918a; }.onboarding-step.complete .onboarding-step-icon { color: var(--green); }.onboarding-step > div > span { color: var(--muted); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; }.onboarding-step h2 { margin: 4px 0 0; font-size: 1.08rem; }.onboarding-step p { margin: 5px 0 0; color: var(--muted); font-size: 0.92rem; line-height: 1.52; }.onboarding-note { display: flex; gap: 12px; align-items: flex-start; margin-top: 22px; padding: 16px; border: 1px solid #cde4db; border-radius: 8px; background: #e7f4ee; color: #285645; }.onboarding-note p { margin: 0; line-height: 1.55; }.onboarding-loading { width: min(100% - 36px, 920px); margin: 16px auto 40px; color: var(--muted); text-align: center; }
 
-.sales-band .section-kicker { color: #92d5c2; }
 
 .topbar {
   position: sticky;
@@ -453,6 +452,10 @@ button {
 
 .section-kicker {
   color: var(--accent-strong);
+}
+
+.sales-band .section-kicker {
+  color: #92d5c2;
 }
 
 .hero h1 {

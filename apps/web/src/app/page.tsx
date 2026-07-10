@@ -1,4 +1,3 @@
-import Image from "next/image";
 import {
   ArrowRight,
   BarChart3,
@@ -12,6 +11,7 @@ import {
   UtensilsCrossed,
   Warehouse,
 } from "lucide-react";
+import Image from "next/image";
 
 const benefits = [
   {
