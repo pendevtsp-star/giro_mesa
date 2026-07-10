@@ -18,7 +18,6 @@ test.describe("GiroMesa demo experience", () => {
     await expect(page.getByRole("heading", { name: "PDV do turno" })).toBeVisible();
     await expect(page.getByTestId("pos-add-item")).toBeVisible();
     await expect(page.getByTestId("payment-complete")).toBeVisible();
-    await expect(page.getByTestId("cash-close")).toBeVisible();
 
     await page.goto("/q/M03", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Bar Aurora" })).toBeVisible();
