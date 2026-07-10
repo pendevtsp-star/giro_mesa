@@ -1110,6 +1110,13 @@ export async function listKdsStations() {
   return result.data;
 }
 
+export function updateKdsTicket(ticketId: string, status: "preparing" | "ready" | "served") {
+  return apiRequest<KdsTicket & { audit: string }>(`/api/v1/kds/tickets/${ticketId}`, {
+    method: "PATCH",
+    body: { status },
+  });
+}
+
 export function openOrder(branchId: string, tableId?: string, peopleCount = 2) {
   return apiRequest<OpenOrderResponse>("/api/v1/pos/orders/open", {
     method: "POST",
