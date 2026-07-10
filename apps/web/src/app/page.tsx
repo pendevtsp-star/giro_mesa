@@ -71,7 +71,7 @@ export default function HomePage() {
           <a className="button ghost" href="/login">
             Entrar
           </a>
-          <a className="button primary" href="/login">
+          <a className="button primary" href="/app">
             Conhecer a demo <ArrowRight size={16} />
           </a>
         </div>
@@ -88,7 +88,7 @@ export default function HomePage() {
             para a equipe e clara para quem toma decisões.
           </p>
           <div className="sales-hero-actions">
-            <a className="button primary" href="/login">
+            <a className="button primary" href="/app">
               Entrar na demo guiada <ArrowRight size={18} />
             </a>
             <a className="button secondary" href="/m/bar-aurora-demo">
@@ -162,7 +162,7 @@ export default function HomePage() {
               <Icon size={24} />
               <h3>{title}</h3>
               <p>{body}</p>
-              <a href="/login">
+              <a href="/app">
                 Ver na demo <ArrowRight size={15} />
               </a>
             </article>
@@ -203,7 +203,7 @@ export default function HomePage() {
           <h2>Veja o GiroMesa no ritmo de um estabelecimento.</h2>
           <p>A demo usa um cenário operacional completo para você explorar antes da implantação.</p>
         </div>
-        <a className="button primary" href="/login">
+        <a className="button primary" href="/app">
           Acessar demo <ArrowRight size={18} />
         </a>
       </section>
