@@ -4130,8 +4130,7 @@ button {
   }
 
   .sales-hero h1 {
-    font-size: clamp(2.8rem, 15vw, 4rem);
-    overflow-wrap: anywhere;
+    font-size: clamp(2.65rem, 12.8vw, 3.35rem);
   }
 
   .sales-hero-actions,
