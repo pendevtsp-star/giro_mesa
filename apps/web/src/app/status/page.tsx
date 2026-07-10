@@ -26,23 +26,51 @@ export default function StatusPage() {
     }
   }, []);
 
-  useEffect(() => { void check(); }, [check]);
+  useEffect(() => {
+    void check();
+  }, [check]);
   const healthy = Boolean(health && !error);
 
   return (
     <main className="status-page">
-      <a className="brand" href="/"><span className="brand-mark">G</span><span>GiroMesa</span></a>
+      <a className="brand" href="/">
+        <span className="brand-mark">G</span>
+        <span>GiroMesa</span>
+      </a>
       <section className="status-card">
         <span className={healthy ? "status-icon healthy" : "status-icon issue"}>
           {healthy ? <CheckCircle2 size={28} /> : <CircleAlert size={28} />}
         </span>
         <span className="section-kicker">Status da plataforma</span>
-        <h1>{loading ? "Verificando serviços" : healthy ? "Serviços operando normalmente" : "Verificação indisponível"}</h1>
-        <p>{healthy ? "A API do GiroMesa respondeu à última verificação." : "Não foi possível confirmar a API neste momento. Tente novamente em alguns instantes."}</p>
-        <div className="status-details"><Activity size={17} /><span>API</span><strong>{healthy ? "operacional" : "atenção"}</strong></div>
+        <h1>
+          {loading
+            ? "Verificando serviços"
+            : healthy
+              ? "Serviços operando normalmente"
+              : "Verificação indisponível"}
+        </h1>
+        <p>
+          {healthy
+            ? "A API do GiroMesa respondeu à última verificação."
+            : "Não foi possível confirmar a API neste momento. Tente novamente em alguns instantes."}
+        </p>
+        <div className="status-details">
+          <Activity size={17} />
+          <span>API</span>
+          <strong>{healthy ? "operacional" : "atenção"}</strong>
+        </div>
         <div className="status-actions">
-          <button className="button primary" type="button" onClick={() => void check()} disabled={loading}><RefreshCw size={16} /> Verificar novamente</button>
-          <a className="button secondary" href="/"><ArrowLeft size={16} /> Voltar ao site</a>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => void check()}
+            disabled={loading}
+          >
+            <RefreshCw size={16} /> Verificar novamente
+          </button>
+          <a className="button secondary" href="/">
+            <ArrowLeft size={16} /> Voltar ao site
+          </a>
         </div>
         {checkedAt ? <small>Última verificação: {checkedAt.toLocaleString("pt-BR")}</small> : null}
       </section>

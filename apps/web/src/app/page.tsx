@@ -39,10 +39,18 @@ const proof = [
 ] as const;
 
 const modules = [
-  ["PDV e salão", "Abra mesas, lance pedidos e faça pagamentos parciais sem perder contexto.", Store],
+  [
+    "PDV e salão",
+    "Abra mesas, lance pedidos e faça pagamentos parciais sem perder contexto.",
+    Store,
+  ],
   ["Cozinha e bar", "Envie tickets ao KDS e acompanhe o preparo em tempo real.", ChefHat],
   ["Gestão financeira", "Leia recebimentos, divergências de caixa e alertas do turno.", BarChart3],
-  ["Cardápio digital", "Ofereça QR por mesa com pedido assistido e chamada de atendimento.", QrCode],
+  [
+    "Cardápio digital",
+    "Ofereça QR por mesa com pedido assistido e chamada de atendimento.",
+    QrCode,
+  ],
 ] as const;
 
 export default function HomePage() {
@@ -60,25 +68,39 @@ export default function HomePage() {
           <a href="/manual">Manual</a>
         </nav>
         <div className="sales-actions">
-          <a className="button ghost" href="/login">Entrar</a>
-          <a className="button primary" href="/login">Conhecer a demo <ArrowRight size={16} /></a>
+          <a className="button ghost" href="/login">
+            Entrar
+          </a>
+          <a className="button primary" href="/login">
+            Conhecer a demo <ArrowRight size={16} />
+          </a>
         </div>
       </header>
 
       <section className="sales-hero" id="produto">
         <div className="sales-hero-copy">
-          <span className="sales-eyebrow"><CircleDollarSign size={16} /> Gestão food service</span>
+          <span className="sales-eyebrow">
+            <CircleDollarSign size={16} /> Gestão food service
+          </span>
           <h1>O turno flui. A gestão acompanha.</h1>
           <p>
-            GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação
-            simples para a equipe e clara para quem toma decisões.
+            GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação simples
+            para a equipe e clara para quem toma decisões.
           </p>
           <div className="sales-hero-actions">
-            <a className="button primary" href="/login">Entrar na demo guiada <ArrowRight size={18} /></a>
-            <a className="button secondary" href="/m/bar-aurora-demo">Explorar cardápio QR</a>
+            <a className="button primary" href="/login">
+              Entrar na demo guiada <ArrowRight size={18} />
+            </a>
+            <a className="button secondary" href="/m/bar-aurora-demo">
+              Explorar cardápio QR
+            </a>
           </div>
           <ul className="sales-proof-list">
-            {proof.map((item) => <li key={item}><Check size={16} /> {item}</li>)}
+            {proof.map((item) => (
+              <li key={item}>
+                <Check size={16} /> {item}
+              </li>
+            ))}
           </ul>
         </div>
         <figure className="sales-product-frame">
@@ -108,15 +130,17 @@ export default function HomePage() {
           <h2>Uma rotina operacional sem troca de contexto.</h2>
         </div>
         <p>
-          Cada função enxerga o que precisa fazer: garçom atende, cozinha produz, caixa recebe e
-          a gestão acompanha o que exige atenção.
+          Cada função enxerga o que precisa fazer: garçom atende, cozinha produz, caixa recebe e a
+          gestão acompanha o que exige atenção.
         </p>
       </section>
 
       <section className="sales-benefits">
         {benefits.map(({ icon: Icon, title, body }) => (
           <article key={title}>
-            <span><Icon size={22} /></span>
+            <span>
+              <Icon size={22} />
+            </span>
             <h3>{title}</h3>
             <p>{body}</p>
           </article>
@@ -127,7 +151,10 @@ export default function HomePage() {
         <div className="sales-section-heading">
           <span className="section-kicker">Uma base que evolui com a casa</span>
           <h2>Comece pelo que faz diferença em um turno de verdade.</h2>
-          <p>O GiroMesa é cloud-first e deixa a operação pronta para crescer com integrações controladas.</p>
+          <p>
+            O GiroMesa é cloud-first e deixa a operação pronta para crescer com integrações
+            controladas.
+          </p>
         </div>
         <div className="sales-module-grid">
           {modules.map(([title, body, Icon]) => (
@@ -135,7 +162,9 @@ export default function HomePage() {
               <Icon size={24} />
               <h3>{title}</h3>
               <p>{body}</p>
-              <a href="/login">Ver na demo <ArrowRight size={15} /></a>
+              <a href="/login">
+                Ver na demo <ArrowRight size={15} />
+              </a>
             </article>
           ))}
         </div>
@@ -143,7 +172,9 @@ export default function HomePage() {
 
       <section className="sales-security" id="seguranca">
         <div>
-          <span className="sales-eyebrow"><ShieldCheck size={16} /> Operação com controle</span>
+          <span className="sales-eyebrow">
+            <ShieldCheck size={16} /> Operação com controle
+          </span>
           <h2>Cada ação importante deixa rastro.</h2>
           <p>
             Permissões por perfil, MFA para acessos sensíveis, auditoria e isolamento entre
@@ -151,9 +182,18 @@ export default function HomePage() {
           </p>
         </div>
         <dl>
-          <div><dt>Multi-tenant</dt><dd>Dados isolados por estabelecimento.</dd></div>
-          <div><dt>Perfis de acesso</dt><dd>Equipe com apenas as permissões necessárias.</dd></div>
-          <div><dt>Auditoria</dt><dd>Cancelamentos e ajustes ficam rastreáveis.</dd></div>
+          <div>
+            <dt>Multi-tenant</dt>
+            <dd>Dados isolados por estabelecimento.</dd>
+          </div>
+          <div>
+            <dt>Perfis de acesso</dt>
+            <dd>Equipe com apenas as permissões necessárias.</dd>
+          </div>
+          <div>
+            <dt>Auditoria</dt>
+            <dd>Cancelamentos e ajustes ficam rastreáveis.</dd>
+          </div>
         </dl>
       </section>
 
@@ -163,12 +203,18 @@ export default function HomePage() {
           <h2>Veja o GiroMesa no ritmo de um estabelecimento.</h2>
           <p>A demo usa um cenário operacional completo para você explorar antes da implantação.</p>
         </div>
-        <a className="button primary" href="/login">Acessar demo <ArrowRight size={18} /></a>
+        <a className="button primary" href="/login">
+          Acessar demo <ArrowRight size={18} />
+        </a>
       </section>
 
       <footer className="sales-footer">
         <span>GiroMesa</span>
-        <div><a href="/manual">Manual</a><a href="/login">Acessar sistema</a><a href="/status">Status</a></div>
+        <div>
+          <a href="/manual">Manual</a>
+          <a href="/login">Acessar sistema</a>
+          <a href="/status">Status</a>
+        </div>
       </footer>
     </main>
   );
