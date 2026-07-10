@@ -21,7 +21,7 @@ test.describe("GiroMesa demo experience", () => {
 
     await page.goto("/q/M03", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Bar Aurora" })).toBeVisible();
-    await page.getByRole("link", { name: /Ver cardapio/ }).click();
+    await page.getByRole("link", { name: /Cardápio completo/ }).click();
     await expect(page.getByRole("heading", { name: "Bar Aurora" })).toBeVisible();
     await expect(page.getByText("Burger Classico")).toBeVisible();
   });
