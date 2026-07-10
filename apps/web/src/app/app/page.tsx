@@ -19,12 +19,12 @@ import {
   Printer,
   QrCode,
   ReceiptText,
+  Rocket,
   RotateCw,
   Search,
   Settings,
   ShieldCheck,
   Store,
-  Rocket,
   Users,
   X,
 } from "lucide-react";

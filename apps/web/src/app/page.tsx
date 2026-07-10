@@ -1,8 +1,9 @@
+import Image from "next/image";
 import {
   ArrowRight,
   BarChart3,
-  ChefHat,
   Check,
+  ChefHat,
   CircleDollarSign,
   Clock3,
   QrCode,
@@ -80,19 +81,25 @@ export default function HomePage() {
             {proof.map((item) => <li key={item}><Check size={16} /> {item}</li>)}
           </ul>
         </div>
-        <div className="sales-product-frame" aria-label="Painel operacional GiroMesa">
+        <figure className="sales-product-frame">
           <div className="sales-window-bar">
             <span /> <span /> <span />
             <strong>Visão do turno</strong>
             <Clock3 size={16} />
           </div>
-          <img src="/images/giro-mesa-dashboard.png" alt="Painel do GiroMesa com mesas, pedidos e caixa" />
+          <Image
+            src="/images/giro-mesa-dashboard.png"
+            alt="Painel do GiroMesa com mesas, pedidos e caixa"
+            width={1280}
+            height={800}
+            priority
+          />
           <div className="sales-float-card">
             <span>Caixa do turno</span>
             <strong>R$ 2.184,00</strong>
             <small>conferência em andamento</small>
           </div>
-        </div>
+        </figure>
       </section>
 
       <section className="sales-band" id="operacao">
