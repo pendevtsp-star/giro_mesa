@@ -168,6 +168,7 @@ button {
 .sales-product-frame {
   position: relative;
   overflow: visible;
+  margin: 0;
   border: 1px solid #cad6d0;
   border-radius: 8px;
   background: #fff;
