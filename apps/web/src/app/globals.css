@@ -1334,6 +1334,10 @@ button {
   max-width: 1500px;
 }
 
+.app-layout[data-view="pos"] .ops-grid > :not(.pos-panel) {
+  display: none;
+}
+
 .dashboard-metrics {
   grid-template-columns: repeat(4, minmax(150px, 1fr));
   gap: 10px;
@@ -3559,6 +3563,15 @@ button {
   border-radius: 99px;
   background: var(--accent);
 }
+
+.report-export-menu { position: relative; }
+.report-export-menu summary { list-style: none; }
+.report-export-menu summary::-webkit-details-marker { display: none; }
+.report-export-menu > div { position: absolute; z-index: 12; top: calc(100% + 8px); right: 0; display: grid; min-width: 250px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.report-export-menu:not([open]) > div { display: none; }
+.report-export-menu button { border: 0; border-bottom: 1px solid var(--line); padding: 12px 14px; background: transparent; color: var(--ink); cursor: pointer; font-weight: 750; text-align: left; }
+.report-export-menu button:last-child { border-bottom: 0; }
+.report-export-menu button:hover { background: var(--surface-soft); }
 
 .platform-support-layout {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.38fr);
