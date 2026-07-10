@@ -27,8 +27,8 @@ import {
   listAuditEvents,
   listFiscalDocuments,
   listInventorySummary,
-  type TenantBranding,
   type ProductSalesReport,
+  type TenantBranding,
 } from "../../../lib/giromesa-api";
 
 const demoSummary: CashSessionSummary = {

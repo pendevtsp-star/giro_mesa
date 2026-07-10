@@ -3486,9 +3486,6 @@ button {
 .product-analytics-row > span:last-child { display: grid; grid-template-columns: minmax(48px, 1fr) auto; gap: 8px; align-items: center; }
 .product-analytics-row i { display: block; height: 6px; border-radius: 99px; background: var(--accent); }
 
-.platform-grid .platform-tenant-row,
-.platform-support-item { border-radius: 6px; }
-
 .platform-support-layout { grid-template-columns: minmax(0, 1fr) minmax(260px, 0.38fr); }
 .platform-support-layout > .panel:first-child { min-height: 0; }
 .platform-support-item { padding: 14px; }

@@ -28,9 +28,9 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   type ApiError,
   type AuditEvent,
@@ -1445,12 +1445,6 @@ export default function AppDashboardPage() {
         "fiscal auxiliar",
       );
       setActionStatus("Documento fiscal auxiliar aberto para impressao.");
-    });
-  }
-
-  function handleOpenOrder() {
-    void runAction(async () => {
-      await ensureOrder();
     });
   }
 
