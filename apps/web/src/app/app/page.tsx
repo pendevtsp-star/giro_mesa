@@ -1156,6 +1156,10 @@ export default function AppDashboardPage() {
     ] as const;
   }, [orderStatus, orderTotalCents, qrPendingOrders.length, tables, ticketItems.length, tickets]);
 
+  const activeOrderCount =
+    tickets.filter((ticket) => !["ready", "served"].includes(ticket.status)).length +
+    qrPendingOrders.length;
+
   async function ensureOrder() {
     if (!branchId || !selectedTable) {
       throw new Error("Selecione uma mesa com sessao ativa.");
