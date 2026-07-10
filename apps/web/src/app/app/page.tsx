@@ -24,6 +24,7 @@ import {
   Settings,
   ShieldCheck,
   Store,
+  Rocket,
   Users,
   X,
 } from "lucide-react";
@@ -132,6 +133,7 @@ type OutboxStatusFilter = "all" | "pending" | "processed" | "failed";
 
 const nav = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/app", permissions: [] },
+  { icon: Rocket, label: "Implantação", href: "/app/onboarding", permissions: ["tenant:manage"] },
   { icon: ClipboardList, label: "PDV", href: "/app", permissions: ["pos:operate"] },
   { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app", permissions: ["pos:kds_send", "kds:manage"] },

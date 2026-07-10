@@ -2,242 +2,166 @@ import {
   ArrowRight,
   BarChart3,
   ChefHat,
-  ClipboardCheck,
+  Check,
+  CircleDollarSign,
   Clock3,
-  CreditCard,
   QrCode,
   ShieldCheck,
-  Soup,
-  Sparkles,
   Store,
+  UtensilsCrossed,
   Warehouse,
 } from "lucide-react";
 
-const features = [
+const benefits = [
   {
-    icon: ClipboardCheck,
-    title: "PDV de salao e balcao",
-    body: "Mesas, comandas, itens, observacoes, descontos controlados e fechamento sem perder historico.",
+    icon: UtensilsCrossed,
+    title: "Atendimento que acompanha o salão",
+    body: "Mesas, comandas e balcão em uma operação pensada para o ritmo do serviço.",
   },
   {
     icon: ChefHat,
-    title: "KDS simples e claro",
-    body: "Cozinha e bar recebem tickets por estacao, com prioridade, tempo de preparo e cancelamentos visiveis.",
-  },
-  {
-    icon: QrCode,
-    title: "Cardapio QR por unidade",
-    body: "Menu público elegante, preparado para evoluir para pedido pelo cliente e chamada de garçom.",
+    title: "Cozinha e bar no mesmo compasso",
+    body: "Tickets por estação, prioridades visíveis e histórico de cancelamentos sem ruído.",
   },
   {
     icon: Warehouse,
-    title: "Estoque com ficha tecnica",
-    body: "Baixa de insumos por receita, estoque minimo, reversoes auditadas e visao de ruptura.",
+    title: "Gestão que enxerga a margem",
+    body: "Estoque, ficha técnica, caixa e relatórios para decidir antes do fechamento.",
   },
-  {
-    icon: CreditCard,
-    title: "Caixa e pagamentos",
-    body: "Pagamentos manuais no MVP, conciliacao de turno e base pronta para Asaas e Pix online.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Seguranca multi-tenant",
-    body: "Tenant no backend, permissoes por perfil, auditoria append-only e webhooks idempotentes.",
-  },
-];
-
-const liveMetrics = [
-  ["R$ 8.742", "vendidos hoje"],
-  ["18/30", "mesas ocupadas"],
-  ["11 min", "tempo medio KDS"],
-  ["2", "alertas criticos"],
 ] as const;
 
-const operations = [
-  ["Mesa M12", "2 burgers, 1 chopp, 1 brownie", "preparando", "14 min"],
-  ["Comanda C07", "Pizza meia lua, soda italiana", "pronto", "08 min"],
-  ["Balcao 03", "Combo executivo", "pagamento", "R$ 42"],
+const proof = [
+  "PDV para balcão, mesa e comanda",
+  "KDS, cardápio QR e impressão por rota",
+  "Caixa, estoque e relatórios executivos",
+  "Usuários por função, MFA e auditoria",
 ] as const;
 
-const plans = [
-  ["Starter", "R$ 149", "PDV, mesas, cardápio QR e relatórios básicos."],
-  ["Professional", "R$ 299", "KDS, estoque, ficha tecnica e caixa completo."],
-  ["Premium", "R$ 499", "Multi-filial, automacoes, WhatsApp e dashboards."],
-  ["Enterprise", "Sob consulta", "Ambiente dedicado, suporte prioritario e limites customizados."],
+const modules = [
+  ["PDV e salão", "Abra mesas, lance pedidos e faça pagamentos parciais sem perder contexto.", Store],
+  ["Cozinha e bar", "Envie tickets ao KDS e acompanhe o preparo em tempo real.", ChefHat],
+  ["Gestão financeira", "Leia recebimentos, divergências de caixa e alertas do turno.", BarChart3],
+  ["Cardápio digital", "Ofereça QR por mesa com pedido assistido e chamada de atendimento.", QrCode],
 ] as const;
 
 export default function HomePage() {
   return (
-    <main className="site-shell">
-      <header className="topbar">
+    <main className="sales-page">
+      <header className="sales-topbar">
         <a className="brand" href="/" aria-label="GiroMesa">
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
-        <nav className="nav-links" aria-label="Navegacao principal">
-          <a href="#operacao">Operacao</a>
-          <a href="#modulos">Modulos</a>
-          <a href="#planos">Planos</a>
+        <nav className="sales-nav" aria-label="Navegação principal">
+          <a href="#produto">Produto</a>
+          <a href="#operacao">Operação</a>
+          <a href="#seguranca">Segurança</a>
           <a href="/manual">Manual</a>
-          <a href="/app">Demo</a>
         </nav>
-        <div className="nav-actions">
-          <a className="button ghost" href="/login">
-            Login
-          </a>
-          <a className="button primary" href="/app">
-            Ver demo <ArrowRight size={17} />
-          </a>
+        <div className="sales-actions">
+          <a className="button ghost" href="/login">Entrar</a>
+          <a className="button primary" href="/login">Conhecer a demo <ArrowRight size={16} /></a>
         </div>
       </header>
 
-      <section className="hero">
-        <div className="hero-content">
-          <span className="eyebrow">
-            <Soup size={18} /> SaaS para bares, restaurantes e pubs
-          </span>
-          <h1>GiroMesa</h1>
+      <section className="sales-hero" id="produto">
+        <div className="sales-hero-copy">
+          <span className="sales-eyebrow"><CircleDollarSign size={16} /> Gestão food service</span>
+          <h1>O turno flui. A gestão acompanha.</h1>
           <p>
-            Uma operação de salão, cozinha, caixa e cardápio digital com a velocidade que o turno
-            exige e o controle que a gestão precisa.
+            GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação
+            simples para a equipe e clara para quem toma decisões.
           </p>
-          <div className="hero-actions">
-            <a className="button primary" href="/app">
-              Abrir demo operacional <ArrowRight size={18} />
-            </a>
-            <a className="button secondary on-dark" href="/m/bar-aurora-demo">
-              Ver cardápio QR
-            </a>
+          <div className="sales-hero-actions">
+            <a className="button primary" href="/login">Entrar na demo guiada <ArrowRight size={18} /></a>
+            <a className="button secondary" href="/m/bar-aurora-demo">Explorar cardápio QR</a>
           </div>
+          <ul className="sales-proof-list">
+            {proof.map((item) => <li key={item}><Check size={16} /> {item}</li>)}
+          </ul>
         </div>
-        <aside className="hero-brief" aria-label="Resumo operacional do demo">
-          <div>
-            <span>Bar Aurora</span>
-            <strong>Turno jantar em andamento</strong>
+        <div className="sales-product-frame" aria-label="Painel operacional GiroMesa">
+          <div className="sales-window-bar">
+            <span /> <span /> <span />
+            <strong>Visão do turno</strong>
+            <Clock3 size={16} />
           </div>
-          <div className="hero-brief-grid">
-            {liveMetrics.map(([value, label]) => (
-              <span key={label}>
-                <strong>{value}</strong>
-                {label}
-              </span>
-            ))}
-          </div>
-        </aside>
-      </section>
-
-      <section className="section operation-section" id="operacao">
-        <div className="section-header split">
-          <div>
-            <span className="section-kicker">Produto de operacao</span>
-            <h2>O turno inteiro em uma tela que da para usar sob pressao.</h2>
-          </div>
-          <p>
-            A demo prioriza o essencial para vender, produzir, receber e auditar sem trocar de
-            sistema no meio do atendimento.
-          </p>
-        </div>
-        <div className="operation-board">
-          <div className="board-column">
-            <div className="board-header">
-              <Store size={18} />
-              <strong>Salao agora</strong>
-            </div>
-            {operations.map(([code, items, status, detail]) => (
-              <article className="order-card" key={code}>
-                <div>
-                  <strong>{code}</strong>
-                  <p>{items}</p>
-                </div>
-                <span>{status}</span>
-                <small>{detail}</small>
-              </article>
-            ))}
-          </div>
-          <div className="board-column emphasis">
-            <div className="board-header">
-              <ChefHat size={18} />
-              <strong>KDS</strong>
-            </div>
-            <article className="kitchen-card">
-              <Clock3 size={20} />
-              <div>
-                <strong>Chapa em atencao</strong>
-                <p>M12 esta perto do SLA e precisa de prioridade.</p>
-              </div>
-            </article>
-            <article className="kitchen-card calm">
-              <Sparkles size={20} />
-              <div>
-                <strong>Bar sem gargalo</strong>
-                <p>4 tickets prontos nos ultimos 10 minutos.</p>
-              </div>
-            </article>
-          </div>
-          <div className="board-column">
-            <div className="board-header">
-              <BarChart3 size={18} />
-              <strong>Gestao</strong>
-            </div>
-            <div className="mini-ledger">
-              <span>Ticket medio</span>
-              <strong>R$ 74,20</strong>
-              <span>CMV estimado</span>
-              <strong>31,8%</strong>
-              <span>Caixa atual</span>
-              <strong>R$ 2.184</strong>
-            </div>
+          <img src="/images/giro-mesa-dashboard.png" alt="Painel do GiroMesa com mesas, pedidos e caixa" />
+          <div className="sales-float-card">
+            <span>Caixa do turno</span>
+            <strong>R$ 2.184,00</strong>
+            <small>conferência em andamento</small>
           </div>
         </div>
       </section>
 
-      <section className="section" id="modulos">
-        <div className="section-header">
-          <span className="section-kicker">MVP comercial</span>
-          <h2>Modulos prontos para demonstrar valor desde o primeiro cliente.</h2>
-          <p>
-            O foco inicial e um produto cloud-first, auditavel e preparado para integracoes
-            brasileiras sem antecipar complexidade fiscal ou TEF antes da validacao.
-          </p>
+      <section className="sales-band" id="operacao">
+        <div>
+          <span className="section-kicker">Da chegada ao fechamento</span>
+          <h2>Uma rotina operacional sem troca de contexto.</h2>
         </div>
-        <div className="grid">
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            return (
-              <article className="feature" key={feature.title}>
-                <Icon size={24} />
-                <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
-              </article>
-            );
-          })}
-        </div>
+        <p>
+          Cada função enxerga o que precisa fazer: garçom atende, cozinha produz, caixa recebe e
+          a gestão acompanha o que exige atenção.
+        </p>
       </section>
 
-      <section className="section pricing-band" id="planos">
-        <div className="section-header split">
-          <div>
-            <span className="section-kicker">Planos iniciais</span>
-            <h2>Preco simples para validar mercado sem travar evolucao.</h2>
-          </div>
-          <p>
-            Valores de referencia para venda piloto. Fiscal real, WhatsApp, iFood, TEF e offline
-            completo entram em fases controladas.
-          </p>
+      <section className="sales-benefits">
+        {benefits.map(({ icon: Icon, title, body }) => (
+          <article key={title}>
+            <span><Icon size={22} /></span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="sales-modules">
+        <div className="sales-section-heading">
+          <span className="section-kicker">Uma base que evolui com a casa</span>
+          <h2>Comece pelo que faz diferença em um turno de verdade.</h2>
+          <p>O GiroMesa é cloud-first e deixa a operação pronta para crescer com integrações controladas.</p>
         </div>
-        <div className="grid plans">
-          {plans.map(([name, price, description]) => (
-            <article className="plan" key={name}>
-              <h3>{name}</h3>
-              <strong>{price}</strong>
-              <p>{description}</p>
+        <div className="sales-module-grid">
+          {modules.map(([title, body, Icon]) => (
+            <article key={title}>
+              <Icon size={24} />
+              <h3>{title}</h3>
+              <p>{body}</p>
+              <a href="/login">Ver na demo <ArrowRight size={15} /></a>
             </article>
           ))}
         </div>
       </section>
 
-      <footer className="footer">
-        GiroMesa - operacao food service, SaaS multi-tenant e integracoes brasileiras por fases.
+      <section className="sales-security" id="seguranca">
+        <div>
+          <span className="sales-eyebrow"><ShieldCheck size={16} /> Operação com controle</span>
+          <h2>Cada ação importante deixa rastro.</h2>
+          <p>
+            Permissões por perfil, MFA para acessos sensíveis, auditoria e isolamento entre
+            estabelecimentos fazem parte da base, não de um complemento.
+          </p>
+        </div>
+        <dl>
+          <div><dt>Multi-tenant</dt><dd>Dados isolados por estabelecimento.</dd></div>
+          <div><dt>Perfis de acesso</dt><dd>Equipe com apenas as permissões necessárias.</dd></div>
+          <div><dt>Auditoria</dt><dd>Cancelamentos e ajustes ficam rastreáveis.</dd></div>
+        </dl>
+      </section>
+
+      <section className="sales-cta">
+        <div>
+          <span className="section-kicker">Próximo passo</span>
+          <h2>Veja o GiroMesa no ritmo de um estabelecimento.</h2>
+          <p>A demo usa um cenário operacional completo para você explorar antes da implantação.</p>
+        </div>
+        <a className="button primary" href="/login">Acessar demo <ArrowRight size={18} /></a>
+      </section>
+
+      <footer className="sales-footer">
+        <span>GiroMesa</span>
+        <div><a href="/manual">Manual</a><a href="/login">Acessar sistema</a><a href="/status">Status</a></div>
       </footer>
     </main>
   );
