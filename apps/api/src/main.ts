@@ -43,6 +43,7 @@ async function bootstrap() {
   app.setGlobalPrefix("api/v1", {
     exclude: [
       { path: "health", method: RequestMethod.GET },
+      { path: "health/ready", method: RequestMethod.GET },
       { path: "webhooks/asaas", method: RequestMethod.POST },
       { path: "webhooks/meta", method: RequestMethod.POST },
       { path: "webhooks/ifood", method: RequestMethod.POST },
