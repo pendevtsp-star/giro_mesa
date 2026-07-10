@@ -62,16 +62,24 @@ export class SmtpEmailProvider implements EmailProvider {
 export function createEmailProvider() {
   const provider = process.env.EMAIL_PROVIDER ?? "mock";
   if (provider === "smtp") {
-    if (process.env.SMTP_HOST && process.env.EMAIL_FROM) {
+    if (
+      process.env.SMTP_HOST &&
+      process.env.EMAIL_FROM &&
+      !isPlaceholderSmtpHost(process.env.SMTP_HOST)
+    ) {
       return new SmtpEmailProvider();
     }
 
-    if (process.env.NODE_ENV === "production") {
+    if (process.env.NODE_ENV === "production" && !isPlaceholderSmtpHost(process.env.SMTP_HOST)) {
       throw new Error("SMTP provider selected but SMTP_HOST or EMAIL_FROM is missing");
     }
   }
 
   return new MockEmailProvider();
+}
+
+function isPlaceholderSmtpHost(host: string | undefined) {
+  return !host || host === "smtp.example.com" || host.endsWith(".example.com");
 }
 
 function requiredEnv(name: string) {

@@ -8,10 +8,9 @@ import {
   CalendarClock,
   CheckCircle2,
   CreditCard,
-  Download,
   FileText,
-  Mail,
   LifeBuoy,
+  Mail,
   ShieldCheck,
 } from "lucide-react";
 import { use, useEffect, useState } from "react";
@@ -330,15 +329,17 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                 <th>Quando</th>
               </tr>
             </thead>
-            <tbody>${communicationEvents
-              .map(
-                (event) => `
+            <tbody>${
+              communicationEvents
+                .map(
+                  (event) => `
                   <tr>
                     <td>${escapeHtml(event.action)}</td>
                     <td>${escapeHtml(new Date(event.createdAt).toLocaleString("pt-BR"))}</td>
                   </tr>`,
-              )
-              .join("") || "<tr><td colspan='2'>Sem comunicacoes registradas.</td></tr>"}</tbody>
+                )
+                .join("") || "<tr><td colspan='2'>Sem comunicacoes registradas.</td></tr>"
+            }</tbody>
           </table>
         </section>
       `,

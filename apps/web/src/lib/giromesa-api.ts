@@ -1185,7 +1185,9 @@ export function registerManualPayment(
 }
 
 export async function listOrderPayments(orderId: string) {
-  const result = await apiRequest<{ data: OrderPayment[] }>(`/api/v1/pos/orders/${orderId}/payments`);
+  const result = await apiRequest<{ data: OrderPayment[] }>(
+    `/api/v1/pos/orders/${orderId}/payments`,
+  );
   return result.data;
 }
 
@@ -1451,11 +1453,9 @@ export function getPlatformSummary() {
   return apiRequest<PlatformCommercialSummary>("/api/v1/platform/summary");
 }
 
-export async function listPlatformCommunications(filters: {
-  tenantId?: string;
-  type?: PlatformCommunicationEvent["type"];
-  limit?: number;
-} = {}) {
+export async function listPlatformCommunications(
+  filters: { tenantId?: string; type?: PlatformCommunicationEvent["type"]; limit?: number } = {},
+) {
   const params = new URLSearchParams();
   if (filters.tenantId) {
     params.set("tenantId", filters.tenantId);

@@ -369,7 +369,7 @@ test.describe("GiroMesa demo experience", () => {
 
     await page.goto("/login", { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: /^Restaurante/ }).click();
-    await expect(page.getByRole("heading", { name: "Entre no painel da operacao." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Entre no painel da operação." })).toBeVisible();
     await expect(page.getByLabel("E-mail")).toHaveValue("admin@bar-aurora-demo.local");
     await page.getByTestId("login-submit").click();
     await expect(page).toHaveURL(/\/app/);

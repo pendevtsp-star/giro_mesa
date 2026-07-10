@@ -25,7 +25,9 @@ function createController() {
       requestId: "req-1",
       permissions: ["tenant:manage"],
     })),
-    googleAuthorizationUrl: vi.fn((input?: unknown) => `https://accounts.google.com/mock?${JSON.stringify(input ?? {})}`),
+    googleAuthorizationUrl: vi.fn(
+      (input?: unknown) => `https://accounts.google.com/mock?${JSON.stringify(input ?? {})}`,
+    ),
     googleFailureRedirect: vi.fn((reason: string) => `http://localhost:3002/login?oauth=${reason}`),
     completeGoogleLogin: vi.fn(async () => ({
       token: "token-123",

@@ -921,10 +921,7 @@ async function upsertDemo() {
     .select()
     .from(userRoles)
     .where(
-      and(
-        eq(userRoles.userId, ownerId),
-        eq(userRoles.roleId, roleByCode.get("owner")?.id ?? ""),
-      ),
+      and(eq(userRoles.userId, ownerId), eq(userRoles.roleId, roleByCode.get("owner")?.id ?? "")),
     )
     .limit(1);
 

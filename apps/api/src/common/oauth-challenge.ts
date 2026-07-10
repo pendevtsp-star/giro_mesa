@@ -47,7 +47,7 @@ export function verifyOauthChallenge(token: string | undefined) {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as
       | OauthChallengePayload
       | undefined;
-    if (!payload || payload.kind !== "google_mfa" || payload.exp < Date.now()) {
+    if (payload?.kind !== "google_mfa" || payload.exp < Date.now()) {
       return null;
     }
     return payload;

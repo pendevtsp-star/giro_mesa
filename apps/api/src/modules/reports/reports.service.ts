@@ -269,7 +269,9 @@ export class ReportsService {
       previousTotalCents > 0
         ? Number((((totalCents - previousTotalCents) / previousTotalCents) * 100).toFixed(1))
         : null;
-    const sessionsOpen = visibleCashSessionSummaries.filter((session) => session.status === "open").length;
+    const sessionsOpen = visibleCashSessionSummaries.filter(
+      (session) => session.status === "open",
+    ).length;
     const sessionsClosed = visibleCashSessionSummaries.filter(
       (session) => session.status === "closed",
     ).length;

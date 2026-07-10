@@ -15,7 +15,7 @@ const accessModes = {
   restaurant: {
     label: "Restaurante",
     eyebrow: "Bar Aurora Demo",
-    title: "Entre no painel da operacao.",
+    title: "Entre no painel da operação.",
     description: "Use o ambiente demo para navegar por salao, PDV, cozinha, estoque e caixa.",
     email: "admin@bar-aurora-demo.local",
     password: "Demo@12345",
@@ -186,7 +186,7 @@ function LoginPageContent() {
                 onClick={() => selectAccessMode(mode)}
               >
                 <strong>{accessModes[mode].label}</strong>
-                <span>{mode === "platform" ? "Backoffice SaaS" : "Operacao do cliente"}</span>
+                <span>{mode === "platform" ? "Backoffice SaaS" : "Operação do cliente"}</span>
               </button>
             ))}
           </fieldset>
@@ -247,7 +247,7 @@ function LoginPageContent() {
               ? "Carregando acesso..."
               : status === "loading"
                 ? "Entrando..."
-              : "Entrar no painel"}{" "}
+                : "Entrar no painel"}{" "}
             <ArrowRight size={18} />
           </button>
           <a

@@ -4,9 +4,9 @@ import {
   ChefHat,
   ClipboardList,
   CreditCard,
-  MessageSquareMore,
   LifeBuoy,
   MapPinned,
+  MessageSquareMore,
   Printer,
   QrCode,
   ShieldCheck,
@@ -227,7 +227,15 @@ export default function ManualPage() {
       <section className="manual-grid">
         {implementationPath.map((step, index) => (
           <article className="manual-section" key={step.title}>
-            {index === 0 ? <MapPinned size={22} /> : index === 1 ? <Users size={22} /> : index === 2 ? <TimerReset size={22} /> : <BadgeCheck size={22} />}
+            {index === 0 ? (
+              <MapPinned size={22} />
+            ) : index === 1 ? (
+              <Users size={22} />
+            ) : index === 2 ? (
+              <TimerReset size={22} />
+            ) : (
+              <BadgeCheck size={22} />
+            )}
             <h2>{step.title}</h2>
             <p>{step.text}</p>
           </article>

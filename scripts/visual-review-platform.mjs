@@ -59,15 +59,21 @@ for (const [name, path] of pages) {
     url: page.url(),
     screenshot: file,
     title: await page.title(),
-    heading: await page.locator("h1").first().textContent().catch(() => null),
+    heading: await page
+      .locator("h1")
+      .first()
+      .textContent()
+      .catch(() => null),
   });
 }
 
-const tenantLinks = await page.locator('a[href^="/platform/"]').evaluateAll((elements) =>
-  elements
-    .map((element) => element.getAttribute("href"))
-    .filter((href) => href && href !== "/platform" && href !== "/platform/support"),
-);
+const tenantLinks = await page
+  .locator('a[href^="/platform/"]')
+  .evaluateAll((elements) =>
+    elements
+      .map((element) => element.getAttribute("href"))
+      .filter((href) => href && href !== "/platform" && href !== "/platform/support"),
+  );
 
 if (tenantLinks[0]) {
   await page.goto(tenantLinks[0], { waitUntil: "networkidle" });
@@ -79,7 +85,11 @@ if (tenantLinks[0]) {
     url: page.url(),
     screenshot: file,
     title: await page.title(),
-    heading: await page.locator("h1").first().textContent().catch(() => null),
+    heading: await page
+      .locator("h1")
+      .first()
+      .textContent()
+      .catch(() => null),
   });
 }
 

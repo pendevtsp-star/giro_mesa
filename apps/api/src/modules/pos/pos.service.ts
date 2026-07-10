@@ -37,7 +37,11 @@ import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 import { FiscalService } from "../fiscal/fiscal.service";
 import { createPrintProvider } from "../printing/print-provider";
-import { renderBillPreview, renderCashSummary, renderPaymentReceipt } from "../printing/print-renderer";
+import {
+  renderBillPreview,
+  renderCashSummary,
+  renderPaymentReceipt,
+} from "../printing/print-renderer";
 
 type OpenOrderInput = {
   channel: "counter" | "table" | "tab" | "delivery" | "qr";
@@ -1438,7 +1442,8 @@ export class PosService {
       throw new BadRequestException("Close or settle open orders before closing the cash session");
     }
 
-    const nextStatus = input.countedAmountCents === session.expectedAmountCents ? "closed" : "disputed";
+    const nextStatus =
+      input.countedAmountCents === session.expectedAmountCents ? "closed" : "disputed";
     stateMachines.assertCashSessionTransition(session.status, nextStatus);
     const differenceCents = input.countedAmountCents - session.expectedAmountCents;
 

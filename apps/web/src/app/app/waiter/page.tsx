@@ -27,8 +27,8 @@ import {
   listProducts,
   listTables,
   type OpenOrderResponse,
-  openOrder,
   type OrderItemResponse,
+  openOrder,
   type Product,
   registerManualPayment,
   sendOrderToKitchen,
@@ -137,7 +137,7 @@ export default function WaiterPage() {
       title: "Painel do garçom pronto",
       detail: "Fluxo preparado para abrir mesa, lançar itens, disparar KDS e receber.",
       tone: "neutral",
-      createdAt: new Date().toISOString(),
+      createdAt: "2026-01-01T12:00:00.000Z",
     },
   ]);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
@@ -218,7 +218,8 @@ export default function WaiterPage() {
     if (order.status === "sent_to_kitchen") {
       return {
         title: "Acompanhar consumo e preparar fechamento",
-        detail: "O pedido saiu do salão. Priorize mesa pedindo pré-conta ou balcão pronto para receber.",
+        detail:
+          "O pedido saiu do salão. Priorize mesa pedindo pré-conta ou balcão pronto para receber.",
         tone: "good" as const,
       };
     }
@@ -307,7 +308,10 @@ export default function WaiterPage() {
       setOrder(opened);
       setItems([]);
       pushActionLog({
-        title: serviceMode === "counter" ? "Venda de balcao aberta" : `Conta aberta em ${activeTable?.code ?? "mesa"}`,
+        title:
+          serviceMode === "counter"
+            ? "Venda de balcao aberta"
+            : `Conta aberta em ${activeTable?.code ?? "mesa"}`,
         detail:
           serviceMode === "counter"
             ? `${peopleCount} atendimento(s) iniciados no balcao.`
@@ -486,7 +490,10 @@ export default function WaiterPage() {
           <div className="platform-toolbar">
             <label className="platform-search">
               Filtro
-              <select value={tableFilter} onChange={(event) => setTableFilter(event.target.value as TableFilter)}>
+              <select
+                value={tableFilter}
+                onChange={(event) => setTableFilter(event.target.value as TableFilter)}
+              >
                 <option value="all">Todas</option>
                 <option value="free">Livres</option>
                 <option value="occupied">Em atendimento</option>
@@ -629,7 +636,9 @@ export default function WaiterPage() {
           </div>
           <div className="status-row rich">
             <div>
-              <strong>{serviceMode === "counter" ? "Balcao" : (selectedTable?.code ?? "Mesa")}</strong>
+              <strong>
+                {serviceMode === "counter" ? "Balcao" : (selectedTable?.code ?? "Mesa")}
+              </strong>
               <span>
                 {peopleCount} pessoa(s) · {serviceNote.trim() || "sem observacao operacional"}
               </span>
@@ -641,7 +650,9 @@ export default function WaiterPage() {
               <strong>{nextAction.title}</strong>
               <span>{nextAction.detail}</span>
             </div>
-            <span className={`gm-badge gm-badge-${nextAction.tone === "good" ? "good" : nextAction.tone === "warn" ? "warn" : "info"}`}>
+            <span
+              className={`gm-badge gm-badge-${nextAction.tone === "good" ? "good" : nextAction.tone === "warn" ? "warn" : "info"}`}
+            >
               proximo
             </span>
           </div>
@@ -692,7 +703,12 @@ export default function WaiterPage() {
                   <strong>{entry.title}</strong>
                   <span>{entry.detail}</span>
                 </div>
-                <small>{new Date(entry.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small>
+                <small>
+                  {new Date(entry.createdAt).toLocaleTimeString("pt-BR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </small>
               </div>
             ))}
           </div>

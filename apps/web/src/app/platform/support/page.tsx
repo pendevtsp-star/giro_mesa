@@ -13,13 +13,17 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  formatMoney,
   type ApiError,
+  formatMoney,
   listPlatformTenants,
   type PlatformTenant,
 } from "../../../lib/giromesa-api";
 
 type SupportFilter = "all" | "queued" | "in_progress" | "waiting_customer" | "resolved";
+
+const demoNow = "2026-01-01T12:00:00.000Z";
+const demoPeriodEnd = "2026-01-03T12:00:00.000Z";
+const demoFollowUp = "2026-01-02T12:00:00.000Z";
 
 const demoTenants: PlatformTenant[] = [
   {
@@ -28,12 +32,12 @@ const demoTenants: PlatformTenant[] = [
     slug: "bar-aurora-demo",
     document: null,
     status: "active",
-    createdAt: new Date().toISOString(),
+    createdAt: demoNow,
     planCode: "professional",
     planName: "Professional",
     priceCents: 29900,
     subscriptionStatus: "active",
-    currentPeriodEndsAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    currentPeriodEndsAt: demoPeriodEnd,
     branchCount: 1,
     userCount: 6,
     health: 92,
@@ -50,7 +54,7 @@ const demoTenants: PlatformTenant[] = [
       priority: "high",
       status: "in_progress",
       relationshipOwnerName: "Marina Costa",
-      nextFollowUpAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      nextFollowUpAt: demoFollowUp,
       slaTier: "priority",
       queueLabel: "Follow-up amanha",
       alertType: "trial_ending",

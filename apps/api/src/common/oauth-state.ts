@@ -54,7 +54,7 @@ export function verifyOauthState(state: string | undefined) {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as
       | OauthStatePayload
       | undefined;
-    if (!payload || payload.provider !== "google" || payload.exp < Date.now()) {
+    if (payload?.provider !== "google" || payload.exp < Date.now()) {
       return null;
     }
     return payload;

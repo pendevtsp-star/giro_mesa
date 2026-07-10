@@ -3596,7 +3596,12 @@ button {
   }
 
   .branding-page-header h1 {
-    font-size: clamp(2rem, 11vw, 2.8rem);
+    font-size: clamp(2rem, 9vw, 2.55rem);
+  }
+
+  .branding-page-header {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .branding-settings-layout {

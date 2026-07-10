@@ -59,7 +59,9 @@ function renderMetadata(items: DocumentMetadataItem[]) {
 
   return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:24px 0 0;">${items
     .map(
-      (item) => `<div style="padding:14px 16px;border:1px solid #dce4df;border-radius:14px;background:#f8faf8;">
+      (
+        item,
+      ) => `<div style="padding:14px 16px;border:1px solid #dce4df;border-radius:14px;background:#f8faf8;">
         <div style="font-size:11px;line-height:1.3;text-transform:uppercase;letter-spacing:0.08em;color:#6b7772;">${escapeHtml(item.label)}</div>
         <div style="margin-top:6px;font-size:14px;line-height:1.45;color:#14201d;font-weight:700;">${escapeHtml(item.value)}</div>
       </div>`,
@@ -74,7 +76,9 @@ function renderMetrics(metrics: DocumentMetric[]) {
 
   return `<section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:28px 0;">${metrics
     .map(
-      (metric) => `<article style="padding:16px;border-radius:16px;border:1px solid #dce4df;background:#ffffff;box-shadow:0 12px 30px rgba(20,32,29,0.06);">
+      (
+        metric,
+      ) => `<article style="padding:16px;border-radius:16px;border:1px solid #dce4df;background:#ffffff;box-shadow:0 12px 30px rgba(20,32,29,0.06);">
         <div style="font-size:12px;line-height:1.3;color:#6b7772;">${escapeHtml(metric.label)}</div>
         <strong style="display:block;margin-top:8px;font-size:22px;line-height:1.1;color:#14201d;">${escapeHtml(metric.value)}</strong>
       </article>`,
@@ -132,8 +136,7 @@ export function renderBrandedPrintDocument(input: {
   const metadata = input.metadata ?? [];
   const metrics = input.metrics ?? [];
   const footerNote =
-    input.footerNote ??
-    `Documento emitido por GiroMesa para ${input.branding.displayName}.`;
+    input.footerNote ?? `Documento emitido por GiroMesa para ${input.branding.displayName}.`;
 
   return `<!DOCTYPE html>
   <html lang="pt-BR">

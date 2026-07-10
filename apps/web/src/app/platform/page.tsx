@@ -22,12 +22,12 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   type ApiError,
-  type PlatformCommercialSummary,
-  type PlatformCommunicationEvent,
   type PlatformTenant as ApiPlatformTenant,
   createPlatformTenant,
   getPlatformSummary,
   listPlatformTenants,
+  type PlatformCommercialSummary,
+  type PlatformCommunicationEvent,
   updatePlatformTenantStatus,
 } from "../../lib/giromesa-api";
 
@@ -177,7 +177,9 @@ export default function PlatformPage() {
     }, 0);
     const supportQueue = tenants.filter((tenant) => tenant.support?.status !== "resolved").length;
     const trialEnding = tenants.filter((tenant) => tenant.billingStatus === "trial_ending").length;
-    const followUpsDue = tenants.filter((tenant) => tenant.support?.alertType === "follow_up").length;
+    const followUpsDue = tenants.filter(
+      (tenant) => tenant.support?.alertType === "follow_up",
+    ).length;
     const highTouchAccounts = tenants.filter(
       (tenant) =>
         tenant.support?.priority === "high" ||
@@ -412,7 +414,17 @@ export default function PlatformPage() {
 
   function handleExportPlatformCsv() {
     const rows = [
-      ["tenant", "slug", "status", "plano", "mrr", "responsavel", "email", "health", "proxima_acao"],
+      [
+        "tenant",
+        "slug",
+        "status",
+        "plano",
+        "mrr",
+        "responsavel",
+        "email",
+        "health",
+        "proxima_acao",
+      ],
       ...filteredTenants.map((tenant) => [
         tenant.name,
         tenant.slug,
@@ -842,8 +854,8 @@ export default function PlatformPage() {
                 <div>
                   <strong>Alertas comerciais</strong>
                   <span>
-                    {metrics.trialEnding} trial(s) no fim, {pipelineMetrics.pastDue} inadimplente(s)
-                    {" "}e MRR em risco de {`R$ ${metrics.pastDueMrr.toLocaleString("pt-BR")}`}.
+                    {metrics.trialEnding} trial(s) no fim, {pipelineMetrics.pastDue} inadimplente(s){" "}
+                    e MRR em risco de {`R$ ${metrics.pastDueMrr.toLocaleString("pt-BR")}`}.
                   </span>
                 </div>
                 <a className="button ghost compact" href="/platform/support">
@@ -1027,7 +1039,10 @@ export default function PlatformPage() {
             <AlertTriangle size={22} />
             <div>
               <strong>VPS em validação</strong>
-              <p>Ambiente de testes ativo. Prioridade atual: UX, fluxos críticos, relatórios e hardening.</p>
+              <p>
+                Ambiente de testes ativo. Prioridade atual: UX, fluxos críticos, relatórios e
+                hardening.
+              </p>
             </div>
           </article>
         </section>

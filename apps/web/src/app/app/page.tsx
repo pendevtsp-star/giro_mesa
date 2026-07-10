@@ -41,8 +41,8 @@ import {
   type ClubWhiskyIntegrationConfig,
   cancelFiscalDocument,
   cancelQrOrderItem,
-  closeOrder,
   closeCashSession,
+  closeOrder,
   configureClubWhiskyIntegration,
   configurePrinterConnector,
   createCategory,
@@ -71,9 +71,9 @@ import {
   listInventoryAlerts,
   listInventorySummary,
   listInvitations,
-  listOrderPayments,
   listKdsStations,
   listKdsTickets,
+  listOrderPayments,
   listOutboxEvents,
   listPrinterDevices,
   listPrintJobs,
@@ -85,11 +85,11 @@ import {
   listTables,
   listUsers,
   type OpenOrderResponse,
-  type OrderPayment,
   type OrderItemResponse,
+  type OrderPayment,
   type OutboxEvent,
-  type PaymentResponse,
   openOrder,
+  type PaymentResponse,
   type PrinterConnectorConfig,
   type PrinterDevice,
   type PrintJob,
@@ -633,7 +633,8 @@ export default function AppDashboardPage() {
   const [ticketItems, setTicketItems] = useState<OrderItemResponse[]>([]);
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState<PaymentResponse | null>(null);
   const [orderPayments, setOrderPayments] = useState<OrderPayment[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<(typeof paymentMethodOptions)[number][0]>("pix_manual");
+  const [paymentMethod, setPaymentMethod] =
+    useState<(typeof paymentMethodOptions)[number][0]>("pix_manual");
   const [paymentAmountMode, setPaymentAmountMode] = useState<"remaining" | "half" | "custom">(
     "remaining",
   );
@@ -711,7 +712,8 @@ export default function AppDashboardPage() {
   const paidOrderTotalCents = orderPayments
     .filter((payment) => payment.status === "confirmed")
     .reduce((sum, payment) => sum + payment.amountCents, 0);
-  const effectiveOrderTotalCents = orderTotalCents > 0 ? orderTotalCents : currentOrder?.totalCents ?? 0;
+  const effectiveOrderTotalCents =
+    orderTotalCents > 0 ? orderTotalCents : (currentOrder?.totalCents ?? 0);
   const remainingOrderTotalCents = Math.max(0, effectiveOrderTotalCents - paidOrderTotalCents);
   const suggestedPaymentAmountCents =
     paymentAmountMode === "half"
@@ -2150,9 +2152,7 @@ export default function AppDashboardPage() {
                     <select
                       value={paymentAmountMode}
                       onChange={(event) =>
-                        setPaymentAmountMode(
-                          event.target.value as "remaining" | "half" | "custom",
-                        )
+                        setPaymentAmountMode(event.target.value as "remaining" | "half" | "custom")
                       }
                     >
                       <option value="remaining">Quitar saldo</option>
@@ -3480,9 +3480,7 @@ export default function AppDashboardPage() {
                 <span className="section-kicker">Caixa</span>
                 <h2>Conferencia do turno</h2>
               </div>
-              <Badge tone={cashReadiness.tone}>
-                {cashSummary?.session?.status ?? "demo"}
-              </Badge>
+              <Badge tone={cashReadiness.tone}>{cashSummary?.session?.status ?? "demo"}</Badge>
             </div>
             <div className="cash-readiness-card">
               <div>

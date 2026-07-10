@@ -237,7 +237,15 @@ export default function ReportsPage() {
     }
 
     void load();
-  }, [period, dateFrom, dateTo, cashSessionFilter, paymentMethodFilter, varianceFilter, cashSessionStatusFilter]);
+  }, [
+    period,
+    dateFrom,
+    dateTo,
+    cashSessionFilter,
+    paymentMethodFilter,
+    varianceFilter,
+    cashSessionStatusFilter,
+  ]);
 
   const paymentEntries = Object.entries(summary.payments.byMethod).sort((a, b) => b[1] - a[1]);
   const fiscalPending = fiscalDocs.filter(
@@ -473,7 +481,10 @@ export default function ReportsPage() {
       ],
       metrics: [
         { label: "Receita", value: formatMoney(summary.payments.totalCents) },
-        { label: "Ticket medio", value: formatMoney(summary.payments.averageTicketCents ?? avgTicket) },
+        {
+          label: "Ticket medio",
+          value: formatMoney(summary.payments.averageTicketCents ?? avgTicket),
+        },
         { label: "Margem", value: `${reportDre.operationalMarginPercent.toFixed(1)}%` },
         { label: "Fechamento", value: closeReadiness },
       ],
@@ -607,7 +618,9 @@ export default function ReportsPage() {
         <select
           aria-label="Filtrar por conferencia"
           value={varianceFilter}
-          onChange={(event) => setVarianceFilter(event.target.value as "all" | "divergent" | "balanced")}
+          onChange={(event) =>
+            setVarianceFilter(event.target.value as "all" | "divergent" | "balanced")
+          }
         >
           <option value="all">Todos os caixas</option>
           <option value="divergent">Somente divergentes</option>
@@ -793,17 +806,17 @@ export default function ReportsPage() {
           <div className="payment-bars">
             {filteredPaymentMix.length ? (
               filteredPaymentMix.map((entry) => (
-              <div className="payment-bar" key={entry.method}>
-                <div>
-                  <strong>{methodLabel(entry.method)}</strong>
-                  <span>
-                    {formatMoney(entry.totalCents)} - {entry.sharePercent}%
-                  </span>
+                <div className="payment-bar" key={entry.method}>
+                  <div>
+                    <strong>{methodLabel(entry.method)}</strong>
+                    <span>
+                      {formatMoney(entry.totalCents)} - {entry.sharePercent}%
+                    </span>
+                  </div>
+                  <i
+                    style={{ width: `${Math.max(8, (entry.totalCents / largestPayment) * 100)}%` }}
+                  />
                 </div>
-                <i
-                  style={{ width: `${Math.max(8, (entry.totalCents / largestPayment) * 100)}%` }}
-                />
-              </div>
               ))
             ) : (
               <p className="muted-copy">Nenhum metodo corresponde ao filtro atual.</p>

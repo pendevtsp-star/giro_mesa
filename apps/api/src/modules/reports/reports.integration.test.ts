@@ -268,7 +268,9 @@ runIntegration("ReportsService filters", () => {
       },
     );
 
-    const targetSessionId = allSessions.cashSessions?.find((session) => session.status === "closed")?.id;
+    const targetSessionId = allSessions.cashSessions?.find(
+      (session) => session.status === "closed",
+    )?.id;
     expect(targetSessionId).toBeTruthy();
 
     const report = await reportsService.financialReport(

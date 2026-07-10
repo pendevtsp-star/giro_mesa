@@ -42,7 +42,11 @@ for (const [name, path] of pages) {
     url: page.url(),
     screenshot: file,
     title: await page.title(),
-    heading: await page.locator("h1").first().textContent().catch(() => null),
+    heading: await page
+      .locator("h1")
+      .first()
+      .textContent()
+      .catch(() => null),
   });
 }
 

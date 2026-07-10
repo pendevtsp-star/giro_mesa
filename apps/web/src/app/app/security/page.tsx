@@ -4,9 +4,9 @@ import { ArrowLeft, KeyRound, Link2, ShieldCheck, ShieldEllipsis, Unlink2 } from
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import {
-  apiBaseUrl,
   ApiError,
   type AuditEvent,
+  apiBaseUrl,
   changePassword,
   configureMfa,
   getSession,
@@ -289,7 +289,9 @@ export default function SecurityPage() {
           </div>
           <div className="team-form stacked">
             <div className="team-security-card">
-              <strong>{googleAccount ? "Conta Google vinculada" : "Conta Google ainda nao vinculada"}</strong>
+              <strong>
+                {googleAccount ? "Conta Google vinculada" : "Conta Google ainda nao vinculada"}
+              </strong>
               <span>
                 {googleAccount?.email
                   ? googleAccount.email

@@ -1,4 +1,4 @@
-import { readFile, access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 
 const requiredFiles = [
   "docs/SECURITY.md",

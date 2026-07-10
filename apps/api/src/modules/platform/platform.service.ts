@@ -10,7 +10,7 @@ import {
   userRoles,
   users,
 } from "@giromesa/db";
-import { renderBrandedEmail, type DocumentBranding, type TenantContext } from "@giromesa/domain";
+import { type DocumentBranding, renderBrandedEmail, type TenantContext } from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, like, sql } from "drizzle-orm";
 import { createEmailProvider } from "../../common/email-provider";
@@ -187,10 +187,13 @@ export class PlatformService {
       return typeof nextFollowUpAt === "string" && new Date(nextFollowUpAt).getTime() < now;
     }).length;
     const trialsWithoutOwnerCount = tenantRows.filter(
-      (tenant) => tenant.status === "trial" && !(tenant.support?.relationshipOwnerName ?? "").trim(),
+      (tenant) =>
+        tenant.status === "trial" && !(tenant.support?.relationshipOwnerName ?? "").trim(),
     ).length;
     const staleTrials7dCount = tenantRows.filter(
-      (tenant) => tenant.status === "trial" && now - new Date(tenant.createdAt).getTime() > 7 * 24 * 60 * 60 * 1000,
+      (tenant) =>
+        tenant.status === "trial" &&
+        now - new Date(tenant.createdAt).getTime() > 7 * 24 * 60 * 60 * 1000,
     ).length;
     const highTouchAccounts = tenantRows.filter(
       (tenant) =>
@@ -1070,10 +1073,7 @@ export class PlatformService {
   }
 }
 
-function renderPlatformInviteEmail(input: {
-  branding: DocumentBranding;
-  actionUrl: string;
-}) {
+function renderPlatformInviteEmail(input: { branding: DocumentBranding; actionUrl: string }) {
   return renderBrandedEmail({
     branding: input.branding,
     title: "Seu ambiente foi criado",

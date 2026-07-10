@@ -1,3 +1,4 @@
+import { loadEnv } from "@giromesa/config";
 import {
   auditLogs,
   invitations,
@@ -10,8 +11,7 @@ import {
   userRoles,
   users,
 } from "@giromesa/db";
-import { renderBrandedEmail, type DocumentBranding, type TenantContext } from "@giromesa/domain";
-import { loadEnv } from "@giromesa/config";
+import { type DocumentBranding, renderBrandedEmail, type TenantContext } from "@giromesa/domain";
 import {
   BadRequestException,
   Inject,
@@ -115,11 +115,7 @@ export type GoogleMfaCompleteInput = {
 export class AuthService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
-  googleAuthorizationUrl(input: {
-    returnTo?: string;
-    mode?: "login" | "link";
-    userId?: string;
-  }) {
+  googleAuthorizationUrl(input: { returnTo?: string; mode?: "login" | "link"; userId?: string }) {
     const env = loadEnv();
     if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) {
       throw new BadRequestException("Google OAuth is not configured");
@@ -194,7 +190,10 @@ export class AuthService {
     ) {
       throw new UnauthorizedException("Google account email is not verified");
     }
-    if (profile.sub !== verifiedIdToken.sub || profile.email.toLowerCase() !== verifiedIdToken.email.toLowerCase()) {
+    if (
+      profile.sub !== verifiedIdToken.sub ||
+      profile.email.toLowerCase() !== verifiedIdToken.email.toLowerCase()
+    ) {
       throw new UnauthorizedException("Google profile mismatch");
     }
 
@@ -1489,7 +1488,9 @@ export class AuthService {
   }
 
   private googleRedirectUri() {
-    return process.env.GOOGLE_OAUTH_REDIRECT_URI ?? `${loadEnv().API_URL}/api/v1/auth/google/callback`;
+    return (
+      process.env.GOOGLE_OAUTH_REDIRECT_URI ?? `${loadEnv().API_URL}/api/v1/auth/google/callback`
+    );
   }
 
   private async createSessionForUser(
@@ -1545,7 +1546,10 @@ export class AuthService {
       profile: Record<string, unknown>;
     },
   ) {
-    const existingByProviderUser = await this.findOauthAccount(input.provider, input.providerUserId);
+    const existingByProviderUser = await this.findOauthAccount(
+      input.provider,
+      input.providerUserId,
+    );
     if (existingByProviderUser && existingByProviderUser.userId !== user.id) {
       throw new UnauthorizedException("Google account is already linked to another user");
     }
@@ -1714,7 +1718,7 @@ function readEmailBranding(settings: Record<string, unknown> | undefined, fallba
 }
 
 function sanitizeReturnTo(returnTo: string | undefined) {
-  if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) {
+  if (!returnTo?.startsWith("/") || returnTo.startsWith("//")) {
     return undefined;
   }
   return returnTo;
