@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   type ApiError,
   type AuditEvent,
@@ -134,7 +135,7 @@ type OutboxStatusFilter = "all" | "pending" | "processed" | "failed";
 const nav = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/app", permissions: [] },
   { icon: Rocket, label: "Implantação", href: "/app/onboarding", permissions: ["tenant:manage"] },
-  { icon: ClipboardList, label: "PDV", href: "/app", permissions: ["pos:operate"] },
+  { icon: ClipboardList, label: "PDV", href: "/app?view=pos", permissions: ["pos:operate"] },
   { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app", permissions: ["pos:kds_send", "kds:manage"] },
   { icon: PackageOpen, label: "Estoque", href: "/app", permissions: ["inventory:manage"] },
@@ -620,6 +621,8 @@ const paymentMethodOptions = [
 ] as const;
 
 export default function AppDashboardPage() {
+  const searchParams = useSearchParams();
+  const isPosWorkspace = searchParams.get("view") === "pos";
   const [status, setStatus] = useState<AppStatus>("loading");
   const [session, setSession] = useState<TenantSession | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1985,6 +1988,7 @@ export default function AppDashboardPage() {
       data-testid="demo-dashboard"
       data-theme={activeBranding.themeMode}
       data-accent={activeBranding.accentPreset}
+      data-view={isPosWorkspace ? "pos" : "dashboard"}
     >
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="GiroMesa">
@@ -2005,7 +2009,11 @@ export default function AppDashboardPage() {
         </div>
         <nav aria-label="Modulos">
           {visibleNav.map(({ icon: Icon, label, href }, index) => (
-            <a className={index === 0 ? "active" : ""} href={href} key={label}>
+            <a
+              className={(isPosWorkspace ? href.includes("view=pos") : index === 0) ? "active" : ""}
+              href={href}
+              key={label}
+            >
               <Icon size={18} />
               {label}
             </a>
@@ -2029,23 +2037,21 @@ export default function AppDashboardPage() {
             </span>
             <div>
               <span className="section-kicker">Unidade Centro</span>
-              <h1>Turno jantar</h1>
-              <p>{activeBranding.displayName} - operacao em tempo real com caixa aberto.</p>
+              <h1>{isPosWorkspace ? "PDV do turno" : "Visão do turno"}</h1>
+              <p>
+                {isPosWorkspace
+                  ? "Atendimento rápido, pedido, produção e recebimento em uma única superfície."
+                  : `${activeBranding.displayName} · gestão em tempo real, sem misturar a operação de caixa.`}
+              </p>
             </div>
           </div>
           <div className="toolbar">
             <a className="button secondary" href="/login">
               <Bell size={18} /> {status === "ready" ? "Sessao ativa" : "Entrar demo"}
             </a>
-            <button
-              className="button primary"
-              type="button"
-              data-testid="open-pos"
-              onClick={handleOpenOrder}
-              disabled={isBusy}
-            >
+            <a className="button primary" href="/app?view=pos" data-testid="open-pos">
               <BadgeDollarSign size={18} /> Abrir PDV
-            </button>
+            </a>
           </div>
         </header>
 
@@ -2054,7 +2060,7 @@ export default function AppDashboardPage() {
           <span>{actionStatus}</span>
         </section>
 
-        <section className="profile-action-strip" aria-label="Atalhos por perfil">
+        {!isPosWorkspace ? <section className="profile-action-strip" aria-label="Atalhos por perfil">
           <div>
             <span className="section-kicker">{operatorProfile.kicker}</span>
             <strong>{operatorProfile.title}</strong>
@@ -2067,9 +2073,9 @@ export default function AppDashboardPage() {
               </a>
             ))}
           </div>
-        </section>
+        </section> : null}
 
-        <section className="metrics compact">
+        <section className={isPosWorkspace ? "metrics compact" : "metrics compact dashboard-metrics"}>
           {metrics.map(([label, value, hint], index) => (
             <article className="metric" key={label}>
               <span>{label}</span>
@@ -2079,7 +2085,30 @@ export default function AppDashboardPage() {
           ))}
         </section>
 
-        <section className="ops-grid">
+        {!isPosWorkspace ? (
+          <section className="dashboard-command-center" aria-label="Prioridades do turno">
+            <article className="dashboard-focus-card">
+              <span className="section-kicker">Atendimento</span>
+              <strong>{activeOrderCount} pedido(s) em andamento</strong>
+              <p>Abra o PDV para atender mesas, balcão e pagamentos sem distrair a gestão.</p>
+              <a className="button primary compact" href="/app?view=pos">Ir para o PDV <BadgeDollarSign size={15} /></a>
+            </article>
+            <article className="dashboard-focus-card">
+              <span className="section-kicker">Produção</span>
+              <strong>{tickets.length} ticket(s) em acompanhamento</strong>
+              <p>{tickets.length ? "Acompanhe cozinha e bar antes de criar novo gargalo." : "Nenhuma fila crítica no KDS agora."}</p>
+              <a className="button secondary compact" href="/app/waiter">Acompanhar salão</a>
+            </article>
+            <article className="dashboard-focus-card">
+              <span className="section-kicker">Gestão</span>
+              <strong>{inventoryAlerts.length} alerta(s) de estoque</strong>
+              <p>Relatórios, caixa e pendências administrativas ficam disponíveis sem poluir o turno.</p>
+              <a className="button secondary compact" href="/app/reports">Ver relatórios</a>
+            </article>
+          </section>
+        ) : null}
+
+        {isPosWorkspace ? <section className="ops-grid">
           <article className="panel pos-panel">
             <div className="panel-title">
               <div>
@@ -3852,7 +3881,7 @@ export default function AppDashboardPage() {
               ))}
             </div>
           </article>
-        </section>
+        </section> : null}
 
         <a className="floating-qr" href={`/q/${selectedTable?.code ?? "M03"}`}>
           <QrCode size={18} />

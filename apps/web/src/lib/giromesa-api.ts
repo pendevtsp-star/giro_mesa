@@ -392,6 +392,23 @@ export type FinancialReport = {
   };
 };
 
+export type ProductSalesReport = {
+  branchId: string;
+  period: FinancialReport["period"];
+  dateFrom: string;
+  dateTo: string | null;
+  totalCents: number;
+  products: Array<{
+    productId: string;
+    name: string;
+    quantity: number;
+    revenueCents: number;
+    averageUnitCents: number;
+    orderCount: number;
+    sharePercent: number;
+  }>;
+};
+
 export type PlatformTenant = {
   id: string;
   name: string;
@@ -1274,6 +1291,20 @@ export function getFinancialReport(input: {
   }
   const query = params.size > 0 ? `?${params.toString()}` : "";
   return apiRequest<FinancialReport>(`/api/v1/reports/financial${query}`);
+}
+
+export function getProductSalesReport(input: {
+  branchId?: string;
+  period?: FinancialReport["period"];
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const params = new URLSearchParams();
+  if (input.branchId) params.set("branchId", input.branchId);
+  if (input.period) params.set("period", input.period);
+  if (input.dateFrom) params.set("dateFrom", input.dateFrom);
+  if (input.dateTo) params.set("dateTo", input.dateTo);
+  return apiRequest<ProductSalesReport>(`/api/v1/reports/products?${params.toString()}`);
 }
 
 export async function listFiscalDocuments(branchId?: string) {

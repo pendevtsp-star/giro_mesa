@@ -1,4 +1,4 @@
-import { cashSessions, orders, payments, users } from "@giromesa/db";
+import { cashSessions, orderItems, orders, payments, users } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
@@ -352,6 +352,54 @@ export class ReportsService {
               ? "attention"
               : "monitor",
       },
+    };
+  }
+
+  async productSalesReport(context: TenantContext, input: FinancialReportInput) {
+    const branchId = input.branchId ?? context.branchId;
+    if (!branchId) {
+      throw new BadRequestException("branchId is required");
+    }
+    const { from, to } = this.periodWindow(input);
+    const rows = await this.database.db
+      .select({
+        productId: orderItems.productId,
+        name: orderItems.nameSnapshot,
+        quantity: sql<string>`coalesce(sum(${orderItems.quantity}), 0)`,
+        revenueCents: sql<number>`coalesce(sum(${orderItems.totalCents}), 0)::int`,
+        averageUnitCents: sql<number>`coalesce(avg(${orderItems.unitPriceCents}), 0)::int`,
+        orderCount: sql<number>`count(distinct ${orders.id})::int`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .where(
+        and(
+          eq(orderItems.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          gte(orderItems.createdAt, from),
+          to ? lte(orderItems.createdAt, to) : sql`true`,
+          sql`${orderItems.status} <> 'canceled'`,
+        ),
+      )
+      .groupBy(orderItems.productId, orderItems.nameSnapshot)
+      .orderBy(sql`sum(${orderItems.totalCents}) desc`)
+      .limit(30);
+    const totalCents = rows.reduce((sum, row) => sum + Number(row.revenueCents), 0);
+    return {
+      branchId,
+      period: input.period,
+      dateFrom: from.toISOString(),
+      dateTo: to?.toISOString() ?? null,
+      totalCents,
+      products: rows.map((row) => ({
+        productId: row.productId,
+        name: row.name,
+        quantity: Number(row.quantity),
+        revenueCents: Number(row.revenueCents),
+        averageUnitCents: Number(row.averageUnitCents),
+        orderCount: Number(row.orderCount),
+        sharePercent: totalCents > 0 ? Number(((Number(row.revenueCents) / totalCents) * 100).toFixed(1)) : 0,
+      })),
     };
   }
 

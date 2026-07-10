@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, Palette, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, ImageUp, Palette, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   getTenantBranding,
@@ -47,7 +47,7 @@ export default function BrandingSettingsPage() {
       })
       .catch(() => {
         if (!ignore) {
-          setStatus("Não foi possível carregar a API. Exibindo exemplo visual.");
+          setStatus("Prévia ilustrativa disponível enquanto a identidade não é carregada.");
         }
       });
 
@@ -157,9 +157,13 @@ export default function BrandingSettingsPage() {
                 placeholder="https://..."
               />
             </label>
-            <label>
-              Upload seguro da logo
+            <label className="logo-upload-dropzone" htmlFor="tenant-logo-upload">
+              <ImageUp size={22} />
+              <span>Enviar logo</span>
+              <small>PNG, JPEG ou WebP · até 512 KB</small>
               <input
+                id="tenant-logo-upload"
+                className="visually-hidden"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 onChange={(event) => uploadLogo(event.target.files?.[0] ?? null)}

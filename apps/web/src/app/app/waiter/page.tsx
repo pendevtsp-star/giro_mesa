@@ -9,7 +9,6 @@ import {
   CreditCard,
   CupSoda,
   LogIn,
-  MonitorSmartphone,
   Plus,
   Search,
   Send,
@@ -423,23 +422,23 @@ export default function WaiterPage() {
         </div>
       </section>
 
-      <section className="metrics compact">
-        <article className="metric">
+      <section className="waiter-summary-strip" aria-label="Resumo do atendimento">
+        <article>
           <span>Mesas livres</span>
           <strong>{tableCounters.free}</strong>
           <small>Prontas para giro rapido</small>
         </article>
-        <article className="metric">
+        <article>
           <span>Em atendimento</span>
           <strong>{tableCounters.occupied}</strong>
           <small>Mesas com consumo ou preparo</small>
         </article>
-        <article className="metric">
+        <article>
           <span>Pagamento</span>
           <strong>{tableCounters.waitingPayment}</strong>
           <small>Prioridade de fechamento</small>
         </article>
-        <article className="metric">
+        <article>
           <span>Conta atual</span>
           <strong>{formatMoney(totalCents)}</strong>
           <small>{items.length} item(ns) na comanda</small>
@@ -458,10 +457,6 @@ export default function WaiterPage() {
         <a href="/app/reports">
           <CreditCard size={18} />
           <span>Resumo caixa</span>
-        </a>
-        <a href="/manual">
-          <MonitorSmartphone size={18} />
-          <span>Treino rápido</span>
         </a>
       </section>
 
@@ -692,11 +687,11 @@ export default function WaiterPage() {
             <Bell size={16} />
             <span>Acoes sensiveis continuam auditadas no backend.</span>
           </div>
-          <div className="waiter-activity-feed">
-            <div className="waiter-section-title">
+          <details className="waiter-activity-feed">
+            <summary className="waiter-section-title">
               <Sparkles size={16} />
               <strong>Ultimas acoes</strong>
-            </div>
+            </summary>
             {actionLog.slice(0, 5).map((entry) => (
               <div className="waiter-activity-item" key={entry.id}>
                 <div>
@@ -711,7 +706,7 @@ export default function WaiterPage() {
                 </small>
               </div>
             ))}
-          </div>
+          </details>
           {order?.status === "paid" ? (
             <div className="waiter-note danger">
               <AlertTriangle size={16} />

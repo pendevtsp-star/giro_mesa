@@ -197,11 +197,25 @@ export default function HomePage() {
         </dl>
       </section>
 
+      <section className="sales-implementation">
+        <div className="sales-section-heading">
+          <span className="section-kicker">Implantação sem improviso</span>
+          <h2>Uma casa preparada para rodar, não apenas para assistir uma demonstração.</h2>
+          <p>O GiroMesa organiza a entrada do cliente por etapas operacionais que a equipe consegue validar.</p>
+        </div>
+        <ol>
+          <li><strong>1. Configuração</strong><span>Unidade, cardápio, mesas, equipe e permissões.</span></li>
+          <li><strong>2. Treino assistido</strong><span>Garçom, cozinha, caixa e impressão em fluxo controlado.</span></li>
+          <li><strong>3. Primeiro turno</strong><span>Acompanhamento de pedidos, recebimentos e fechamento.</span></li>
+          <li><strong>4. Evolução</strong><span>Relatórios, estoque, integrações e novas unidades por fase.</span></li>
+        </ol>
+      </section>
+
       <section className="sales-cta">
         <div>
           <span className="section-kicker">Próximo passo</span>
           <h2>Veja o GiroMesa no ritmo de um estabelecimento.</h2>
-          <p>A demo usa um cenário operacional completo para você explorar antes da implantação.</p>
+          <p>A demo usa um cenário operacional completo. Entre, explore e veja o que a sua equipe vai operar.</p>
         </div>
         <a className="button primary" href="/app">
           Acessar demo <ArrowRight size={18} />

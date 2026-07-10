@@ -279,7 +279,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               <h2>Pedido da mesa</h2>
             </div>
             <a className="button secondary" href={`/m/${qr.tenant.slug}`}>
-              <ClipboardList size={17} /> Ver cardapio
+              <ClipboardList size={17} /> Cardápio completo
             </a>
           </div>
           <div className="qr-menu-list">
@@ -351,11 +351,16 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             <p>Solicitacao registrada para o painel do salao.</p>
           </div>
         </button>
-        <button className="qr-action" type="button" onClick={requestPreBill} disabled={isBusy}>
+        <button
+          className="qr-action"
+          type="button"
+          onClick={requestPreBill}
+          disabled={isBusy || cart.length === 0}
+        >
           <ReceiptText size={26} />
           <div>
             <h2>Pedir pré-conta</h2>
-            <p>O caixa recebe o pedido de fechamento da mesa.</p>
+            <p>{cart.length ? "O caixa recebe o pedido de fechamento da mesa." : "Adicione itens para solicitar a pré-conta."}</p>
           </div>
         </button>
         <button className="qr-action" type="button" onClick={openTableSummary} disabled={isBusy}>

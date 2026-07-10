@@ -20,6 +20,7 @@ import {
   formatMoney,
   getCashSessionSummary,
   getFinancialReport,
+  getProductSalesReport,
   getSession,
   getTenantBranding,
   type InventorySummaryItem,
@@ -27,6 +28,7 @@ import {
   listFiscalDocuments,
   listInventorySummary,
   type TenantBranding,
+  type ProductSalesReport,
 } from "../../../lib/giromesa-api";
 
 const demoSummary: CashSessionSummary = {
@@ -90,6 +92,7 @@ function reportPeriodLabel(period: "today" | "week" | "month" | "shift" | "custo
 }
 
 export default function ReportsPage() {
+  const [reportView, setReportView] = useState<"overview" | "products">("overview");
   const [summary, setSummary] = useState<CashSessionSummary>(demoSummary);
   const [fiscalDocs, setFiscalDocs] = useState<FiscalDocument[]>([]);
   const [inventory, setInventory] = useState<InventorySummaryItem[]>([]);
@@ -149,6 +152,14 @@ export default function ReportsPage() {
   const [closeReadiness, setCloseReadiness] = useState<"ready" | "monitor" | "attention">(
     "monitor",
   );
+  const [productSales, setProductSales] = useState<ProductSalesReport>({
+    branchId: "demo",
+    period: "today",
+    dateFrom: new Date().toISOString(),
+    dateTo: null,
+    totalCents: 0,
+    products: [],
+  });
 
   useEffect(() => {
     async function load() {
@@ -180,6 +191,7 @@ export default function ReportsPage() {
           inventoryItems,
           auditEvents,
           tenantBranding,
+          productReport,
         ] = await Promise.all([
           getCashSessionSummary(session.branchId),
           getFinancialReport(reportInput),
@@ -187,6 +199,16 @@ export default function ReportsPage() {
           listInventorySummary(session.branchId),
           listAuditEvents(),
           getTenantBranding(),
+          getProductSalesReport({
+            branchId: session.branchId,
+            period,
+            ...(period === "custom"
+              ? {
+                  dateFrom: new Date(`${dateFrom}T00:00:00`).toISOString(),
+                  dateTo: new Date(`${dateTo}T23:59:59`).toISOString(),
+                }
+              : {}),
+          }),
         ]);
         setSummary({
           ...cashSummary,
@@ -198,6 +220,7 @@ export default function ReportsPage() {
           operationalMarginPercent: financialReport.dre.operationalMarginPercent ?? 0,
         });
         setBranding(tenantBranding);
+        setProductSales(productReport);
         setFinancialCommercial(
           financialReport.commercial ?? {
             averageTicketCents: financialReport.payments.averageTicketCents ?? 0,
@@ -643,6 +666,23 @@ export default function ReportsPage() {
         </select>
       </section>
 
+      <section className="report-view-switch" aria-label="Modo de relatório">
+        <button
+          className={reportView === "overview" ? "filter selected" : "filter"}
+          type="button"
+          onClick={() => setReportView("overview")}
+        >
+          Visão executiva
+        </button>
+        <button
+          className={reportView === "products" ? "filter selected" : "filter"}
+          type="button"
+          onClick={() => setReportView("products")}
+        >
+          Produtos e vendas
+        </button>
+      </section>
+
       <section className="report-status">
         <span className={`gm-badge ${status === "online" ? "gm-badge-good" : "gm-badge-warn"}`}>
           {status}
@@ -657,6 +697,7 @@ export default function ReportsPage() {
         </span>
       </section>
 
+      {reportView === "overview" ? <>
       <section className="report-grid">
         <article className="report-card emphasis">
           <span>Receita recebida</span>
@@ -979,6 +1020,30 @@ export default function ReportsPage() {
           </div>
         </article>
       </section>
+      </> : <section className="product-analytics panel">
+        <div className="panel-title">
+          <BarChart3 size={19} />
+          <div>
+            <h2>Desempenho por produto</h2>
+            <p>Produtos vendidos, faturamento, participação no período e presença em comandas.</p>
+          </div>
+          <strong>{formatMoney(productSales.totalCents)}</strong>
+        </div>
+        <div className="product-analytics-head">
+          <span>Produto</span><span>Unidades</span><span>Comandas</span><span>Receita</span><span>Participação</span>
+        </div>
+        <div className="product-analytics-list">
+          {productSales.products.length ? productSales.products.map((product) => (
+            <div className="product-analytics-row" key={product.productId}>
+              <strong>{product.name}</strong>
+              <span>{product.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</span>
+              <span>{product.orderCount}</span>
+              <span>{formatMoney(product.revenueCents)}</span>
+              <span><i style={{ width: `${Math.max(4, product.sharePercent)}%` }} />{product.sharePercent}%</span>
+            </div>
+          )) : <p className="muted-copy">Ainda não há itens vendidos no recorte escolhido.</p>}
+        </div>
+      </section>}
     </main>
   );
 }

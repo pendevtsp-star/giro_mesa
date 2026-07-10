@@ -36,4 +36,11 @@ export class ReportsController {
     requirePermission(context, "reports:read");
     return this.reportsService.financialReport(context, financialReportSchema.parse(query));
   }
+
+  @Get("products")
+  async products(@Headers() headers: HeaderRecord, @Query() query: Record<string, string>) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "reports:read");
+    return this.reportsService.productSalesReport(context, financialReportSchema.parse(query));
+  }
 }
