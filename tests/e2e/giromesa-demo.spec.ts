@@ -12,7 +12,10 @@ test.describe("GiroMesa demo experience", () => {
 
     await page.getByRole("link", { name: /Entrar na demo guiada/ }).click();
     await expect(page.getByTestId("demo-dashboard")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Turno jantar" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Visão do turno" })).toBeVisible();
+
+    await page.goto("/app?view=pos", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "PDV do turno" })).toBeVisible();
     await expect(page.getByTestId("pos-open-table")).toBeVisible();
     await expect(page.getByTestId("pos-add-item")).toBeVisible();
     await expect(page.getByTestId("kds-ticket")).toHaveCount(4);
