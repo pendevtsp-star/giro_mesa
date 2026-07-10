@@ -398,7 +398,8 @@ export class ReportsService {
         revenueCents: Number(row.revenueCents),
         averageUnitCents: Number(row.averageUnitCents),
         orderCount: Number(row.orderCount),
-        sharePercent: totalCents > 0 ? Number(((Number(row.revenueCents) / totalCents) * 100).toFixed(1)) : 0,
+        sharePercent:
+          totalCents > 0 ? Number(((Number(row.revenueCents) / totalCents) * 100).toFixed(1)) : 0,
       })),
     };
   }

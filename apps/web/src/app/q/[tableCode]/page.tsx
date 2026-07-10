@@ -360,7 +360,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <ReceiptText size={26} />
           <div>
             <h2>Pedir pré-conta</h2>
-            <p>{cart.length ? "O caixa recebe o pedido de fechamento da mesa." : "Adicione itens para solicitar a pré-conta."}</p>
+            <p>
+              {cart.length
+                ? "O caixa recebe o pedido de fechamento da mesa."
+                : "Adicione itens para solicitar a pré-conta."}
+            </p>
           </div>
         </button>
         <button className="qr-action" type="button" onClick={openTableSummary} disabled={isBusy}>

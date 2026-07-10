@@ -697,353 +697,377 @@ export default function ReportsPage() {
         </span>
       </section>
 
-      {reportView === "overview" ? <>
-      <section className="report-grid">
-        <article className="report-card emphasis">
-          <span>Receita recebida</span>
-          <strong>{formatMoney(summary.payments.totalCents)}</strong>
-          <small>{summary.payments.count} pagamentos registrados</small>
-        </article>
-        <article className="report-card">
-          <span>Ticket medio</span>
-          <strong>{formatMoney(summary.payments.averageTicketCents ?? avgTicket)}</strong>
-          <small>Baseado nos pagamentos do turno</small>
-        </article>
-        <article className="report-card">
-          <span>Pedidos abertos</span>
-          <strong>{summary.openOrders.count}</strong>
-          <small>{formatMoney(summary.openOrders.totalCents)} ainda em consumo</small>
-        </article>
-        <article className="report-card">
-          <span>Caixa esperado</span>
-          <strong>{formatMoney(summary.session?.expectedAmountCents ?? 0)}</strong>
-          <small>Abertura + recebimentos manuais</small>
-        </article>
-        <article className="report-card">
-          <span>Margem estimada</span>
-          <strong>{reportDre.operationalMarginPercent.toFixed(1)}%</strong>
-          <small>{formatMoney(serviceMarginCents)} apos CMV inicial</small>
-        </article>
-        <article className="report-card">
-          <span>Comparativo</span>
-          <strong className={financialCommercial.deltaCents < 0 ? "danger-text" : ""}>
-            {financialCommercial.deltaPercent === null
-              ? "Base nova"
-              : `${financialCommercial.deltaPercent > 0 ? "+" : ""}${financialCommercial.deltaPercent.toFixed(1)}%`}
-          </strong>
-          <small>Versus periodo anterior equivalente</small>
-        </article>
-        <article className="report-card">
-          <span>Operador lider</span>
-          <strong>{topOperator?.operatorName ?? "Sem caixa"}</strong>
-          <small>
-            {topOperator
-              ? `${formatMoney(topOperator.paymentsTotalCents)} em ${topOperator.cashSessionCount} caixa(s)`
-              : "Sem sessoes no periodo"}
-          </small>
-        </article>
-        <article className="report-card">
-          <span>Conferencia de caixa</span>
-          <strong>{cashManagement.conferenceRatePercent.toFixed(1)}%</strong>
-          <small>
-            {cashManagement.balancedSessions}/{cashSessions.length || 0} caixas sem diferenca
-          </small>
-        </article>
-      </section>
-
-      <section className="report-layout">
-        <article className="panel report-comparison">
-          <div className="panel-title">
-            <AlertTriangle size={19} />
-            <div>
-              <h2>Radar executivo</h2>
-              <p>Os sinais que merecem decisao gerencial neste fechamento.</p>
-            </div>
-          </div>
-          <div className="status-list">
-            {executiveAlerts.map((item) => (
-              <div className="status-row rich" key={item}>
-                <div>
-                  <strong>Atencao operacional</strong>
-                  <span>{item}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel report-comparison">
-          <div className="panel-title">
-            <TrendingUp size={19} />
-            <div>
-              <h2>Comparativo de periodo</h2>
-              <p>Leitura rapida do ritmo financeiro contra a janela anterior.</p>
-            </div>
-          </div>
-          <div className="report-comparison-grid">
-            <div>
-              <span>Periodo atual</span>
+      {reportView === "overview" ? (
+        <>
+          <section className="report-grid">
+            <article className="report-card emphasis">
+              <span>Receita recebida</span>
               <strong>{formatMoney(summary.payments.totalCents)}</strong>
-              <small>{summary.payments.count} pagamentos</small>
-            </div>
-            <div>
-              <span>Periodo anterior</span>
-              <strong>{formatMoney(financialCommercial.previousTotalCents)}</strong>
-              <small>{financialCommercial.previousCount} pagamentos</small>
-            </div>
-            <div>
-              <span>Variacao</span>
+              <small>{summary.payments.count} pagamentos registrados</small>
+            </article>
+            <article className="report-card">
+              <span>Ticket medio</span>
+              <strong>{formatMoney(summary.payments.averageTicketCents ?? avgTicket)}</strong>
+              <small>Baseado nos pagamentos do turno</small>
+            </article>
+            <article className="report-card">
+              <span>Pedidos abertos</span>
+              <strong>{summary.openOrders.count}</strong>
+              <small>{formatMoney(summary.openOrders.totalCents)} ainda em consumo</small>
+            </article>
+            <article className="report-card">
+              <span>Caixa esperado</span>
+              <strong>{formatMoney(summary.session?.expectedAmountCents ?? 0)}</strong>
+              <small>Abertura + recebimentos manuais</small>
+            </article>
+            <article className="report-card">
+              <span>Margem estimada</span>
+              <strong>{reportDre.operationalMarginPercent.toFixed(1)}%</strong>
+              <small>{formatMoney(serviceMarginCents)} apos CMV inicial</small>
+            </article>
+            <article className="report-card">
+              <span>Comparativo</span>
               <strong className={financialCommercial.deltaCents < 0 ? "danger-text" : ""}>
-                {formatMoney(financialCommercial.deltaCents)}
-              </strong>
-              <small>
                 {financialCommercial.deltaPercent === null
-                  ? "Sem base anterior relevante"
+                  ? "Base nova"
                   : `${financialCommercial.deltaPercent > 0 ? "+" : ""}${financialCommercial.deltaPercent.toFixed(1)}%`}
+              </strong>
+              <small>Versus periodo anterior equivalente</small>
+            </article>
+            <article className="report-card">
+              <span>Operador lider</span>
+              <strong>{topOperator?.operatorName ?? "Sem caixa"}</strong>
+              <small>
+                {topOperator
+                  ? `${formatMoney(topOperator.paymentsTotalCents)} em ${topOperator.cashSessionCount} caixa(s)`
+                  : "Sem sessoes no periodo"}
               </small>
-            </div>
-          </div>
-        </article>
+            </article>
+            <article className="report-card">
+              <span>Conferencia de caixa</span>
+              <strong>{cashManagement.conferenceRatePercent.toFixed(1)}%</strong>
+              <small>
+                {cashManagement.balancedSessions}/{cashSessions.length || 0} caixas sem diferenca
+              </small>
+            </article>
+          </section>
 
-        <article className="panel">
-          <div className="panel-title">
-            <CreditCard size={19} />
-            <div>
-              <h2>Fechamento gerencial por caixa</h2>
-              <p>Leitura de divergencia, conferência e volume por sessoes.</p>
-            </div>
-          </div>
-          <div className="report-comparison-grid">
-            <div>
-              <span>Caixas fechados</span>
-              <strong>{cashManagement.sessionsClosed}</strong>
-              <small>{cashManagement.sessionsOpen} ainda aberto(s)</small>
-            </div>
-            <div>
-              <span>Divergencia total</span>
-              <strong className={cashManagement.totalDifferenceCents !== 0 ? "danger-text" : ""}>
-                {formatMoney(cashManagement.totalDifferenceCents)}
-              </strong>
-              <small>{cashManagement.divergentSessions} caixa(s) com diferenca</small>
-            </div>
-            <div>
-              <span>Diferenca media</span>
-              <strong className={cashManagement.averageDifferenceCents !== 0 ? "danger-text" : ""}>
-                {formatMoney(cashManagement.averageDifferenceCents)}
-              </strong>
-              <small>Por sessao no periodo</small>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-title">
-            <CreditCard size={19} />
-            <div>
-              <h2>Pagamentos por metodo</h2>
-              <p>Composicao do turno atual.</p>
-            </div>
-          </div>
-          <div className="payment-bars">
-            {filteredPaymentMix.length ? (
-              filteredPaymentMix.map((entry) => (
-                <div className="payment-bar" key={entry.method}>
-                  <div>
-                    <strong>{methodLabel(entry.method)}</strong>
-                    <span>
-                      {formatMoney(entry.totalCents)} - {entry.sharePercent}%
-                    </span>
-                  </div>
-                  <i
-                    style={{ width: `${Math.max(8, (entry.totalCents / largestPayment) * 100)}%` }}
-                  />
+          <section className="report-layout">
+            <article className="panel report-comparison">
+              <div className="panel-title">
+                <AlertTriangle size={19} />
+                <div>
+                  <h2>Radar executivo</h2>
+                  <p>Os sinais que merecem decisao gerencial neste fechamento.</p>
                 </div>
-              ))
-            ) : (
-              <p className="muted-copy">Nenhum metodo corresponde ao filtro atual.</p>
-            )}
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-title">
-            <TrendingUp size={19} />
-            <div>
-              <h2>DRE simples</h2>
-              <p>Leitura gerencial inicial, ainda sem contabilidade oficial.</p>
-            </div>
-            <span className="gm-badge gm-badge-info">
-              {reportDre.operationalMarginPercent.toFixed(1)}%
-            </span>
-          </div>
-          <div className="report-dre">
-            {dreRows.map(([label, value]) => (
-              <div key={label}>
-                <span>{label}</span>
-                <strong className={value < 0 ? "danger-text" : ""}>{formatMoney(value)}</strong>
               </div>
-            ))}
-          </div>
-        </article>
+              <div className="status-list">
+                {executiveAlerts.map((item) => (
+                  <div className="status-row rich" key={item}>
+                    <div>
+                      <strong>Atencao operacional</strong>
+                      <span>{item}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
 
-        <article className="panel">
-          <div className="panel-title">
-            <FileText size={19} />
-            <div>
-              <h2>Fiscal e estoque</h2>
-              <p>Pendencias que podem travar rotina administrativa.</p>
-            </div>
-          </div>
-          <div className="report-alerts">
-            <div>
-              <AlertTriangle size={18} />
-              <strong>{fiscalPending.length}</strong>
-              <span>notas/cupons pendentes</span>
-            </div>
-            <div>
-              <Activity size={18} />
-              <strong>{lowStock.length}</strong>
-              <span>itens abaixo do minimo</span>
-            </div>
-          </div>
-        </article>
+            <article className="panel report-comparison">
+              <div className="panel-title">
+                <TrendingUp size={19} />
+                <div>
+                  <h2>Comparativo de periodo</h2>
+                  <p>Leitura rapida do ritmo financeiro contra a janela anterior.</p>
+                </div>
+              </div>
+              <div className="report-comparison-grid">
+                <div>
+                  <span>Periodo atual</span>
+                  <strong>{formatMoney(summary.payments.totalCents)}</strong>
+                  <small>{summary.payments.count} pagamentos</small>
+                </div>
+                <div>
+                  <span>Periodo anterior</span>
+                  <strong>{formatMoney(financialCommercial.previousTotalCents)}</strong>
+                  <small>{financialCommercial.previousCount} pagamentos</small>
+                </div>
+                <div>
+                  <span>Variacao</span>
+                  <strong className={financialCommercial.deltaCents < 0 ? "danger-text" : ""}>
+                    {formatMoney(financialCommercial.deltaCents)}
+                  </strong>
+                  <small>
+                    {financialCommercial.deltaPercent === null
+                      ? "Sem base anterior relevante"
+                      : `${financialCommercial.deltaPercent > 0 ? "+" : ""}${financialCommercial.deltaPercent.toFixed(1)}%`}
+                  </small>
+                </div>
+              </div>
+            </article>
 
-        <article className="panel">
+            <article className="panel">
+              <div className="panel-title">
+                <CreditCard size={19} />
+                <div>
+                  <h2>Fechamento gerencial por caixa</h2>
+                  <p>Leitura de divergencia, conferência e volume por sessoes.</p>
+                </div>
+              </div>
+              <div className="report-comparison-grid">
+                <div>
+                  <span>Caixas fechados</span>
+                  <strong>{cashManagement.sessionsClosed}</strong>
+                  <small>{cashManagement.sessionsOpen} ainda aberto(s)</small>
+                </div>
+                <div>
+                  <span>Divergencia total</span>
+                  <strong
+                    className={cashManagement.totalDifferenceCents !== 0 ? "danger-text" : ""}
+                  >
+                    {formatMoney(cashManagement.totalDifferenceCents)}
+                  </strong>
+                  <small>{cashManagement.divergentSessions} caixa(s) com diferenca</small>
+                </div>
+                <div>
+                  <span>Diferenca media</span>
+                  <strong
+                    className={cashManagement.averageDifferenceCents !== 0 ? "danger-text" : ""}
+                  >
+                    {formatMoney(cashManagement.averageDifferenceCents)}
+                  </strong>
+                  <small>Por sessao no periodo</small>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-title">
+                <CreditCard size={19} />
+                <div>
+                  <h2>Pagamentos por metodo</h2>
+                  <p>Composicao do turno atual.</p>
+                </div>
+              </div>
+              <div className="payment-bars">
+                {filteredPaymentMix.length ? (
+                  filteredPaymentMix.map((entry) => (
+                    <div className="payment-bar" key={entry.method}>
+                      <div>
+                        <strong>{methodLabel(entry.method)}</strong>
+                        <span>
+                          {formatMoney(entry.totalCents)} - {entry.sharePercent}%
+                        </span>
+                      </div>
+                      <i
+                        style={{
+                          width: `${Math.max(8, (entry.totalCents / largestPayment) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted-copy">Nenhum metodo corresponde ao filtro atual.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-title">
+                <TrendingUp size={19} />
+                <div>
+                  <h2>DRE simples</h2>
+                  <p>Leitura gerencial inicial, ainda sem contabilidade oficial.</p>
+                </div>
+                <span className="gm-badge gm-badge-info">
+                  {reportDre.operationalMarginPercent.toFixed(1)}%
+                </span>
+              </div>
+              <div className="report-dre">
+                {dreRows.map(([label, value]) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <strong className={value < 0 ? "danger-text" : ""}>{formatMoney(value)}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-title">
+                <FileText size={19} />
+                <div>
+                  <h2>Fiscal e estoque</h2>
+                  <p>Pendencias que podem travar rotina administrativa.</p>
+                </div>
+              </div>
+              <div className="report-alerts">
+                <div>
+                  <AlertTriangle size={18} />
+                  <strong>{fiscalPending.length}</strong>
+                  <span>notas/cupons pendentes</span>
+                </div>
+                <div>
+                  <Activity size={18} />
+                  <strong>{lowStock.length}</strong>
+                  <span>itens abaixo do minimo</span>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-title">
+                <BarChart3 size={19} />
+                <div>
+                  <h2>Receita por canal</h2>
+                  <p>Quanto cada frente de venda puxou do faturamento.</p>
+                </div>
+              </div>
+              <div className="payment-bars">
+                {reportChannels.length ? (
+                  reportChannels.map((entry) => (
+                    <div className="payment-bar" key={entry.channel}>
+                      <div>
+                        <strong>{channelLabel(entry.channel)}</strong>
+                        <span>
+                          {formatMoney(entry.totalCents)} - {entry.sharePercent}%
+                        </span>
+                      </div>
+                      <i
+                        style={{
+                          width: `${Math.max(8, (entry.totalCents / largestChannelTotal) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted-copy">Ainda sem dados por canal neste periodo.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-title">
+                <Activity size={19} />
+                <div>
+                  <h2>Operadores e caixas</h2>
+                  <p>Quem puxou receita e como cada caixa performou no periodo.</p>
+                </div>
+              </div>
+              <div className="report-operator-grid">
+                <div className="report-operator-summary">
+                  {reportOperators.length ? (
+                    reportOperators.map((operator) => (
+                      <div className="status-row rich" key={operator.operatorId}>
+                        <div>
+                          <strong>{operator.operatorName}</strong>
+                          <span>
+                            {operator.cashSessionCount} caixa(s) - {operator.paymentsCount}{" "}
+                            pagamento(s)
+                          </span>
+                        </div>
+                        <small>{formatMoney(operator.paymentsTotalCents)}</small>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="muted-copy">Sem operadores consolidados neste periodo.</p>
+                  )}
+                </div>
+                <div className="report-cash-session-list">
+                  {visibleCashSessions.length ? (
+                    visibleCashSessions.map((session) => (
+                      <div className="status-row rich" key={session.id}>
+                        <div>
+                          <strong>{session.operatorName}</strong>
+                          <span>
+                            {session.status} - aberto em{" "}
+                            {new Date(session.openedAt).toLocaleString("pt-BR")}
+                          </span>
+                        </div>
+                        <small>
+                          {formatMoney(session.paymentsTotalCents)}
+                          {session.differenceCents !== null
+                            ? ` · dif ${formatMoney(session.differenceCents)}`
+                            : ""}
+                        </small>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="muted-copy">Nenhum caixa corresponde ao filtro atual.</p>
+                  )}
+                </div>
+              </div>
+            </article>
+
+            <article className="panel report-ledger">
+              <div className="panel-title">
+                <Activity size={19} />
+                <div>
+                  <h2>Ultimas movimentacoes</h2>
+                  <p>Eventos auditaveis ligados a caixa e operacao.</p>
+                </div>
+              </div>
+              <div className="audit-list">
+                {audit.length ? (
+                  audit.map((event) => (
+                    <div className="status-row rich" key={event.id}>
+                      <div>
+                        <strong>{event.action}</strong>
+                        <span>
+                          {event.entityType} - {event.userName ?? event.userEmail ?? "sistema"}
+                        </span>
+                      </div>
+                      <small>{new Date(event.createdAt).toLocaleString("pt-BR")}</small>
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted-copy">
+                    Sem eventos reais carregados. Entre no demo para ver auditoria.
+                  </p>
+                )}
+              </div>
+            </article>
+          </section>
+        </>
+      ) : (
+        <section className="product-analytics panel">
           <div className="panel-title">
             <BarChart3 size={19} />
             <div>
-              <h2>Receita por canal</h2>
-              <p>Quanto cada frente de venda puxou do faturamento.</p>
+              <h2>Desempenho por produto</h2>
+              <p>Produtos vendidos, faturamento, participação no período e presença em comandas.</p>
             </div>
+            <strong>{formatMoney(productSales.totalCents)}</strong>
           </div>
-          <div className="payment-bars">
-            {reportChannels.length ? (
-              reportChannels.map((entry) => (
-                <div className="payment-bar" key={entry.channel}>
-                  <div>
-                    <strong>{channelLabel(entry.channel)}</strong>
-                    <span>
-                      {formatMoney(entry.totalCents)} - {entry.sharePercent}%
-                    </span>
-                  </div>
-                  <i
-                    style={{
-                      width: `${Math.max(8, (entry.totalCents / largestChannelTotal) * 100)}%`,
-                    }}
-                  />
+          <div className="product-analytics-head">
+            <span>Produto</span>
+            <span>Unidades</span>
+            <span>Comandas</span>
+            <span>Receita</span>
+            <span>Participação</span>
+          </div>
+          <div className="product-analytics-list">
+            {productSales.products.length ? (
+              productSales.products.map((product) => (
+                <div className="product-analytics-row" key={product.productId}>
+                  <strong>{product.name}</strong>
+                  <span>
+                    {product.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}
+                  </span>
+                  <span>{product.orderCount}</span>
+                  <span>{formatMoney(product.revenueCents)}</span>
+                  <span>
+                    <i style={{ width: `${Math.max(4, product.sharePercent)}%` }} />
+                    {product.sharePercent}%
+                  </span>
                 </div>
               ))
             ) : (
-              <p className="muted-copy">Ainda sem dados por canal neste periodo.</p>
+              <p className="muted-copy">Ainda não há itens vendidos no recorte escolhido.</p>
             )}
           </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-title">
-            <Activity size={19} />
-            <div>
-              <h2>Operadores e caixas</h2>
-              <p>Quem puxou receita e como cada caixa performou no periodo.</p>
-            </div>
-          </div>
-          <div className="report-operator-grid">
-            <div className="report-operator-summary">
-              {reportOperators.length ? (
-                reportOperators.map((operator) => (
-                  <div className="status-row rich" key={operator.operatorId}>
-                    <div>
-                      <strong>{operator.operatorName}</strong>
-                      <span>
-                        {operator.cashSessionCount} caixa(s) - {operator.paymentsCount} pagamento(s)
-                      </span>
-                    </div>
-                    <small>{formatMoney(operator.paymentsTotalCents)}</small>
-                  </div>
-                ))
-              ) : (
-                <p className="muted-copy">Sem operadores consolidados neste periodo.</p>
-              )}
-            </div>
-            <div className="report-cash-session-list">
-              {visibleCashSessions.length ? (
-                visibleCashSessions.map((session) => (
-                  <div className="status-row rich" key={session.id}>
-                    <div>
-                      <strong>{session.operatorName}</strong>
-                      <span>
-                        {session.status} - aberto em{" "}
-                        {new Date(session.openedAt).toLocaleString("pt-BR")}
-                      </span>
-                    </div>
-                    <small>
-                      {formatMoney(session.paymentsTotalCents)}
-                      {session.differenceCents !== null
-                        ? ` · dif ${formatMoney(session.differenceCents)}`
-                        : ""}
-                    </small>
-                  </div>
-                ))
-              ) : (
-                <p className="muted-copy">Nenhum caixa corresponde ao filtro atual.</p>
-              )}
-            </div>
-          </div>
-        </article>
-
-        <article className="panel report-ledger">
-          <div className="panel-title">
-            <Activity size={19} />
-            <div>
-              <h2>Ultimas movimentacoes</h2>
-              <p>Eventos auditaveis ligados a caixa e operacao.</p>
-            </div>
-          </div>
-          <div className="audit-list">
-            {audit.length ? (
-              audit.map((event) => (
-                <div className="status-row rich" key={event.id}>
-                  <div>
-                    <strong>{event.action}</strong>
-                    <span>
-                      {event.entityType} - {event.userName ?? event.userEmail ?? "sistema"}
-                    </span>
-                  </div>
-                  <small>{new Date(event.createdAt).toLocaleString("pt-BR")}</small>
-                </div>
-              ))
-            ) : (
-              <p className="muted-copy">
-                Sem eventos reais carregados. Entre no demo para ver auditoria.
-              </p>
-            )}
-          </div>
-        </article>
-      </section>
-      </> : <section className="product-analytics panel">
-        <div className="panel-title">
-          <BarChart3 size={19} />
-          <div>
-            <h2>Desempenho por produto</h2>
-            <p>Produtos vendidos, faturamento, participação no período e presença em comandas.</p>
-          </div>
-          <strong>{formatMoney(productSales.totalCents)}</strong>
-        </div>
-        <div className="product-analytics-head">
-          <span>Produto</span><span>Unidades</span><span>Comandas</span><span>Receita</span><span>Participação</span>
-        </div>
-        <div className="product-analytics-list">
-          {productSales.products.length ? productSales.products.map((product) => (
-            <div className="product-analytics-row" key={product.productId}>
-              <strong>{product.name}</strong>
-              <span>{product.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</span>
-              <span>{product.orderCount}</span>
-              <span>{formatMoney(product.revenueCents)}</span>
-              <span><i style={{ width: `${Math.max(4, product.sharePercent)}%` }} />{product.sharePercent}%</span>
-            </div>
-          )) : <p className="muted-copy">Ainda não há itens vendidos no recorte escolhido.</p>}
-        </div>
-      </section>}
+        </section>
+      )}
     </main>
   );
 }
