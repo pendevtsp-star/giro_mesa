@@ -102,7 +102,7 @@ const initialTenants: PlatformTenant[] = [
 ];
 
 const plans = [
-  ["Starter", "R$ 149", "PDV, mesas e cardapio QR"],
+  ["Starter", "R$ 149", "PDV, mesas e cardápio QR"],
   ["Professional", "R$ 299", "KDS, estoque e caixa completo"],
   ["Premium", "R$ 499", "Multi-filial, WhatsApp e automacoes"],
 ] as const;
@@ -1026,8 +1026,8 @@ export default function PlatformPage() {
           <article className="panel platform-risk-card">
             <AlertTriangle size={22} />
             <div>
-              <strong>Sem VPS por enquanto</strong>
-              <p>Prioridade atual: robustez local, UX, permissoes, relatorios e onboarding.</p>
+              <strong>VPS em validação</strong>
+              <p>Ambiente de testes ativo. Prioridade atual: UX, fluxos críticos, relatórios e hardening.</p>
             </div>
           </article>
         </section>

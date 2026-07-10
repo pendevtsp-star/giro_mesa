@@ -168,7 +168,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   function callWaiter() {
     void run(async () => {
       await requestPublicQrAction(tableCode, "call-waiter", { tenantSlug: qr.tenant.slug });
-      setStatus("Garcom chamado. A solicitacao ficou registrada no painel.");
+      setStatus("Garçom chamado. A solicitação ficou registrada no painel.");
     });
   }
 
@@ -199,7 +199,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         documentLabel: "Resumo da mesa",
         title: `Mesa ${qr.table.code}`,
         subtitle:
-          "Conferencia visual do pedido montado pelo cliente antes do envio ou da solicitacao de pre-conta.",
+          "Conferência visual do pedido montado pelo cliente antes do envio ou da solicitação de pré-conta.",
         metadata: [
           { label: "Mesa", value: qr.table.code },
           { label: "Cliente", value: "Atendimento via QR" },
@@ -268,7 +268,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <QrCode size={18} /> Mesa {qr.table.code}
         </span>
         <h1>{branding?.displayName ?? qr.tenant.name}</h1>
-        <p>Monte seu pedido, chame atendimento ou solicite a pre-conta da mesa.</p>
+        <p>Monte seu pedido, chame atendimento ou solicite a pré-conta da mesa.</p>
       </header>
 
       <section className="qr-order-grid">
@@ -347,14 +347,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         <button className="qr-action" type="button" onClick={callWaiter} disabled={isBusy}>
           <BellRing size={26} />
           <div>
-            <h2>Chamar garcom</h2>
+            <h2>Chamar garçom</h2>
             <p>Solicitacao registrada para o painel do salao.</p>
           </div>
         </button>
         <button className="qr-action" type="button" onClick={requestPreBill} disabled={isBusy}>
           <ReceiptText size={26} />
           <div>
-            <h2>Pedir pre-conta</h2>
+            <h2>Pedir pré-conta</h2>
             <p>O caixa recebe o pedido de fechamento da mesa.</p>
           </div>
         </button>

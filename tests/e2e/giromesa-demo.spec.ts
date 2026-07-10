@@ -382,12 +382,12 @@ test.describe("GiroMesa demo experience", () => {
     await authenticateBrowserPage(page);
 
     await page.goto("/app/waiter", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Modo garcom" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Modo garçom" })).toBeVisible();
     await expect(page.getByText("Mesas livres")).toBeVisible();
     await expect(page.getByTestId("waiter-open-table")).toBeVisible();
 
     await page.goto("/app/reports", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Relatorios do turno" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Relatórios do turno" })).toBeVisible();
     await expect(page.getByText("Radar executivo")).toBeVisible();
     await expect(page.getByLabel("Filtrar por metodo")).toBeVisible();
 

@@ -525,11 +525,11 @@ export default function ReportsPage() {
             <strong>{branding.displayName}</strong>
           </div>
           <span className="section-kicker">
-            <BarChart3 size={16} /> Gestao financeira
+            <BarChart3 size={16} /> Gestão financeira
           </span>
-          <h1>Relatorios do turno</h1>
+          <h1>Relatórios do turno</h1>
           <p>
-            Caixa, formas de pagamento, pendencias fiscais e sinais operacionais em uma visao
+            Caixa, formas de pagamento, pendências fiscais e sinais operacionais em uma visão
             executiva.
           </p>
         </div>
@@ -552,7 +552,7 @@ export default function ReportsPage() {
         </div>
       </header>
 
-      <section className="report-filters" aria-label="Filtros de relatorio">
+      <section className="report-filters" aria-label="Filtros de relatório">
         <Filter size={18} />
         {reportPeriods.map(([value, label]) => (
           <button
@@ -597,7 +597,7 @@ export default function ReportsPage() {
           value={paymentMethodFilter}
           onChange={(event) => setPaymentMethodFilter(event.target.value)}
         >
-          <option value="all">Todos os metodos</option>
+          <option value="all">Todos os métodos</option>
           {paymentMix.map((entry) => (
             <option key={entry.method} value={entry.method}>
               {methodLabel(entry.method)}

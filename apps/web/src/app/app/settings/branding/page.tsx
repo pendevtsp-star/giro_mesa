@@ -24,8 +24,8 @@ const accentOptions: Array<{
 }> = [
   { value: "emerald", label: "Verde", color: "#0b826d" },
   { value: "blue", label: "Azul", color: "#2563a8" },
-  { value: "amber", label: "Ambar", color: "#b97014" },
-  { value: "rose", label: "Rose", color: "#bd3f4a" },
+  { value: "amber", label: "Âmbar", color: "#b97014" },
+  { value: "rose", label: "Rosa", color: "#bd3f4a" },
   { value: "violet", label: "Violeta", color: "#6658b7" },
 ];
 
@@ -47,7 +47,7 @@ export default function BrandingSettingsPage() {
       })
       .catch(() => {
         if (!ignore) {
-          setStatus("Nao foi possivel carregar a API. Exibindo exemplo visual.");
+          setStatus("Não foi possível carregar a API. Exibindo exemplo visual.");
         }
       });
 
@@ -86,7 +86,7 @@ export default function BrandingSettingsPage() {
         throw new Error("Use uma logo PNG, JPEG ou WebP.");
       }
       if (file.size > 512 * 1024) {
-        throw new Error("A logo deve ter no maximo 512 KB.");
+        throw new Error("A logo deve ter no máximo 512 KB.");
       }
 
       const dataUrl = await readFileAsDataUrl(file);
@@ -116,8 +116,8 @@ export default function BrandingSettingsPage() {
         </a>
         <div>
           <span className="section-kicker">Identidade visual</span>
-          <h1>Personalizacao do ambiente</h1>
-          <p>Defina como o estabelecimento aparece no painel, cardapio QR e comunicacoes.</p>
+          <h1>Personalização do ambiente</h1>
+          <p>Defina como o estabelecimento aparece no painel, cardápio QR e comunicações.</p>
         </div>
       </header>
 
@@ -236,8 +236,8 @@ export default function BrandingSettingsPage() {
         <aside className="panel branding-preview-panel">
           <div className="panel-title">
             <div>
-              <span className="section-kicker">Previa</span>
-              <h2>Como o time vera</h2>
+              <span className="section-kicker">Prévia</span>
+              <h2>Como o time verá</h2>
             </div>
             <span className="gm-badge gm-badge-info">{readThemeMode(form.themeMode)}</span>
           </div>
@@ -257,10 +257,10 @@ export default function BrandingSettingsPage() {
               <strong>{form.displayName || "Seu estabelecimento"}</strong>
               <span>PDV</span>
               <span>Mesas</span>
-              <span>Relatorios</span>
+              <span>Relatórios</span>
             </div>
             <div className="branding-preview-card">
-              <span>Previa do ambiente</span>
+              <span>Prévia do ambiente</span>
               <strong>Turno jantar</strong>
               <p>{form.displayName} com identidade propria em painel, QR e comunicacoes.</p>
               <button className="button primary compact" type="button">

@@ -134,8 +134,8 @@ export default function WaiterPage() {
   const [actionLog, setActionLog] = useState<ActionLog[]>([
     {
       id: "boot",
-      title: "Painel do garcom pronto",
-      detail: "Fluxo preparado para abrir mesa, lancar itens, disparar KDS e receber.",
+      title: "Painel do garçom pronto",
+      detail: "Fluxo preparado para abrir mesa, lançar itens, disparar KDS e receber.",
       tone: "neutral",
       createdAt: new Date().toISOString(),
     },
@@ -218,7 +218,7 @@ export default function WaiterPage() {
     if (order.status === "sent_to_kitchen") {
       return {
         title: "Acompanhar consumo e preparar fechamento",
-        detail: "O pedido saiu do salao. Priorize mesa pedindo pre-conta ou balcao pronto para receber.",
+        detail: "O pedido saiu do salão. Priorize mesa pedindo pré-conta ou balcão pronto para receber.",
         tone: "good" as const,
       };
     }
@@ -259,7 +259,7 @@ export default function WaiterPage() {
       setBranding(tenantBranding);
       setSelectedTableId(tableList[0]?.id ?? demoTables[0]?.id ?? "");
       setStatus("ready");
-      setMessage("Modo garcom conectado ao demo do Bar Aurora.");
+      setMessage("Modo garçom conectado ao demo do Bar Aurora.");
     } catch {
       setStatus("demo");
       setMessage("Entre no demo para operar com dados reais. Esta tela segue navegavel offline.");
@@ -407,9 +407,9 @@ export default function WaiterPage() {
       <section className="waiter-hero">
         <div>
           <span className="section-kicker">
-            <Sparkles size={16} /> Atendimento rapido
+            <Sparkles size={16} /> Atendimento rápido
           </span>
-          <h1>Modo garcom</h1>
+          <h1>Modo garçom</h1>
           <p>{message}</p>
         </div>
         <div className="waiter-shift-card">
@@ -442,10 +442,10 @@ export default function WaiterPage() {
         </article>
       </section>
 
-      <section className="waiter-quick-actions" aria-label="Atalhos do garcom">
+      <section className="waiter-quick-actions" aria-label="Atalhos do garçom">
         <a href="/app">
           <ClipboardList size={18} />
-          <span>Mapa do salao</span>
+          <span>Mapa do salão</span>
         </a>
         <a href={`/q/${selectedTable?.code ?? "M03"}`}>
           <Bell size={18} />
@@ -457,7 +457,7 @@ export default function WaiterPage() {
         </a>
         <a href="/manual">
           <MonitorSmartphone size={18} />
-          <span>Treino rapido</span>
+          <span>Treino rápido</span>
         </a>
       </section>
 

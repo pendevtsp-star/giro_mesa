@@ -597,6 +597,7 @@ button {
   min-height: 42px;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   border-radius: 8px;
   padding: 0 10px;
   color: var(--muted);
@@ -2398,6 +2399,7 @@ button {
   top: 0;
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -2418,6 +2420,12 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.waiter-status,
+.report-status,
+.toolbar {
+  flex-wrap: wrap;
 }
 
 .waiter-hero,
@@ -2523,6 +2531,7 @@ button {
   gap: 8px;
   min-height: 42px;
   flex: 1;
+  min-width: 140px;
   border-radius: 8px;
   color: var(--accent-strong);
   font-weight: 850;
@@ -2770,13 +2779,18 @@ button {
 .report-filters {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin: 0 clamp(14px, 4vw, 34px) 16px;
-  overflow-x: auto;
+}
+
+.report-filters > svg {
+  flex: 0 0 auto;
 }
 
 .report-date-range {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -2793,6 +2807,7 @@ button {
 
 .report-filters select {
   min-height: 38px;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -3420,9 +3435,12 @@ button {
     grid-auto-flow: column;
     margin-top: 0;
     overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
   }
 
   .sidebar a {
+    min-width: max-content;
     white-space: nowrap;
   }
 
@@ -3493,6 +3511,22 @@ button {
   .manual-hero h1 {
     font-size: 2.45rem;
   }
+
+  .branding-page-header {
+    padding: 20px clamp(14px, 4vw, 24px) 12px;
+  }
+
+  .branding-settings-layout,
+  .branding-preview-shell.large,
+  .platform-toolbar,
+  .platform-support-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-search,
+  .platform-search-input {
+    width: 100%;
+  }
 }
 
 @media (max-width: 560px) {
@@ -3527,7 +3561,8 @@ button {
   .report-status,
   .profile-action-buttons,
   .waiter-quick-actions,
-  .manual-support {
+  .manual-support,
+  .waiter-status {
     width: 100%;
   }
 
@@ -3544,7 +3579,12 @@ button {
   .hero-actions .button,
   .ticket-actions .button,
   .waiter-action-bar .button,
-  .manual-support .button {
+  .manual-support .button,
+  .report-header .button,
+  .waiter-status .button,
+  .report-filters select,
+  .report-date-range,
+  .report-date-range input {
     width: 100%;
   }
 
@@ -3553,6 +3593,42 @@ button {
   .manual-hero {
     padding-right: 14px;
     padding-left: 14px;
+  }
+
+  .branding-page-header h1 {
+    font-size: clamp(2rem, 11vw, 2.8rem);
+  }
+
+  .branding-settings-layout {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .branding-preview-shell,
+  .branding-preview-shell.large {
+    grid-template-columns: 1fr;
+  }
+
+  .branding-preview-sidebar strong {
+    white-space: normal;
+  }
+
+  .report-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .report-filters {
+    align-items: stretch;
+  }
+
+  .report-filters .filter {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .sidebar {
+    grid-template-columns: 1fr;
   }
 
   .waiter-quick-actions {

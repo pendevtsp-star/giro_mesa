@@ -133,20 +133,20 @@ type OutboxStatusFilter = "all" | "pending" | "processed" | "failed";
 const nav = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/app", permissions: [] },
   { icon: ClipboardList, label: "PDV", href: "/app", permissions: ["pos:operate"] },
-  { icon: Users, label: "Garcom", href: "/app/waiter", permissions: ["pos:operate"] },
+  { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app", permissions: ["pos:kds_send", "kds:manage"] },
   { icon: PackageOpen, label: "Estoque", href: "/app", permissions: ["inventory:manage"] },
-  { icon: CreditCard, label: "Relatorios", href: "/app/reports", permissions: ["reports:read"] },
-  { icon: Printer, label: "Impressao", href: "/app", permissions: ["hardware:manage"] },
+  { icon: CreditCard, label: "Relatórios", href: "/app/reports", permissions: ["reports:read"] },
+  { icon: Printer, label: "Impressão", href: "/app", permissions: ["hardware:manage"] },
   {
     icon: QrCode,
-    label: "Cardapio",
+    label: "Cardápio",
     href: "/app",
     permissions: ["catalog:manage", "pos:qr_review"],
   },
   {
     icon: Settings,
-    label: "Config",
+    label: "Configurações",
     href: "/app/settings/branding",
     permissions: ["tenant:manage"],
   },
@@ -3694,7 +3694,7 @@ export default function AppDashboardPage() {
               </span>
               <div>
                 <strong>{activeBranding.displayName}</strong>
-                <span>Personalizacao aplicada ao painel, QR e comunicacoes.</span>
+                <span>Personalização aplicada ao painel, QR e comunicações.</span>
               </div>
             </div>
             <a className="button primary full" href="/app/settings/branding">
@@ -3887,9 +3887,9 @@ function readOperatorProfile(permissions: string[]) {
     return {
       kicker: "Perfil recomendado",
       title: "Dono ou gerente",
-      description: "Priorize relatorios, equipe, configuracoes e indicadores do turno.",
+      description: "Priorize relatórios, equipe, configurações e indicadores do turno.",
       actions: [
-        { label: "Ver relatorios", href: "/app/reports" },
+        { label: "Ver relatórios", href: "/app/reports" },
         { label: "Equipe", href: "/app/team" },
         { label: "Personalizar", href: "/app/settings/branding" },
       ],
@@ -3900,10 +3900,10 @@ function readOperatorProfile(permissions: string[]) {
     return {
       kicker: "Perfil recomendado",
       title: "Caixa",
-      description: "Acompanhe pagamentos, pre-contas, fechamento e pendencias fiscais.",
+      description: "Acompanhe pagamentos, pré-contas, fechamento e pendências fiscais.",
       actions: [
         { label: "Fechar turno", href: "/app#caixa" },
-        { label: "Relatorios", href: "/app/reports" },
+        { label: "Relatórios", href: "/app/reports" },
       ],
     };
   }
@@ -3911,10 +3911,10 @@ function readOperatorProfile(permissions: string[]) {
   if (canOperatePos) {
     return {
       kicker: "Perfil recomendado",
-      title: "Garcom",
-      description: "Use a tela mobile para abrir mesa, lancar itens e enviar para cozinha.",
+      title: "Garçom",
+      description: "Use a tela mobile para abrir mesa, lançar itens e enviar para a cozinha.",
       actions: [
-        { label: "Modo garcom", href: "/app/waiter" },
+        { label: "Modo garçom", href: "/app/waiter" },
         { label: "QR mesa M03", href: "/q/M03" },
       ],
     };
@@ -3931,8 +3931,8 @@ function readOperatorProfile(permissions: string[]) {
 
   return {
     kicker: "Perfil recomendado",
-    title: "Operacao",
-    description: "Entre com uma conta do estabelecimento para carregar atalhos por permissao.",
+    title: "Operação",
+    description: "Entre com uma conta do estabelecimento para carregar atalhos por permissão.",
     actions: [{ label: "Entrar", href: "/login" }],
   };
 }

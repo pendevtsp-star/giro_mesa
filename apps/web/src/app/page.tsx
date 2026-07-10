@@ -27,7 +27,7 @@ const features = [
   {
     icon: QrCode,
     title: "Cardapio QR por unidade",
-    body: "Menu publico elegante, preparado para evoluir para pedido pelo cliente e chamada de garcom.",
+    body: "Menu público elegante, preparado para evoluir para pedido pelo cliente e chamada de garçom.",
   },
   {
     icon: Warehouse,
@@ -60,7 +60,7 @@ const operations = [
 ] as const;
 
 const plans = [
-  ["Starter", "R$ 149", "PDV, mesas, cardapio QR e relatorios basicos."],
+  ["Starter", "R$ 149", "PDV, mesas, cardápio QR e relatórios básicos."],
   ["Professional", "R$ 299", "KDS, estoque, ficha tecnica e caixa completo."],
   ["Premium", "R$ 499", "Multi-filial, automacoes, WhatsApp e dashboards."],
   ["Enterprise", "Sob consulta", "Ambiente dedicado, suporte prioritario e limites customizados."],
@@ -98,15 +98,15 @@ export default function HomePage() {
           </span>
           <h1>GiroMesa</h1>
           <p>
-            Uma operacao de salao, cozinha, caixa e cardapio digital com a velocidade que o turno
-            exige e o controle que a gestao precisa.
+            Uma operação de salão, cozinha, caixa e cardápio digital com a velocidade que o turno
+            exige e o controle que a gestão precisa.
           </p>
           <div className="hero-actions">
             <a className="button primary" href="/app">
               Abrir demo operacional <ArrowRight size={18} />
             </a>
             <a className="button secondary on-dark" href="/m/bar-aurora-demo">
-              Ver cardapio QR
+              Ver cardápio QR
             </a>
           </div>
         </div>
