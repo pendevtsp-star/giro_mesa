@@ -8,9 +8,9 @@ test.describe("GiroMesa demo experience", () => {
   test("navigates the polished public and operations surfaces", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "GiroMesa" })).toBeVisible();
-    await expect(page.getByText("Turno jantar em andamento")).toBeVisible();
+    await expect(page.getByText("O turno flui. A gestão acompanha.")).toBeVisible();
 
-    await page.getByRole("link", { name: /Abrir demo operacional/ }).click();
+    await page.getByRole("link", { name: /Entrar na demo guiada/ }).click();
     await expect(page.getByTestId("demo-dashboard")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Turno jantar" })).toBeVisible();
     await expect(page.getByTestId("pos-open-table")).toBeVisible();
