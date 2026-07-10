@@ -28,7 +28,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -621,8 +620,7 @@ const paymentMethodOptions = [
 ] as const;
 
 export default function AppDashboardPage() {
-  const searchParams = useSearchParams();
-  const isPosWorkspace = searchParams.get("view") === "pos";
+  const [isPosWorkspace, setIsPosWorkspace] = useState(false);
   const [status, setStatus] = useState<AppStatus>("loading");
   const [session, setSession] = useState<TenantSession | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -1139,6 +1137,10 @@ export default function AppDashboardPage() {
 
     setLastQrOrderCount(qrPendingOrders.length);
   }, [lastQrOrderCount, qrPendingOrders, status]);
+
+  useEffect(() => {
+    setIsPosWorkspace(new URLSearchParams(window.location.search).get("view") === "pos");
+  }, []);
 
   const metrics = useMemo(() => {
     const occupiedCount = tables.filter((table) => table.status !== "free").length;
