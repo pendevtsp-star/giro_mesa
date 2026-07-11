@@ -141,6 +141,7 @@ const nav = [
   { icon: Users, label: "Clientes", href: "/app/customers", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app/kds", permissions: ["pos:kds_send", "kds:operate"] },
   { icon: PackageOpen, label: "Estoque", href: "/app/inventory", permissions: ["inventory:manage"] },
+  { icon: Banknote, label: "Caixa", href: "/app/cash", permissions: ["pos:payment_manage"] },
   { icon: CreditCard, label: "Relatórios", href: "/app/reports", permissions: ["reports:read"] },
   { icon: Printer, label: "Impressão", href: "/app/printing", permissions: ["hardware:manage"] },
   {

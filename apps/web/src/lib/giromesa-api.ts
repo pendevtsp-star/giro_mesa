@@ -1354,6 +1354,13 @@ export function getFinancialReport(input: {
   return apiRequest<FinancialReport>(`/api/v1/reports/financial${query}`);
 }
 
+export function openCashSession(branchId: string, openingAmountCents: number) {
+  return apiRequest<CashSessionSummary["session"]>("/api/v1/pos/cash-sessions/open", {
+    method: "POST",
+    body: { branchId, openingAmountCents },
+  });
+}
+
 export function getProductSalesReport(input: {
   branchId?: string;
   period?: FinancialReport["period"];
