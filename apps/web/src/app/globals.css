@@ -1425,6 +1425,8 @@ button {
 .sales-product-frame { border-color: rgba(13, 27, 42, .16); box-shadow: 0 30px 72px rgba(13, 27, 42, .2); }
 .sales-window-bar { border-bottom-color: #e7ded0; color: #607080; }
 .sales-float-card, .sales-band, .sales-security, .sales-cta { background: #0d1b2a; }
+.sales-security h2, .sales-cta h2 { color: #fff; }
+.sales-security .sales-eyebrow { color: #f5a623; }
 .sales-band .section-kicker { color: #f5a623; }
 .sales-benefits article > span, .sales-module-grid article > svg { color: #f5a623; }
 .app-layout { background: linear-gradient(180deg, #fffaf0, #f7f2e8); }
