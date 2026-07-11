@@ -23,8 +23,10 @@ const openOrderSchema = z.object({
   channel: z.enum(["counter", "table", "tab", "delivery", "qr"]),
   branchId: z.string().min(1),
   tableId: z.string().optional(),
+  customerId: z.string().optional(),
   peopleCount: z.number().int().positive().optional(),
 });
+const assignCustomerSchema = z.object({ customerId: z.string().min(1) });
 
 const addItemSchema = z.object({
   productId: z.string().min(1),
@@ -51,6 +53,10 @@ const cashOpenSchema = z.object({
 
 const cashCloseSchema = z.object({
   countedAmountCents: z.number().int().nonnegative(),
+});
+const floorLayoutSchema = z.object({
+  branchId: z.string().min(1),
+  layout: z.record(z.string(), z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) })),
 });
 
 const qrOrderItemUpdateSchema = z.object({
@@ -81,6 +87,19 @@ export class PosController {
     return {
       data: await this.posService.listTables(context, branchId),
     };
+  }
+
+  @Get("floor-plan")
+  async getFloorPlan(@Headers() headers: HeaderRecord, @Query("branchId") branchId: string) {
+    const context = await this.contextWithPermission(headers);
+    return this.posService.getFloorPlan(context, branchId);
+  }
+
+  @Patch("floor-plan")
+  async saveFloorPlan(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return this.posService.saveFloorPlan(context, floorLayoutSchema.parse(body));
   }
 
   @Get("orders/qr-pending")
@@ -133,6 +152,17 @@ export class PosController {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers);
     return this.posService.openOrder(context, openOrderSchema.parse(body));
+  }
+
+  @Patch("orders/:orderId/customer")
+  async assignCustomer(
+    @Param("orderId") orderId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers);
+    return this.posService.assignCustomer(context, orderId, assignCustomerSchema.parse(body).customerId);
   }
 
   @Post("orders/:orderId/items")

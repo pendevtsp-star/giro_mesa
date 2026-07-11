@@ -13,10 +13,19 @@ const createItemSchema = z.object({
   allowNegative: z.boolean().optional(),
 });
 
+const supplierSchema = z.object({
+  name: z.string().min(2).max(160),
+  document: z.string().max(32).optional(),
+  contactName: z.string().max(160).optional(),
+  phone: z.string().max(40).optional(),
+  email: z.string().email().max(255).optional(),
+});
+
 const adjustStockSchema = z.object({
   branchId: z.string().min(1),
   inventoryItemId: z.string().min(1),
   stockLocationId: z.string().optional(),
+  supplierId: z.string().optional(),
   type: z
     .enum(["purchase_receipt", "loss", "inventory_count", "manual_adjustment"])
     .default("manual_adjustment"),
@@ -61,6 +70,19 @@ export class InventoryController {
   async listLocations(@Headers() headers: HeaderRecord, @Query("branchId") branchId: string) {
     const context = await this.context(headers, "inventory:manage");
     return { data: await this.inventoryService.listLocations(context, branchId) };
+  }
+
+  @Get("suppliers")
+  async listSuppliers(@Headers() headers: HeaderRecord) {
+    const context = await this.context(headers, "inventory:manage");
+    return { data: await this.inventoryService.listSuppliers(context) };
+  }
+
+  @Post("suppliers")
+  async createSupplier(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.context(headers, "inventory:manage");
+    return this.inventoryService.createSupplier(context, supplierSchema.parse(body));
   }
 
   @Get("movements")

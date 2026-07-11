@@ -90,6 +90,7 @@ export type OpenOrderResponse = {
   id: string;
   branchId: string;
   tableId: string | null;
+  customerId?: string | null;
   channel: string;
   status: string;
   totalCents: number;
@@ -422,6 +423,10 @@ export type InventoryMovement = {
   reason: string | null;
   createdAt: string;
 };
+
+export type Supplier = { id: string; name: string; document: string | null; contactName: string | null; phone: string | null; email: string | null; isActive: boolean; };
+export type ModifierGroup = { id: string; productId: string; name: string; minChoices: number; maxChoices: number; isRequired: boolean; options: ModifierOption[]; };
+export type ModifierOption = { id: string; groupId: string; name: string; priceDeltaCents: number; costDeltaCents: number; isAvailable: boolean; };
 
 export type ProductSalesReport = {
   branchId: string;
@@ -1141,6 +1146,16 @@ export async function listKdsStations() {
   return result.data;
 }
 
+export function getFloorPlan(branchId: string) { return apiRequest<{ id: string | null; branchId: string; name: string; layout: Record<string, { x: number; y: number }> }>(`/api/v1/pos/floor-plan?branchId=${encodeURIComponent(branchId)}`); }
+export function saveFloorPlan(branchId: string, layout: Record<string, { x: number; y: number }>) { return apiRequest<Record<string, unknown>>("/api/v1/pos/floor-plan", { method: "PATCH", body: { branchId, layout } }); }
+
+export async function listProductModifiers(productId: string) {
+  const result = await apiRequest<{ data: ModifierGroup[] }>(`/api/v1/catalog/products/${productId}/modifiers`);
+  return result.data;
+}
+export function createModifierGroup(input: { productId: string; name: string; minChoices?: number; maxChoices?: number; isRequired?: boolean }) { return apiRequest<ModifierGroup>("/api/v1/catalog/modifier-groups", { method: "POST", body: input }); }
+export function createModifierOption(groupId: string, input: { name: string; priceDeltaCents?: number; costDeltaCents?: number; isAvailable?: boolean }) { return apiRequest<ModifierOption>(`/api/v1/catalog/modifier-groups/${groupId}/options`, { method: "POST", body: input }); }
+
 export async function listCustomers(search?: string) {
   const query = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
   const result = await apiRequest<{ data: Customer[] }>(`/api/v1/customers${query}`);
@@ -1171,13 +1186,14 @@ export function updateKdsTicket(ticketId: string, status: "preparing" | "ready" 
   });
 }
 
-export function openOrder(branchId: string, tableId?: string, peopleCount = 2) {
+export function openOrder(branchId: string, tableId?: string, peopleCount = 2, customerId?: string) {
   return apiRequest<OpenOrderResponse>("/api/v1/pos/orders/open", {
     method: "POST",
     body: {
       channel: tableId ? "table" : "counter",
       branchId,
       tableId,
+      ...(customerId ? { customerId } : {}),
       peopleCount,
     },
   });
@@ -1354,6 +1370,10 @@ export function getFinancialReport(input: {
   return apiRequest<FinancialReport>(`/api/v1/reports/financial${query}`);
 }
 
+export function assignOrderCustomer(orderId: string, customerId: string) {
+  return apiRequest<OpenOrderResponse>(`/api/v1/pos/orders/${orderId}/customer`, { method: "PATCH", body: { customerId } });
+}
+
 export function openCashSession(branchId: string, openingAmountCents: number) {
   return apiRequest<CashSessionSummary["session"]>("/api/v1/pos/cash-sessions/open", {
     method: "POST",
@@ -1434,6 +1454,7 @@ export function adjustInventoryStock(input: {
   branchId: string;
   inventoryItemId: string;
   type?: InventoryMovement["type"];
+  supplierId?: string;
   quantity: string;
   unitCostCents?: number;
   reason: string;
@@ -1443,6 +1464,13 @@ export function adjustInventoryStock(input: {
     body: input,
   });
 }
+
+export function upsertRecipe(input: { productId: string; yieldQuantity?: string; technicalLossRate?: string; items: Array<{ inventoryItemId: string; quantity: string; unit: string }> }) {
+  return apiRequest<Record<string, unknown>>("/api/v1/inventory/recipes", { method: "POST", body: input });
+}
+
+export async function listSuppliers() { const result = await apiRequest<{ data: Supplier[] }>("/api/v1/inventory/suppliers"); return result.data; }
+export function createSupplier(input: { name: string; document?: string; contactName?: string; phone?: string; email?: string }) { return apiRequest<Supplier>("/api/v1/inventory/suppliers", { method: "POST", body: input }); }
 
 export async function listInventoryMovements(branchId: string, limit = 50) {
   const result = await apiRequest<{ data: InventoryMovement[] }>(

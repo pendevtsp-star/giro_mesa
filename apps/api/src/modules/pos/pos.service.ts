@@ -1,7 +1,10 @@
 import {
   auditLogs,
+  branches,
   cashSessions,
+  customers,
   diningTables,
+  floorPlans,
   kdsStations,
   kdsTickets,
   orderItems,
@@ -47,6 +50,7 @@ type OpenOrderInput = {
   channel: "counter" | "table" | "tab" | "delivery" | "qr";
   branchId: string;
   tableId?: string | undefined;
+  customerId?: string | undefined;
   peopleCount?: number | undefined;
 };
 
@@ -618,12 +622,18 @@ export class PosService {
           .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, table.id)));
       }
 
+      if (input.customerId) {
+        const [customer] = await tx.select({ id: customers.id }).from(customers)
+          .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, input.customerId))).limit(1);
+        if (!customer) throw new NotFoundException("Customer not found");
+      }
       const [order] = await tx
         .insert(orders)
         .values({
           tenantId: context.tenantId,
           branchId: input.branchId,
           tableId: input.tableId,
+          ...(input.customerId ? { customerId: input.customerId } : {}),
           channel: input.channel,
           status: "opened",
           peopleCount: input.peopleCount ?? 1,
@@ -640,6 +650,37 @@ export class PosService {
         audit: "order.opened",
       };
     });
+  }
+
+  async getFloorPlan(context: TenantContext, branchId: string) {
+    const [plan] = await this.database.db.select().from(floorPlans)
+      .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, branchId))).limit(1);
+    return { id: plan?.id ?? null, branchId, name: plan?.name ?? "Salão principal", layout: plan?.layout ?? {} };
+  }
+
+  async saveFloorPlan(context: TenantContext, input: { branchId: string; layout: Record<string, { x: number; y: number }> }) {
+    const [branch] = await this.database.db.select({ id: branches.id }).from(branches)
+      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId))).limit(1);
+    if (!branch) throw new NotFoundException("Branch not found");
+    const [existing] = await this.database.db.select({ id: floorPlans.id }).from(floorPlans)
+      .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, input.branchId), eq(floorPlans.name, "Salão principal"))).limit(1);
+    const [plan] = existing
+      ? await this.database.db.update(floorPlans).set({ layout: input.layout, updatedAt: new Date() }).where(eq(floorPlans.id, existing.id)).returning()
+      : await this.database.db.insert(floorPlans).values({ tenantId: context.tenantId, branchId: input.branchId, name: "Salão principal", layout: input.layout }).returning();
+    if (!plan) throw new Error("Failed to save floor plan");
+    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: input.branchId, userId: context.userId, requestId: context.requestId, action: "floor_plan.updated", entityType: "floor_plan", entityId: plan.id, metadata: { tableCount: Object.keys(input.layout).length } });
+    return plan;
+  }
+
+  async assignCustomer(context: TenantContext, orderId: string, customerId: string) {
+    const [customer] = await this.database.db.select({ id: customers.id }).from(customers)
+      .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, customerId))).limit(1);
+    if (!customer) throw new NotFoundException("Customer not found");
+    const [order] = await this.database.db.update(orders).set({ customerId, updatedAt: new Date() })
+      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId))).returning();
+    if (!order) throw new NotFoundException("Order not found");
+    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: order.branchId, userId: context.userId, requestId: context.requestId, action: "order.customer_assigned", entityType: "order", entityId: order.id, metadata: { customerId } });
+    return { ...order, audit: "order.customer_assigned" };
   }
 
   async addItem(context: TenantContext, orderId: string, input: AddItemInput) {

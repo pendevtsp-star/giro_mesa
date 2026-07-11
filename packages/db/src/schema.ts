@@ -467,6 +467,24 @@ export const inventoryItems = pgTable(
   (table) => [index("inventory_items_tenant_idx").on(table.tenantId)],
 );
 
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    name: varchar("name", { length: 160 }).notNull(),
+    document: varchar("document", { length: 32 }),
+    contactName: varchar("contact_name", { length: 160 }),
+    phone: varchar("phone", { length: 40 }),
+    email: varchar("email", { length: 255 }),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [index("suppliers_tenant_idx").on(table.tenantId)],
+);
+
 export const stockLocations = pgTable(
   "stock_locations",
   {
@@ -537,6 +555,7 @@ export const stockMovements = pgTable(
       .notNull()
       .references(() => inventoryItems.id),
     stockLocationId: uuid("stock_location_id").references(() => stockLocations.id),
+    supplierId: uuid("supplier_id").references(() => suppliers.id),
     type: varchar("type", { length: 40 }).notNull(),
     quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
     unitCostCents: integer("unit_cost_cents").notNull().default(0),

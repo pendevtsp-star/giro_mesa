@@ -41,6 +41,12 @@ const updateProductSchema = createProductSchema
   .partial()
   .extend({ isActive: z.boolean().optional() });
 
+const modifierGroupSchema = z.object({
+  productId: z.string().min(1), name: z.string().min(2).max(120),
+  minChoices: z.number().int().min(0).optional(), maxChoices: z.number().int().min(1).optional(), isRequired: z.boolean().optional(),
+});
+const modifierOptionSchema = z.object({ name: z.string().min(2).max(120), priceDeltaCents: z.number().int().optional(), costDeltaCents: z.number().int().optional(), isAvailable: z.boolean().optional() });
+
 const publicQrOrderSchema = z.object({
   tenantSlug: z.string().min(1).default("bar-aurora-demo"),
   items: z
@@ -177,5 +183,17 @@ export class CatalogController {
     return {
       data: await this.catalogService.listModifierGroups(context, productId),
     };
+  }
+
+  @Post("modifier-groups")
+  async createModifierGroup(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body); const context = await this.authService.resolveContext(headers); requirePermission(context, "catalog:manage");
+    return this.catalogService.createModifierGroup(context, modifierGroupSchema.parse(body));
+  }
+
+  @Post("modifier-groups/:groupId/options")
+  async createModifierOption(@Param("groupId") groupId: string, @Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body); const context = await this.authService.resolveContext(headers); requirePermission(context, "catalog:manage");
+    return this.catalogService.createModifierOption(context, groupId, modifierOptionSchema.parse(body));
   }
 }

@@ -74,6 +74,9 @@ export type UpdateProductInput = {
   fiscalCsosn?: string | undefined;
 };
 
+export type ModifierGroupInput = { productId: string; name: string; minChoices?: number | undefined; maxChoices?: number | undefined; isRequired?: boolean | undefined; };
+export type ModifierOptionInput = { name: string; priceDeltaCents?: number | undefined; costDeltaCents?: number | undefined; isAvailable?: boolean | undefined; };
+
 export type PublicQrOrderInput = {
   tenantSlug: string;
   items: { productId: string; quantity: number; notes?: string | undefined }[];
@@ -438,6 +441,25 @@ export class CatalogService {
       ...group,
       options: options.filter((option) => option.groupId === group.id),
     }));
+  }
+
+  async createModifierGroup(context: TenantContext, input: ModifierGroupInput) {
+    const [product] = await this.database.db.select({ id: products.id }).from(products).where(and(eq(products.tenantId, context.tenantId), eq(products.id, input.productId))).limit(1);
+    if (!product) throw new NotFoundException("Product not found");
+    if ((input.maxChoices ?? 1) < (input.minChoices ?? 0)) throw new Error("Maximum choices must be greater than minimum choices");
+    const [group] = await this.database.db.insert(modifierGroups).values({ tenantId: context.tenantId, productId: product.id, name: input.name, minChoices: input.minChoices ?? 0, maxChoices: input.maxChoices ?? 1, isRequired: input.isRequired ?? false }).returning();
+    if (!group) throw new Error("Failed to create modifier group");
+    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: context.branchId, userId: context.userId, requestId: context.requestId, action: "catalog.modifier_group_created", entityType: "modifier_group", entityId: group.id, metadata: { productId: product.id } });
+    return group;
+  }
+
+  async createModifierOption(context: TenantContext, groupId: string, input: ModifierOptionInput) {
+    const [group] = await this.database.db.select().from(modifierGroups).where(and(eq(modifierGroups.tenantId, context.tenantId), eq(modifierGroups.id, groupId))).limit(1);
+    if (!group) throw new NotFoundException("Modifier group not found");
+    const [option] = await this.database.db.insert(modifierOptions).values({ tenantId: context.tenantId, groupId: group.id, name: input.name, priceDeltaCents: input.priceDeltaCents ?? 0, costDeltaCents: input.costDeltaCents ?? 0, isAvailable: input.isAvailable ?? true }).returning();
+    if (!option) throw new Error("Failed to create modifier option");
+    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: context.branchId, userId: context.userId, requestId: context.requestId, action: "catalog.modifier_option_created", entityType: "modifier_option", entityId: option.id, metadata: { groupId: group.id } });
+    return option;
   }
 
   private async resolveTenant(tenantSlug: string) {

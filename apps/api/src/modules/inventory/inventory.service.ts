@@ -7,6 +7,7 @@ import {
   recipes,
   stockLocations,
   stockMovements,
+  suppliers,
 } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
@@ -25,10 +26,19 @@ export type StockAdjustmentInput = {
   branchId: string;
   inventoryItemId: string;
   stockLocationId?: string | undefined;
+  supplierId?: string | undefined;
   type: "purchase_receipt" | "loss" | "inventory_count" | "manual_adjustment";
   quantity: string;
   unitCostCents?: number | undefined;
   reason: string;
+};
+
+export type SupplierInput = {
+  name: string;
+  document?: string | undefined;
+  contactName?: string | undefined;
+  phone?: string | undefined;
+  email?: string | undefined;
 };
 
 export type RecipeInput = {
@@ -104,6 +114,31 @@ export class InventoryService {
       .orderBy(stockLocations.name);
   }
 
+  async listSuppliers(context: TenantContext) {
+    return this.database.db
+      .select()
+      .from(suppliers)
+      .where(and(eq(suppliers.tenantId, context.tenantId), eq(suppliers.isActive, true)))
+      .orderBy(suppliers.name);
+  }
+
+  async createSupplier(context: TenantContext, input: SupplierInput) {
+    const [supplier] = await this.database.db
+      .insert(suppliers)
+      .values({
+        tenantId: context.tenantId,
+        name: input.name,
+        ...(input.document ? { document: input.document } : {}),
+        ...(input.contactName ? { contactName: input.contactName } : {}),
+        ...(input.phone ? { phone: input.phone } : {}),
+        ...(input.email ? { email: input.email } : {}),
+      })
+      .returning();
+    if (!supplier) throw new Error("Failed to create supplier");
+    await this.audit(context, { action: "inventory.supplier_created", entityType: "supplier", entityId: supplier.id });
+    return supplier;
+  }
+
   async listMovements(context: TenantContext, branchId: string, limit: number) {
     await this.assertBranch(context, branchId);
     return this.database.db
@@ -172,6 +207,14 @@ export class InventoryService {
     }
 
     const currentQuantity = await this.currentQuantity(context, input.branchId, item.id);
+    if (input.supplierId) {
+      const [supplier] = await this.database.db
+        .select({ id: suppliers.id })
+        .from(suppliers)
+        .where(and(eq(suppliers.tenantId, context.tenantId), eq(suppliers.id, input.supplierId)))
+        .limit(1);
+      if (!supplier) throw new NotFoundException("Supplier not found");
+    }
     const quantity = this.normalizeMovementQuantity(input.type, input.quantity, currentQuantity);
     const stockLocationId =
       input.stockLocationId ?? (await this.defaultLocationId(context, input.branchId));
@@ -182,6 +225,7 @@ export class InventoryService {
         branchId: input.branchId,
         inventoryItemId: item.id,
         stockLocationId,
+        ...(input.supplierId ? { supplierId: input.supplierId } : {}),
         type: input.type,
         quantity,
         unitCostCents: input.unitCostCents ?? item.averageCostCents,
@@ -206,7 +250,7 @@ export class InventoryService {
       action: `inventory.${input.type}`,
       entityType: "stock_movement",
       entityId: movement.id,
-      metadata: { inventoryItemId: item.id, quantity, type: input.type, reason: input.reason },
+      metadata: { inventoryItemId: item.id, quantity, type: input.type, supplierId: input.supplierId, reason: input.reason },
     });
 
     return movement;

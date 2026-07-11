@@ -1349,6 +1349,8 @@ button {
 .salon-table.occupied, .salon-legend .occupied { border-color: #2563a8; background: #eef5ff; }
 .salon-table.preparing, .salon-legend .preparing { border-color: #b97014; background: #fff7e9; }
 .salon-table.payment, .salon-legend .payment { border-color: #bd3f4a; background: #fff1f2; }
+.salon-positioning-board { position: relative; display: block; min-height: 600px; border-top: 1px dashed var(--line); background-color: #fbfdfc; background-image: linear-gradient(#e9f0ed 1px, transparent 1px), linear-gradient(90deg, #e9f0ed 1px, transparent 1px); background-size: 28px 28px; overflow: hidden; }
+.salon-positioned { position: absolute; width: min(175px, 28vw); cursor: grab; text-decoration: none; color: var(--ink); }.salon-positioned:active { cursor: grabbing; }
 
 .workspace-page { min-height: 100vh; background: #f4f7f4; color: var(--ink); }
 .workspace-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px clamp(18px, 4vw, 56px); border-bottom: 1px solid var(--line); background: #fff; }
@@ -1411,6 +1413,8 @@ button {
 .printing-metrics span { color: var(--muted); font-size: .83rem; }
 .print-job-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); }
 .print-job-row > div { display: grid; gap: 4px; }.print-job-row small { color: var(--muted); }.print-job-row > div:last-child { display: flex; gap: 8px; }
+.pos-customer-select { display: grid; gap: 5px; margin: 10px 0; color: var(--muted); font-size: .78rem; font-weight: 800; }
+.pos-customer-select select { width: 100%; min-height: 36px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #fff; color: var(--ink); font: inherit; }
 @media (max-width: 760px) { .catalog-layout { grid-template-columns: 1fr; } .workspace-form-grid, .channel-fieldset { grid-template-columns: 1fr; } .workspace-list-section { margin-bottom: 28px; } }
 @media (max-width: 760px) { .inventory-metrics, .inventory-bottom, .customers-grid, .cash-layout, .printing-grid, .printing-metrics { grid-template-columns: 1fr; } .customer-search input { width: 100%; } .cash-figures { grid-template-columns: 1fr; } }
 .kds-topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px clamp(18px,4vw,56px); border-bottom:1px solid var(--line); background:#fff; }

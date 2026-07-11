@@ -35,11 +35,13 @@ import {
   type ApiError,
   type AuditEvent,
   addOrderItem,
+  assignOrderCustomer,
   adjustInventoryStock,
   assignUserRole,
   buildPosEventsUrl,
   type CashSessionSummary,
   type Category,
+  type Customer,
   type ClubWhiskyIntegrationConfig,
   cancelFiscalDocument,
   cancelQrOrderItem,
@@ -69,6 +71,7 @@ import {
   type KdsTicket,
   listAuditEvents,
   listCategories,
+  listCustomers,
   listFiscalDocuments,
   listInventoryAlerts,
   listInventorySummary,
@@ -637,6 +640,8 @@ export default function AppDashboardPage() {
   const [selectedTableId, setSelectedTableId] = useState(demoTables[2]?.id ?? "");
   const [selectedProductId, setSelectedProductId] = useState(demoProducts[0]?.id ?? "");
   const [currentOrder, setCurrentOrder] = useState<OpenOrderResponse | null>(null);
+  const [posCustomers, setPosCustomers] = useState<Customer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [ticketItems, setTicketItems] = useState<OrderItemResponse[]>([]);
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState<PaymentResponse | null>(null);
   const [orderPayments, setOrderPayments] = useState<OrderPayment[]>([]);
@@ -1146,6 +1151,11 @@ export default function AppDashboardPage() {
     setIsPosWorkspace(new URLSearchParams(window.location.search).get("view") === "pos");
   }, []);
 
+  useEffect(() => {
+    if (!isPosWorkspace || status !== "ready") return;
+    void listCustomers().then(setPosCustomers).catch(() => setPosCustomers([]));
+  }, [isPosWorkspace, status]);
+
   const metrics = useMemo(() => {
     const occupiedCount = tables.filter((table) => table.status !== "free").length;
     const activeTickets = tickets.filter((ticket) => !["ready", "served"].includes(ticket.status));
@@ -1175,7 +1185,7 @@ export default function AppDashboardPage() {
       return currentOrder;
     }
 
-    const opened = await openOrder(branchId, selectedTable.id);
+    const opened = await openOrder(branchId, selectedTable.id, 2, selectedCustomerId || undefined);
     setCurrentOrder(opened);
     setOrderStatus(opened.status);
     setOrderPayments([]);
@@ -2164,6 +2174,25 @@ export default function AppDashboardPage() {
                     <ReceiptText size={18} />
                     <strong>Comanda #{selectedTable?.code ?? "Balcao"}</strong>
                   </div>
+                  <label className="pos-customer-select">
+                    Cliente
+                    <select
+                      value={selectedCustomerId}
+                      onChange={(event) => {
+                        const customerId = event.target.value;
+                        setSelectedCustomerId(customerId);
+                        if (currentOrder && customerId) {
+                          void runAction(async () => {
+                            await assignOrderCustomer(currentOrder.id, customerId);
+                            setActionStatus("Cliente vinculado à comanda.");
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Consumidor não identificado</option>
+                      {posCustomers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
+                    </select>
+                  </label>
                   <div className="ticket-lines">
                     {(ticketItems.length > 0 ? ticketItems : demoTicketLines()).map((item) => (
                       <div className="ticket-line" key={item.id}>
