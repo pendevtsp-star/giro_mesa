@@ -7,6 +7,8 @@ import {
   floorPlans,
   kdsStations,
   kdsTickets,
+  modifierGroups,
+  modifierOptions,
   orderItems,
   orders,
   outboxEvents,
@@ -652,6 +654,13 @@ export class PosService {
     });
   }
 
+  async createTable(context: TenantContext, input: { branchId: string; code: string; name: string; seats: number }) {
+    const [table] = await this.database.db.insert(diningTables).values({ tenantId: context.tenantId, branchId: input.branchId, code: input.code.trim().toUpperCase(), name: input.name.trim(), seats: input.seats }).returning();
+    if (!table) throw new Error("Failed to create table");
+    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: input.branchId, userId: context.userId, requestId: context.requestId, action: "dining_table.created", entityType: "dining_table", entityId: table.id, metadata: { code: table.code, seats: table.seats } });
+    return table;
+  }
+
   async getFloorPlan(context: TenantContext, branchId: string) {
     const [plan] = await this.database.db.select().from(floorPlans)
       .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, branchId))).limit(1);
@@ -705,9 +714,24 @@ export class PosService {
         throw new NotFoundException("Product not found or unavailable");
       }
 
-      const total = calculateOrderTotal({
-        lines: [{ quantity: input.quantity, unitPriceCents: product.priceCents }],
-      });
+      const selectedOptionIds = (input.modifiers ?? [])
+        .map((modifier) => typeof modifier.optionId === "string" ? modifier.optionId : null)
+        .filter((optionId): optionId is string => Boolean(optionId));
+      const selectedOptions = selectedOptionIds.length
+        ? await tx.select().from(modifierOptions).where(and(eq(modifierOptions.tenantId, context.tenantId), inArray(modifierOptions.id, selectedOptionIds), eq(modifierOptions.isAvailable, true)))
+        : [];
+      if (selectedOptions.length !== selectedOptionIds.length) throw new BadRequestException("One or more modifiers are unavailable");
+      const groups = selectedOptions.length
+        ? await tx.select().from(modifierGroups).where(and(eq(modifierGroups.tenantId, context.tenantId), eq(modifierGroups.productId, product.id)))
+        : [];
+      const selectedByGroup = new Map<string, number>();
+      for (const option of selectedOptions) selectedByGroup.set(option.groupId, (selectedByGroup.get(option.groupId) ?? 0) + 1);
+      for (const group of groups) {
+        const selected = selectedByGroup.get(group.id) ?? 0;
+        if ((group.isRequired && selected < group.minChoices) || selected < group.minChoices || selected > group.maxChoices) throw new BadRequestException(`Invalid choices for modifier group ${group.name}`);
+      }
+      const modifierDeltaCents = selectedOptions.reduce((sum, option) => sum + option.priceDeltaCents, 0);
+      const total = calculateOrderTotal({ lines: [{ quantity: input.quantity, unitPriceCents: product.priceCents + modifierDeltaCents }] });
 
       const [item] = await tx
         .insert(orderItems)
@@ -717,10 +741,10 @@ export class PosService {
           productId: product.id,
           nameSnapshot: product.name,
           quantity: String(input.quantity),
-          unitPriceCents: product.priceCents,
+          unitPriceCents: product.priceCents + modifierDeltaCents,
           totalCents: total.totalCents,
           notes: input.notes,
-          modifiers: input.modifiers ?? [],
+          modifiers: selectedOptions.map((option) => ({ optionId: option.id, groupId: option.groupId, name: option.name, priceDeltaCents: option.priceDeltaCents })),
         })
         .returning();
 

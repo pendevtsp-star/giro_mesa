@@ -1,4 +1,4 @@
-import { cashSessions, orderItems, orders, payments, users } from "@giromesa/db";
+import { cashSessions, orderItems, orders, payments, recipeItems, recipes, users } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
@@ -233,7 +233,15 @@ export class ReportsService {
     const byMethod = Object.fromEntries(
       paymentRows.map((row) => [row.method, Number(row.totalCents)]),
     );
-    const estimatedCostsCents = Math.round(totalCents * 0.32);
+    const soldItems = await this.database.db.select({ productId: orderItems.productId, quantity: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::numeric` })
+      .from(orderItems).innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .where(and(eq(orderItems.tenantId, context.tenantId), eq(orders.branchId, branchId), gte(orderItems.createdAt, from), to ? lte(orderItems.createdAt, to) : sql`true`, sql`${orderItems.status} <> 'canceled'`)).groupBy(orderItems.productId);
+    const productIds = soldItems.map((item) => item.productId).filter((id): id is string => Boolean(id));
+    const recipeCosts = productIds.length ? await this.database.db.select({ productId: recipes.productId, quantity: recipeItems.quantity, averageCostCents: sql<number>`coalesce((select average_cost_cents from inventory_items where id = ${recipeItems.inventoryItemId}), 0)::int` })
+      .from(recipes).innerJoin(recipeItems, eq(recipeItems.recipeId, recipes.id)).where(and(eq(recipes.tenantId, context.tenantId), inArray(recipes.productId, productIds))) : [];
+    const soldByProduct = new Map(soldItems.map((item) => [item.productId, Number(item.quantity)]));
+    const actualRecipeCostsCents = recipeCosts.reduce((sum, item) => sum + Math.round((soldByProduct.get(item.productId) ?? 0) * Number(item.quantity) * item.averageCostCents), 0);
+    const estimatedCostsCents = actualRecipeCostsCents > 0 ? actualRecipeCostsCents : Math.round(totalCents * 0.32);
     const averageTicketCents = count > 0 ? Math.round(totalCents / count) : 0;
     const previousTotalCents = Number(previousPaymentRows[0]?.totalCents ?? 0);
     const previousCount = Number(previousPaymentRows[0]?.count ?? 0);
@@ -329,6 +337,7 @@ export class ReportsService {
       dre: {
         grossRevenueCents: totalCents,
         estimatedCostsCents,
+        actualRecipeCostsCents,
         operationalMarginCents,
         operationalMarginPercent,
       },

@@ -58,6 +58,7 @@ const floorLayoutSchema = z.object({
   branchId: z.string().min(1),
   layout: z.record(z.string(), z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) })),
 });
+const createTableSchema = z.object({ branchId: z.string().min(1), code: z.string().min(1).max(40), name: z.string().min(1).max(80), seats: z.number().int().min(1).max(40) });
 
 const qrOrderItemUpdateSchema = z.object({
   quantity: z.number().positive().max(99),
@@ -87,6 +88,13 @@ export class PosController {
     return {
       data: await this.posService.listTables(context, branchId),
     };
+  }
+
+  @Post("tables")
+  async createTable(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return this.posService.createTable(context, createTableSchema.parse(body));
   }
 
   @Get("floor-plan")

@@ -376,6 +376,7 @@ export type FinancialReport = {
   dre: {
     grossRevenueCents: number;
     estimatedCostsCents: number;
+    actualRecipeCostsCents?: number;
     operationalMarginCents: number;
     operationalMarginPercent?: number;
   };
@@ -1145,6 +1146,7 @@ export async function listKdsStations() {
   const result = await apiRequest<{ data: KdsStation[] }>("/api/v1/kds/stations");
   return result.data;
 }
+export function createDiningTable(input: { branchId: string; code: string; name: string; seats: number }) { return apiRequest<DiningTable>("/api/v1/pos/tables", { method: "POST", body: input }); }
 
 export function getFloorPlan(branchId: string) { return apiRequest<{ id: string | null; branchId: string; name: string; layout: Record<string, { x: number; y: number }> }>(`/api/v1/pos/floor-plan?branchId=${encodeURIComponent(branchId)}`); }
 export function saveFloorPlan(branchId: string, layout: Record<string, { x: number; y: number }>) { return apiRequest<Record<string, unknown>>("/api/v1/pos/floor-plan", { method: "PATCH", body: { branchId, layout } }); }
@@ -1199,13 +1201,14 @@ export function openOrder(branchId: string, tableId?: string, peopleCount = 2, c
   });
 }
 
-export function addOrderItem(orderId: string, productId: string) {
+export function addOrderItem(orderId: string, productId: string, modifiers: Array<{ optionId: string }> = []) {
   return apiRequest<OrderItemResponse>(`/api/v1/pos/orders/${orderId}/items`, {
     method: "POST",
     body: {
       productId,
       quantity: 1,
       notes: "Lancado pelo painel demo",
+      modifiers,
     },
   });
 }
