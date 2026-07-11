@@ -29,7 +29,7 @@ test.describe("GiroMesa demo experience", () => {
     await skipWhenApiUnavailable();
 
     await authenticateBrowserPage(page);
-    await page.goto("/app", { waitUntil: "domcontentloaded" });
+    await page.goto("/app?view=pos", { waitUntil: "domcontentloaded" });
     await expect(page.getByText("API conectada")).toBeVisible();
 
     await page.getByTestId("pos-add-item").click();
