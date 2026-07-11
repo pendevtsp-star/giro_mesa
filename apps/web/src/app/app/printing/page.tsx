@@ -41,7 +41,8 @@ export default function PrintingPage() {
     void (async () => {
       try {
         const session = await getSession();
-        setBranchId(session.branchId || "");
+        if (!session.branchId) throw new Error("Unidade não encontrada");
+        setBranchId(session.branchId);
         await load(session.branchId);
       } catch {
         setMessage("Entre com um perfil autorizado para administrar a impressão.");
