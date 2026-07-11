@@ -88,17 +88,17 @@ export default function CatalogPage() {
     try {
       await createProduct({
         name: product.name.trim(),
-        categoryId: product.categoryId || undefined,
-        description: product.description.trim() || undefined,
         priceCents: moneyToCents(product.price),
         costCents: moneyToCents(product.cost),
         channels: product.channels,
         isClubEligible: product.isClubEligible,
+        ...(product.categoryId ? { categoryId: product.categoryId } : {}),
+        ...(product.description.trim() ? { description: product.description.trim() } : {}),
         ...(product.isClubEligible
           ? {
               bottleVolumeMl: Number(product.bottleVolumeMl),
               defaultDoseMl: Number(product.defaultDoseMl),
-              spiritType: product.spiritType || undefined,
+              ...(product.spiritType ? { spiritType: product.spiritType } : {}),
             }
           : {}),
       });
