@@ -42,6 +42,7 @@ import {
   type CashSessionSummary,
   type Category,
   type Customer,
+  type CustomerOrderHistory,
   type ClubWhiskyIntegrationConfig,
   cancelFiscalDocument,
   cancelQrOrderItem,
@@ -59,6 +60,7 @@ import {
   type FiscalDocument,
   formatMoney,
   getCashSessionSummary,
+  getCustomerHistory,
   getClubWhiskyConfig,
   getPrinterConnectorConfig,
   getSession,
@@ -72,6 +74,7 @@ import {
   listAuditEvents,
   listCategories,
   listCustomers,
+  listProductModifiers,
   listFiscalDocuments,
   listInventoryAlerts,
   listInventorySummary,
@@ -100,6 +103,7 @@ import {
   type PrintJob,
   type PrintRoute,
   type Product,
+  type ModifierGroup,
   printBillPreview,
   printCashSessionSummary,
   printPaymentReceipt,
@@ -642,6 +646,11 @@ export default function AppDashboardPage() {
   const [currentOrder, setCurrentOrder] = useState<OpenOrderResponse | null>(null);
   const [posCustomers, setPosCustomers] = useState<Customer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerHistory, setCustomerHistory] = useState<CustomerOrderHistory[]>([]);
+  const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
+  const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [ticketItems, setTicketItems] = useState<OrderItemResponse[]>([]);
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState<PaymentResponse | null>(null);
   const [orderPayments, setOrderPayments] = useState<OrderPayment[]>([]);
@@ -1468,14 +1477,25 @@ export default function AppDashboardPage() {
     });
   }
 
+  async function addProductToOrder(product: Product, modifierIds: string[] = []) {
+    const order = await ensureOrder();
+    const item = await addOrderItem(order.id, product.id, modifierIds.map((optionId) => ({ optionId })));
+    setTicketItems((current) => [...current, item]);
+    setOrderStatus("opened");
+    setActionStatus(`${item.nameSnapshot} lançado na comanda.`);
+  }
+
   function handleAddItem(product: Product) {
     setSelectedProductId(product.id);
     void runAction(async () => {
-      const order = await ensureOrder();
-      const item = await addOrderItem(order.id, product.id);
-      setTicketItems((current) => [...current, item]);
-      setOrderStatus("opened");
-      setActionStatus(`${item.nameSnapshot} lancado na comanda.`);
+      const groups = await listProductModifiers(product.id);
+      if (groups.some((group) => group.options.length > 0)) {
+        setModifierProduct(product);
+        setModifierGroups(groups);
+        setSelectedModifierIds([]);
+        return;
+      }
+      await addProductToOrder(product);
     });
   }
 
@@ -2176,23 +2196,18 @@ export default function AppDashboardPage() {
                   </div>
                   <label className="pos-customer-select">
                     Cliente
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(event) => {
-                        const customerId = event.target.value;
-                        setSelectedCustomerId(customerId);
-                        if (currentOrder && customerId) {
-                          void runAction(async () => {
-                            await assignOrderCustomer(currentOrder.id, customerId);
-                            setActionStatus("Cliente vinculado à comanda.");
-                          });
-                        }
-                      }}
-                    >
-                      <option value="">Consumidor não identificado</option>
-                      {posCustomers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
-                    </select>
+                    <input list="pos-customers" value={customerSearch} onChange={(event) => {
+                      const value = event.target.value;
+                      setCustomerSearch(value);
+                      const customer = posCustomers.find((item) => `${item.name} · ${item.phone ?? item.email ?? ""}` === value);
+                      if (!customer) return;
+                      setSelectedCustomerId(customer.id);
+                      void getCustomerHistory(customer.id).then(setCustomerHistory).catch(() => setCustomerHistory([]));
+                      if (currentOrder) void runAction(async () => { await assignOrderCustomer(currentOrder.id, customer.id); setActionStatus("Cliente vinculado à comanda."); });
+                    }} placeholder="Buscar nome ou telefone" />
+                    <datalist id="pos-customers">{posCustomers.map((customer) => <option key={customer.id} value={`${customer.name} · ${customer.phone ?? customer.email ?? ""}`} />)}</datalist>
                   </label>
+                  {selectedCustomerId ? <div className="pos-customer-history"><strong>{customerHistory.length ? `Últimas ${Math.min(customerHistory.length, 3)} visitas` : "Sem consumo anterior"}</strong>{customerHistory.slice(0, 3).map((order) => <span key={order.id}>{order.closedAt ? new Date(order.closedAt).toLocaleDateString("pt-BR") : "Em aberto"} · {formatMoney(order.totalCents)}</span>)}</div> : null}
                   <div className="ticket-lines">
                     {(ticketItems.length > 0 ? ticketItems : demoTicketLines()).map((item) => (
                       <div className="ticket-line" key={item.id}>
@@ -3950,6 +3965,7 @@ export default function AppDashboardPage() {
           <QrCode size={18} />
           QR Mesa {selectedTable?.code ?? "M03"}
         </a>
+        {modifierProduct ? <div className="modifier-modal-backdrop" role="presentation"><section className="modifier-modal" role="dialog" aria-modal="true" aria-label={`Opções de ${modifierProduct.name}`}><div className="panel-title"><div><span className="section-kicker">Personalize o item</span><h2>{modifierProduct.name}</h2></div><button className="icon-button" onClick={() => setModifierProduct(null)} type="button" title="Fechar"><X size={18} /></button></div>{modifierGroups.map((group) => <fieldset className="modifier-choice-group" key={group.id}><legend>{group.name} {group.isRequired ? "(obrigatório)" : ""}</legend>{group.options.map((option) => <label key={option.id}><input checked={selectedModifierIds.includes(option.id)} onChange={(event) => setSelectedModifierIds((current) => event.target.checked ? [...current.filter((id) => !group.options.some((item) => item.id === id)), option.id] : current.filter((id) => id !== option.id))} type="checkbox" /> <span>{option.name}</span><strong>{option.priceDeltaCents ? `+ ${formatMoney(option.priceDeltaCents)}` : "Incluído"}</strong></label>)}</fieldset>)}<div className="modifier-modal-actions"><button className="button secondary" onClick={() => setModifierProduct(null)} type="button">Cancelar</button><button className="button primary" onClick={() => { const product = modifierProduct; setModifierProduct(null); void runAction(() => addProductToOrder(product, selectedModifierIds)); }} type="button">Adicionar ao pedido</button></div></section></div> : null}
       </section>
     </main>
   );
