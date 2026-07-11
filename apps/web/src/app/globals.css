@@ -1,21 +1,21 @@
 :root {
   color-scheme: light;
-  --ink: #14201d;
-  --ink-soft: #31423e;
-  --muted: #66736f;
-  --line: #dce4df;
-  --paper: #f5f7f3;
+  --ink: #0d1b2a;
+  --ink-soft: #1b263b;
+  --muted: #607080;
+  --line: #dce5e3;
+  --paper: #fff6e6;
   --surface: #ffffff;
-  --surface-soft: #eef4ef;
-  --accent: #0b826d;
-  --accent-strong: #075e50;
-  --blue: #2563a8;
+  --surface-soft: #fffaf0;
+  --accent: #f5a623;
+  --accent-strong: #d98b08;
+  --blue: #1b263b;
   --red: #bd3f4a;
-  --amber: #b97014;
-  --green: #1c7c4c;
+  --amber: #f5a623;
+  --green: #2e7d32;
   --violet: #6658b7;
-  --shadow: 0 18px 46px rgba(20, 32, 29, 0.14);
-  --tight-shadow: 0 1px 2px rgba(20, 32, 29, 0.07);
+  --shadow: 0 18px 46px rgba(13, 27, 42, 0.14);
+  --tight-shadow: 0 1px 2px rgba(13, 27, 42, 0.09);
 }
 
 * {
@@ -30,8 +30,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0;
 }
 
@@ -59,7 +58,7 @@ button {
 .sales-page {
   min-height: 100vh;
   overflow: hidden;
-  background: #f7f8f5;
+  background: #fff6e6;
 }
 
 .sales-topbar,
@@ -624,19 +623,20 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-weight: 850;
+  color: var(--ink);
+  font-weight: 800;
   letter-spacing: 0;
   text-transform: capitalize;
 }
 
 .brand-mark {
-  display: grid;
+  display: inline-block;
   width: 36px;
   height: 36px;
-  place-items: center;
   border-radius: 8px;
-  background: var(--ink);
-  color: #fff;
+  background: #0d1b2a url("/images/giromesa-symbol.png") center / cover no-repeat;
+  color: transparent;
+  font-size: 0;
   box-shadow: var(--tight-shadow);
 }
 
@@ -700,8 +700,8 @@ button {
 .button.primary,
 .gm-button-primary {
   background: var(--accent);
-  color: #fff;
-  box-shadow: 0 10px 22px rgba(11, 130, 109, 0.18);
+  color: #0d1b2a;
+  box-shadow: 0 10px 22px rgba(245, 166, 35, 0.24);
 }
 
 .button.primary:hover,
@@ -1415,6 +1415,31 @@ button {
 .print-job-row > div { display: grid; gap: 4px; }.print-job-row small { color: var(--muted); }.print-job-row > div:last-child { display: flex; gap: 8px; }
 .pos-customer-select { display: grid; gap: 5px; margin: 10px 0; color: var(--muted); font-size: .78rem; font-weight: 800; }
 .pos-customer-select select { width: 100%; min-height: 36px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #fff; color: var(--ink); font: inherit; }
+
+/* GiroMesa brand system: structure in navy, action in orange, outcome in green. */
+.sales-page { background: linear-gradient(180deg, #fff6e6 0%, #fffaf0 72%, #0d1b2a 72%); }
+.sales-topbar { border-bottom-color: rgba(13, 27, 42, .1); background: rgba(255, 246, 230, .88); }
+.sales-hero h1 { color: #0d1b2a; }
+.sales-hero h1::first-line { color: #0d1b2a; }
+.sales-eyebrow, .section-kicker { color: #d98b08; }
+.sales-product-frame { border-color: rgba(13, 27, 42, .16); box-shadow: 0 30px 72px rgba(13, 27, 42, .2); }
+.sales-window-bar { border-bottom-color: #e7ded0; color: #607080; }
+.sales-float-card, .sales-band, .sales-security, .sales-cta { background: #0d1b2a; }
+.sales-band .section-kicker { color: #f5a623; }
+.sales-benefits article > span, .sales-module-grid article > svg { color: #f5a623; }
+.app-layout { background: linear-gradient(180deg, #fffaf0, #f7f2e8); }
+.sidebar { border-right: 0; background: #0d1b2a; color: #f8fbff; }
+.sidebar .brand { color: #fff; }
+.sidebar .tenant-chip { border-color: rgba(255, 255, 255, .16); color: #eef4f6; background: rgba(255, 255, 255, .05); }
+.sidebar a { color: #b9c6d1; }
+.sidebar a:hover { color: #fff; background: rgba(255, 255, 255, .07); }
+.sidebar a.active { background: rgba(245, 166, 35, .16); color: #ffd27a; box-shadow: inset 3px 0 0 #f5a623; }
+.sidebar .tenant-avatar { background: #f5a623; color: #0d1b2a; }
+.workspace-header h1, .workspace-heading h1 { color: #0d1b2a; }
+.panel, .workspace-panel, .workspace-list-section, .metric, .product-tile, .table-tile { border-color: rgba(13, 27, 42, .12); }
+.button.secondary, .gm-button-secondary { border-color: rgba(13, 27, 42, .16); background: #fffdf8; }
+.gm-badge-good { background: #e8f5e9; color: #216e26; }
+.gm-badge-warn { background: #fff0d3; color: #9a5b00; }
 @media (max-width: 760px) { .catalog-layout { grid-template-columns: 1fr; } .workspace-form-grid, .channel-fieldset { grid-template-columns: 1fr; } .workspace-list-section { margin-bottom: 28px; } }
 @media (max-width: 760px) { .inventory-metrics, .inventory-bottom, .customers-grid, .cash-layout, .printing-grid, .printing-metrics { grid-template-columns: 1fr; } .customer-search input { width: 100%; } .cash-figures { grid-template-columns: 1fr; } }
 .kds-topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px clamp(18px,4vw,56px); border-bottom:1px solid var(--line); background:#fff; }

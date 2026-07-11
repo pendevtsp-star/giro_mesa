@@ -82,10 +82,10 @@ export default function HomePage() {
           <span className="sales-eyebrow">
             <CircleDollarSign size={16} /> Gestão food service
           </span>
-          <h1>O turno flui. A gestão acompanha.</h1>
+          <h1>Gestão que gira. Resultados que ficam.</h1>
           <p>
-            GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação simples
-            para a equipe e clara para quem toma decisões.
+            GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação
+            inteligente, prática e confiável para a equipe e para quem toma decisões.
           </p>
           <div className="sales-hero-actions">
             <a className="button primary" href="/app">
