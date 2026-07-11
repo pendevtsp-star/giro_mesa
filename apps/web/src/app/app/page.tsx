@@ -138,6 +138,7 @@ const nav = [
   { icon: ClipboardList, label: "PDV", href: "/app?view=pos", permissions: ["pos:operate"] },
   { icon: MapPinned, label: "Salão", href: "/app/salon", permissions: ["pos:operate"] },
   { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
+  { icon: Users, label: "Clientes", href: "/app/customers", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app/kds", permissions: ["pos:kds_send", "kds:operate"] },
   { icon: PackageOpen, label: "Estoque", href: "/app/inventory", permissions: ["inventory:manage"] },
   { icon: CreditCard, label: "Relatórios", href: "/app/reports", permissions: ["reports:read"] },

@@ -392,6 +392,26 @@ export type FinancialReport = {
   };
 };
 
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  birthday: string | null;
+  marketingOptIn: boolean;
+  lgpdConsentAt: string | null;
+  createdAt: string;
+};
+
+export type CustomerOrderHistory = {
+  id: string;
+  status: string;
+  channel: string;
+  totalCents: number;
+  openedAt: string | null;
+  closedAt: string | null;
+};
+
 export type InventoryMovement = {
   id: string;
   inventoryItemId: string;
@@ -1118,6 +1138,29 @@ export async function listKdsTickets() {
 
 export async function listKdsStations() {
   const result = await apiRequest<{ data: KdsStation[] }>("/api/v1/kds/stations");
+  return result.data;
+}
+
+export async function listCustomers(search?: string) {
+  const query = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+  const result = await apiRequest<{ data: Customer[] }>(`/api/v1/customers${query}`);
+  return result.data;
+}
+
+export function createCustomer(input: {
+  name: string;
+  phone?: string;
+  email?: string;
+  birthday?: string;
+  marketingOptIn?: boolean;
+}) {
+  return apiRequest<Customer>("/api/v1/customers", { method: "POST", body: input });
+}
+
+export async function getCustomerHistory(customerId: string) {
+  const result = await apiRequest<{ data: CustomerOrderHistory[] }>(
+    `/api/v1/customers/${customerId}/history`,
+  );
   return result.data;
 }
 

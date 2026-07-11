@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
+import { CustomersModule } from "./modules/customers/customers.module";
 import { DatabaseModule } from "./modules/database/database.module";
 import { FiscalModule } from "./modules/fiscal/fiscal.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -21,6 +22,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     TenantsModule,
     AuthModule,
     CatalogModule,
+    CustomersModule,
     PosModule,
     FiscalModule,
     InventoryModule,
