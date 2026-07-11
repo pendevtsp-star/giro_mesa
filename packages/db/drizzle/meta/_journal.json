@@ -71,6 +71,13 @@
       "when": 1783785600000,
       "tag": "0009_tidy_supplier",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783789200000,
+      "tag": "0010_repair_supplier_schema",
+      "breakpoints": true
     }
   ]
 }
