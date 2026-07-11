@@ -12,6 +12,14 @@ type CustomerInput = {
   marketingOptIn?: boolean | undefined;
 };
 
+type CustomerUpdateInput = {
+  name?: string | undefined;
+  phone?: string | undefined;
+  email?: string | undefined;
+  birthday?: string | undefined;
+  marketingOptIn?: boolean | undefined;
+};
+
 @Injectable()
 export class CustomersService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -40,7 +48,7 @@ export class CustomersService {
     return customer;
   }
 
-  async update(context: TenantContext, customerId: string, input: Partial<CustomerInput>) {
+  async update(context: TenantContext, customerId: string, input: CustomerUpdateInput) {
     const [customer] = await this.database.db.update(customers).set({
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.phone !== undefined ? { phone: input.phone || null } : {}),
