@@ -17,7 +17,11 @@ const adjustStockSchema = z.object({
   branchId: z.string().min(1),
   inventoryItemId: z.string().min(1),
   stockLocationId: z.string().optional(),
-  quantity: z.string().min(1),
+  type: z
+    .enum(["purchase_receipt", "loss", "inventory_count", "manual_adjustment"])
+    .default("manual_adjustment"),
+  quantity: z.string().regex(/^-?\d+(\.\d+)?$/, "Quantidade inválida"),
+  unitCostCents: z.number().int().nonnegative().optional(),
   reason: z.string().min(5),
 });
 
@@ -57,6 +61,18 @@ export class InventoryController {
   async listLocations(@Headers() headers: HeaderRecord, @Query("branchId") branchId: string) {
     const context = await this.context(headers, "inventory:manage");
     return { data: await this.inventoryService.listLocations(context, branchId) };
+  }
+
+  @Get("movements")
+  async listMovements(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+    @Query("limit") limit?: string,
+  ) {
+    const context = await this.context(headers, "inventory:manage");
+    return {
+      data: await this.inventoryService.listMovements(context, branchId, Number(limit) || 50),
+    };
   }
 
   @Post("items")

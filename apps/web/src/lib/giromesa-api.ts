@@ -392,6 +392,17 @@ export type FinancialReport = {
   };
 };
 
+export type InventoryMovement = {
+  id: string;
+  inventoryItemId: string;
+  inventoryItemName: string;
+  type: "purchase_receipt" | "loss" | "inventory_count" | "manual_adjustment";
+  quantity: string;
+  unitCostCents: number;
+  reason: string | null;
+  createdAt: string;
+};
+
 export type ProductSalesReport = {
   branchId: string;
   period: FinancialReport["period"];
@@ -1372,13 +1383,22 @@ export function createInventoryItem(input: {
 export function adjustInventoryStock(input: {
   branchId: string;
   inventoryItemId: string;
+  type?: InventoryMovement["type"];
   quantity: string;
+  unitCostCents?: number;
   reason: string;
 }) {
   return apiRequest<Record<string, unknown>>("/api/v1/inventory/adjustments", {
     method: "POST",
     body: input,
   });
+}
+
+export async function listInventoryMovements(branchId: string, limit = 50) {
+  const result = await apiRequest<{ data: InventoryMovement[] }>(
+    `/api/v1/inventory/movements?branchId=${encodeURIComponent(branchId)}&limit=${limit}`,
+  );
+  return result.data;
 }
 
 export async function listPrinterDevices(branchId?: string) {

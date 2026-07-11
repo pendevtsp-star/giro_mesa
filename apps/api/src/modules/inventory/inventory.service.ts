@@ -10,7 +10,7 @@ import {
 } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
 export type InventoryItemInput = {
@@ -25,7 +25,9 @@ export type StockAdjustmentInput = {
   branchId: string;
   inventoryItemId: string;
   stockLocationId?: string | undefined;
+  type: "purchase_receipt" | "loss" | "inventory_count" | "manual_adjustment";
   quantity: string;
+  unitCostCents?: number | undefined;
   reason: string;
 };
 
@@ -102,6 +104,28 @@ export class InventoryService {
       .orderBy(stockLocations.name);
   }
 
+  async listMovements(context: TenantContext, branchId: string, limit: number) {
+    await this.assertBranch(context, branchId);
+    return this.database.db
+      .select({
+        id: stockMovements.id,
+        inventoryItemId: stockMovements.inventoryItemId,
+        inventoryItemName: inventoryItems.name,
+        type: stockMovements.type,
+        quantity: stockMovements.quantity,
+        unitCostCents: stockMovements.unitCostCents,
+        reason: stockMovements.reason,
+        createdAt: stockMovements.createdAt,
+      })
+      .from(stockMovements)
+      .innerJoin(inventoryItems, eq(inventoryItems.id, stockMovements.inventoryItemId))
+      .where(
+        and(eq(stockMovements.tenantId, context.tenantId), eq(stockMovements.branchId, branchId)),
+      )
+      .orderBy(desc(stockMovements.createdAt))
+      .limit(Math.min(Math.max(limit, 1), 100));
+  }
+
   async createItem(context: TenantContext, input: InventoryItemInput) {
     const [item] = await this.database.db
       .insert(inventoryItems)
@@ -147,6 +171,8 @@ export class InventoryService {
       throw new NotFoundException("Inventory item not found");
     }
 
+    const currentQuantity = await this.currentQuantity(context, input.branchId, item.id);
+    const quantity = this.normalizeMovementQuantity(input.type, input.quantity, currentQuantity);
     const stockLocationId =
       input.stockLocationId ?? (await this.defaultLocationId(context, input.branchId));
     const [movement] = await this.database.db
@@ -156,10 +182,10 @@ export class InventoryService {
         branchId: input.branchId,
         inventoryItemId: item.id,
         stockLocationId,
-        type: "manual_adjustment",
-        quantity: input.quantity,
-        unitCostCents: item.averageCostCents,
-        sourceType: "manual",
+        type: input.type,
+        quantity,
+        unitCostCents: input.unitCostCents ?? item.averageCostCents,
+        sourceType: input.type === "purchase_receipt" ? "purchase" : "manual",
         reason: input.reason,
       })
       .returning();
@@ -168,12 +194,19 @@ export class InventoryService {
       throw new Error("Failed to create stock movement");
     }
 
+    if (input.type === "purchase_receipt" && input.unitCostCents !== undefined) {
+      await this.database.db
+        .update(inventoryItems)
+        .set({ averageCostCents: input.unitCostCents, updatedAt: new Date() })
+        .where(and(eq(inventoryItems.tenantId, context.tenantId), eq(inventoryItems.id, item.id)));
+    }
+
     await this.audit(context, {
       branchId: input.branchId,
-      action: "inventory.stock_adjusted",
+      action: `inventory.${input.type}`,
       entityType: "stock_movement",
       entityId: movement.id,
-      metadata: { inventoryItemId: item.id, quantity: input.quantity, reason: input.reason },
+      metadata: { inventoryItemId: item.id, quantity, type: input.type, reason: input.reason },
     });
 
     return movement;
@@ -274,6 +307,31 @@ export class InventoryService {
       .returning();
 
     return created?.id;
+  }
+
+  private async currentQuantity(context: TenantContext, branchId: string, inventoryItemId: string) {
+    const [row] = await this.database.db
+      .select({ quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)` })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, context.tenantId),
+          eq(stockMovements.branchId, branchId),
+          eq(stockMovements.inventoryItemId, inventoryItemId),
+        ),
+      );
+    return Number(row?.quantity ?? 0);
+  }
+
+  private normalizeMovementQuantity(type: StockAdjustmentInput["type"], quantity: string, current: number) {
+    const parsed = Number(quantity);
+    if (!Number.isFinite(parsed) || parsed === 0) {
+      throw new Error("Stock movement quantity must be non-zero");
+    }
+    if (type === "inventory_count") return String(parsed - current);
+    if (type === "loss") return String(-Math.abs(parsed));
+    if (type === "purchase_receipt") return String(Math.abs(parsed));
+    return String(parsed);
   }
 
   private async assertBranch(context: TenantContext, branchId: string) {
