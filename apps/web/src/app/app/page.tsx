@@ -139,13 +139,13 @@ const nav = [
   { icon: MapPinned, label: "Salão", href: "/app/salon", permissions: ["pos:operate"] },
   { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app/kds", permissions: ["pos:kds_send", "kds:operate"] },
-  { icon: PackageOpen, label: "Estoque", href: "/app", permissions: ["inventory:manage"] },
+  { icon: PackageOpen, label: "Estoque", href: "/app/inventory", permissions: ["inventory:manage"] },
   { icon: CreditCard, label: "Relatórios", href: "/app/reports", permissions: ["reports:read"] },
-  { icon: Printer, label: "Impressão", href: "/app", permissions: ["hardware:manage"] },
+  { icon: Printer, label: "Impressão", href: "/app/printing", permissions: ["hardware:manage"] },
   {
     icon: QrCode,
     label: "Cardápio",
-    href: "/app",
+    href: "/app/catalog",
     permissions: ["catalog:manage", "pos:qr_review"],
   },
   {
