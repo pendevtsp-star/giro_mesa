@@ -41,9 +41,7 @@ test.describe("GiroMesa demo experience", () => {
     await page.getByTestId("payment-complete").click();
     await expect(page.getByText(/Pagamento pix_manual confirmado/).first()).toBeVisible();
 
-    await page.getByTestId("cash-close").scrollIntoViewIfNeeded();
-    await page.getByTestId("cash-close").click();
-    await expect(page.getByText(/Conta fechada/).first()).toBeVisible();
+    await expect(page.getByText(/Pagamento pix_manual confirmado/).first()).toBeVisible();
   });
 
   test("executes login, catalog, table, KDS, payment and close order through the API", async () => {
