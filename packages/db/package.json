@@ -17,6 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests --pool=threads --maxWorkers=1 --minWorkers=1",
     "db:generate": "drizzle-kit generate",
+    "db:check-applied": "node scripts/check-migrations-applied.mjs",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/seed.ts",
     "db:reset-demo": "pnpm db:seed"

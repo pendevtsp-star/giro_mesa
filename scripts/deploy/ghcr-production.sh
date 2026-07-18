@@ -64,7 +64,12 @@ backup_file="backups/pre-deploy-${DEPLOY_SHA}-$(date +%Y%m%d-%H%M%S).sql"
 compose exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "${backup_file}"
 test -s "${backup_file}"
 
-compose run --rm api pnpm db:migrate
+if compose run --rm api pnpm --filter @giromesa/db db:check-applied; then
+  echo "Database migrations are already applied; skipping drizzle-kit migrate."
+else
+  compose run --rm api pnpm db:migrate
+  compose run --rm api pnpm --filter @giromesa/db db:check-applied
+fi
 
 systemd_stopped=0
 rollback_systemd() {
