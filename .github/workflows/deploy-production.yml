@@ -1,0 +1,251 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: giro-mesa-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.7.0"
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: pendevtsp-star
+  API_IMAGE: ghcr.io/pendevtsp-star/giro-mesa-api
+  WEB_IMAGE: ghcr.io/pendevtsp-star/giro-mesa-web
+  WORKER_IMAGE: ghcr.io/pendevtsp-star/giro-mesa-worker
+  DATABASE_URL: postgres://giromesa:giromesa@localhost:5432/giromesa
+  REDIS_URL: redis://localhost:6379
+  API_URL: http://127.0.0.1:3333
+  NEXT_PUBLIC_API_URL: http://127.0.0.1:3333
+  WEB_URL: http://127.0.0.1:3004
+  APP_URL: http://127.0.0.1:3004
+  PUBLIC_APP_URL: http://127.0.0.1:3004
+  SESSION_SECRET: ci-session-secret-change-in-production
+  PASSWORD_PEPPER: ci-password-pepper-change-in-production
+  MFA_SECRET_ENCRYPTION_KEY: ci-mfa-secret-change-in-production
+  SMTP_HOST: smtp.example.com
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"
+  SMTP_USER: ci
+  SMTP_PASSWORD: ci
+  EMAIL_FROM: no-reply@example.com
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: giromesa
+          POSTGRES_PASSWORD: giromesa
+          POSTGRES_DB: giromesa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U giromesa -d giromesa"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Copy lint
+        run: pnpm lint:copy
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Seed demo data for E2E
+        run: pnpm --filter @giromesa/db db:seed
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+      - name: Build
+        run: pnpm build
+
+      - name: E2E
+        run: pnpm test:e2e
+
+  publish-images:
+    name: Publish Images
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 45
+    outputs:
+      api_image: ${{ steps.tags.outputs.api_image }}
+      web_image: ${{ steps.tags.outputs.web_image }}
+      worker_image: ${{ steps.tags.outputs.worker_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tags
+        id: tags
+        run: |
+          echo "api_image=${API_IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "web_image=${WEB_IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "worker_image=${WORKER_IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.api_image }}
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.web_image }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=/api
+
+      - name: Build and push Worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.worker_image }}
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: publish-images
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ secrets.VPS_PORT }}" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy compose files
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "mkdir -p /srv/apps/giro_mesa/backups"
+          scp -i ~/.ssh/deploy_key -P "${{ secrets.VPS_PORT }}" docker-compose.prod.yml docker-compose.ghcr.yml \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/srv/apps/giro_mesa/"
+
+      - name: Deploy on VPS
+        run: |
+          {
+            printf 'export GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
+            printf 'export GHCR_TOKEN_GIRO_MESA=%q\n' "$GHCR_TOKEN_GIRO_MESA"
+            printf 'export API_IMAGE_SHA=%q\n' "$API_IMAGE_SHA"
+            printf 'export WEB_IMAGE_SHA=%q\n' "$WEB_IMAGE_SHA"
+            printf 'export WORKER_IMAGE_SHA=%q\n' "$WORKER_IMAGE_SHA"
+            printf 'export DEPLOY_SHA=%q\n' "$GITHUB_SHA"
+            cat <<'EOF'
+          set -euo pipefail
+          cd /srv/apps/giro_mesa
+          echo "${GHCR_TOKEN_GIRO_MESA}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+          export GIROMESA_API_IMAGE="${API_IMAGE_SHA}"
+          export GIROMESA_WEB_IMAGE="${WEB_IMAGE_SHA}"
+          export GIROMESA_WORKER_IMAGE="${WORKER_IMAGE_SHA}"
+          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml pull api web worker
+          backup_file="backups/pre-deploy-${DEPLOY_SHA}-$(date +%Y%m%d-%H%M%S).sql"
+          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml exec -T postgres \
+            sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "${backup_file}"
+          test -s "${backup_file}"
+          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml run --rm api pnpm db:migrate
+          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml up -d --remove-orphans api web worker
+          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml ps
+          curl --fail --silent --show-error http://127.0.0.1:3333/health
+          curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null
+          printf '%s\n' "${DEPLOY_SHA}" > PRODUCTION_VERSION
+          EOF
+          } | ssh -i ~/.ssh/deploy_key -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash -s
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN_GIRO_MESA: ${{ secrets.GHCR_TOKEN_GIRO_MESA }}
+          API_IMAGE_SHA: ${{ needs.publish-images.outputs.api_image }}
+          WEB_IMAGE_SHA: ${{ needs.publish-images.outputs.web_image }}
+          WORKER_IMAGE_SHA: ${{ needs.publish-images.outputs.worker_image }}
+
+  notify-telegram:
+    name: Notify Telegram
+    runs-on: ubuntu-latest
+    needs: [validate, publish-images, deploy]
+    if: always()
+    steps:
+      - name: Notify
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATUS: ${{ needs.deploy.result }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${BOT_TOKEN}" ] || [ -z "${CHAT_ID}" ]; then
+            echo "Telegram secrets not configured; skipping notification."
+            exit 0
+          fi
+          TEXT="GiroMesa deploy production: ${STATUS}%0ACommit: ${SHA}%0ARun: ${RUN_URL}"
+          curl --fail --silent --show-error \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}"

@@ -1,0 +1,9 @@
+services:
+  api:
+    image: ${GIROMESA_API_IMAGE:?set GIROMESA_API_IMAGE}
+
+  web:
+    image: ${GIROMESA_WEB_IMAGE:?set GIROMESA_WEB_IMAGE}
+
+  worker:
+    image: ${GIROMESA_WORKER_IMAGE:?set GIROMESA_WORKER_IMAGE}

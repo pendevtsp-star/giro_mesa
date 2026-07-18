@@ -20,6 +20,7 @@
     "test:e2e:ui": "playwright test --ui",
     "security:preflight": "node scripts/security-preflight.mjs",
     "lint": "biome check .",
+    "lint:copy": "biome check .",
     "format": "biome check --write .",
     "db:generate": "pnpm --filter @giromesa/db db:generate",
     "db:migrate": "pnpm --filter @giromesa/db db:migrate",
