@@ -43,6 +43,73 @@ compose() {
   docker compose --env-file .env -f docker-compose.prod.yml -f docker-compose.ghcr.yml "$@"
 }
 
+wait_container_running() {
+  local service="$1"
+  local container_id
+
+  container_id="$(compose ps -q "${service}")"
+  if [ -z "${container_id}" ]; then
+    echo "Compose service ${service} did not create a container." >&2
+    exit 1
+  fi
+
+  for attempt in $(seq 1 30); do
+    if [ "$(docker inspect -f '{{.State.Running}}' "${container_id}")" = "true" ]; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "Compose service ${service} is not running." >&2
+  docker logs "${container_id}" >&2 || true
+  exit 1
+}
+
+wait_container_healthy() {
+  local service="$1"
+  local container_id
+  local status
+
+  container_id="$(compose ps -q "${service}")"
+  if [ -z "${container_id}" ]; then
+    echo "Compose service ${service} did not create a container." >&2
+    exit 1
+  fi
+
+  for attempt in $(seq 1 45); do
+    status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${container_id}")"
+    case "${status}" in
+      healthy | none)
+        return 0
+        ;;
+      unhealthy)
+        echo "Compose service ${service} became unhealthy." >&2
+        docker logs "${container_id}" >&2 || true
+        exit 1
+        ;;
+    esac
+    sleep 2
+  done
+
+  echo "Compose service ${service} did not become healthy before deploy timeout." >&2
+  docker logs "${container_id}" >&2 || true
+  exit 1
+}
+
+wait_http() {
+  local url="$1"
+
+  for attempt in $(seq 1 45); do
+    if curl --fail --silent --show-error "${url}" >/dev/null; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "HTTP health check failed for ${url}." >&2
+  exit 1
+}
+
 echo "${GHCR_TOKEN_GIRO_MESA}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
 
 compose pull api web worker
@@ -85,22 +152,15 @@ systemd_stopped=1
 compose up -d --remove-orphans api web worker
 
 for service in api web worker; do
-  container_id="$(compose ps -q "${service}")"
-  if [ -z "${container_id}" ]; then
-    echo "Compose service ${service} did not create a container." >&2
-    exit 1
-  fi
-  if [ "$(docker inspect -f '{{.State.Running}}' "${container_id}")" != "true" ]; then
-    echo "Compose service ${service} is not running." >&2
-    docker logs "${container_id}" >&2 || true
-    exit 1
-  fi
+  wait_container_running "${service}"
 done
+wait_container_healthy api
+wait_container_healthy web
 
 compose ps
-curl --fail --silent --show-error http://127.0.0.1:3333/health
-curl --fail --silent --show-error http://127.0.0.1:3002/ >/dev/null
+wait_http http://127.0.0.1:3333/health
+wait_http http://127.0.0.1:3002/
 
 trap - ERR
-systemctl disable giromesa-api.service giromesa-web.service 2>/dev/null || true
+systemctl disable --now giromesa-api.service giromesa-web.service 2>/dev/null || true
 printf '%s\n' "${DEPLOY_SHA}" > PRODUCTION_VERSION
