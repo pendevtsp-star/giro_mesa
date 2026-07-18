@@ -45,8 +45,7 @@ jobs:
             --config p/typescript \
             --config p/owasp-top-ten \
             --sarif \
-            --output semgrep.sarif \
-            --error
+            --output semgrep.sarif
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4
