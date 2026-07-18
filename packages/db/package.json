@@ -16,6 +16,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests --pool=threads --maxWorkers=1 --minWorkers=1",
+    "test:coverage": "vitest run --passWithNoTests --pool=threads --maxWorkers=1 --minWorkers=1 --coverage --coverage.reporter=json-summary --coverage.reporter=lcov --coverage.reporter=text",
     "db:generate": "drizzle-kit generate",
     "db:check-applied": "node scripts/check-migrations-applied.mjs",
     "db:migrate": "drizzle-kit migrate",

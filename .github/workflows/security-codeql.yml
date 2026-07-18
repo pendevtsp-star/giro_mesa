@@ -1,0 +1,103 @@
+name: Security - CodeQL
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+  actions: read
+
+concurrency:
+  group: giro-mesa-codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.7.0"
+  DATABASE_URL: postgres://giromesa:giromesa@localhost:5432/giromesa
+  REDIS_URL: redis://localhost:6379
+  API_URL: http://127.0.0.1:3333
+  NEXT_PUBLIC_API_URL: http://127.0.0.1:3333
+  WEB_URL: http://127.0.0.1:3004
+  APP_URL: http://127.0.0.1:3004
+  PUBLIC_APP_URL: http://127.0.0.1:3004
+  SESSION_SECRET: ci-session-secret-change-in-production
+  PASSWORD_PEPPER: ci-password-pepper-change-in-production
+  MFA_SECRET_ENCRYPTION_KEY: ci-mfa-secret-change-in-production
+  SMTP_HOST: smtp.example.com
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"
+  SMTP_USER: ci
+  SMTP_PASSWORD: ci
+  EMAIL_FROM: no-reply@example.com
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: giromesa
+          POSTGRES_PASSWORD: giromesa
+          POSTGRES_DB: giromesa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U giromesa -d giromesa"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Build
+        run: pnpm build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: codeql-javascript-typescript

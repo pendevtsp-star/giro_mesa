@@ -1,0 +1,151 @@
+name: Quality - Test Coverage
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: giro-mesa-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.7.0"
+  COVERAGE_THRESHOLD: "0"
+  DATABASE_URL: postgres://giromesa:giromesa@localhost:5432/giromesa
+  REDIS_URL: redis://localhost:6379
+  API_URL: http://127.0.0.1:3333
+  NEXT_PUBLIC_API_URL: http://127.0.0.1:3333
+  WEB_URL: http://127.0.0.1:3004
+  APP_URL: http://127.0.0.1:3004
+  PUBLIC_APP_URL: http://127.0.0.1:3004
+  SESSION_SECRET: ci-session-secret-change-in-production
+  PASSWORD_PEPPER: ci-password-pepper-change-in-production
+  MFA_SECRET_ENCRYPTION_KEY: ci-mfa-secret-change-in-production
+  SMTP_HOST: smtp.example.com
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"
+  SMTP_USER: ci
+  SMTP_PASSWORD: ci
+  EMAIL_FROM: no-reply@example.com
+
+jobs:
+  coverage:
+    name: Test Coverage Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: giromesa
+          POSTGRES_PASSWORD: giromesa
+          POSTGRES_DB: giromesa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U giromesa -d giromesa"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('coverage/coverage-summary.json') != ''
+        with:
+          name: giro-mesa-coverage
+          path: |
+            coverage/coverage-summary.json
+            apps/*/coverage/lcov.info
+            packages/*/coverage/lcov.info
+
+      - name: Check coverage threshold
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+          const threshold = Number(process.env.COVERAGE_THRESHOLD || 0);
+          const lines = Number(summary.total.lines.pct || 0);
+          const status = lines >= threshold ? 'passed' : 'failed';
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            '## GiroMesa coverage',
+            '',
+            `| Metric | Coverage |`,
+            `| --- | ---: |`,
+            `| Lines | ${summary.total.lines.pct}% |`,
+            `| Statements | ${summary.total.statements.pct}% |`,
+            `| Functions | ${summary.total.functions.pct}% |`,
+            `| Branches | ${summary.total.branches.pct}% |`,
+            '',
+            `Threshold: ${threshold}% (${status})`,
+            ''
+          ].join('\n'));
+          if (lines < threshold) {
+            process.exit(1);
+          }
+          NODE
+
+      - name: Comment PR with coverage
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverage = JSON.parse(fs.readFileSync('./coverage/coverage-summary.json', 'utf8'));
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                'Test Coverage Report',
+                '',
+                '| Métrica | Cobertura |',
+                '| --- | ---: |',
+                `| Linhas | ${coverage.total.lines.pct}% |`,
+                `| Statements | ${coverage.total.statements.pct}% |`,
+                `| Functions | ${coverage.total.functions.pct}% |`,
+                `| Branches | ${coverage.total.branches.pct}% |`,
+                '',
+                `Threshold atual: ${process.env.COVERAGE_THRESHOLD}%`
+              ].join('\n')
+            });

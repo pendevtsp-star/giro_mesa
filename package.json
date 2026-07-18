@@ -13,6 +13,7 @@
     "build": "turbo build --concurrency=1",
     "typecheck": "turbo typecheck --concurrency=1",
     "test": "turbo test --concurrency=1",
+    "test:coverage": "turbo test:coverage --concurrency=1 && node scripts/aggregate-coverage.mjs",
     "test:integration": "node scripts/run-api-integration-tests.mjs",
     "test:e2e:preflight": "node scripts/e2e-preflight.mjs",
     "test:e2e:dev": "node scripts/run-playwright-dev.mjs",
@@ -29,6 +30,8 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
     "@playwright/test": "^1.61.1",
+    "@vitest/coverage-v8": "^3.2.6",
+    "glob": "13.0.6",
     "turbo": "^2.5.0",
     "typescript": "5.8.3"
   }
