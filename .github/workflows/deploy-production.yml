@@ -222,7 +222,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" \
             "mkdir -p /srv/apps/giro_mesa/backups"
-          scp -i ~/.ssh/deploy_key -P "${{ steps.target.outputs.port }}" docker-compose.prod.yml docker-compose.ghcr.yml \
+          scp -i ~/.ssh/deploy_key -P "${{ steps.target.outputs.port }}" docker-compose.prod.yml docker-compose.ghcr.yml scripts/deploy/ghcr-production.sh \
             "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}:/srv/apps/giro_mesa/"
 
       - name: Deploy on VPS
@@ -234,30 +234,9 @@ jobs:
             printf 'export WEB_IMAGE_SHA=%q\n' "$WEB_IMAGE_SHA"
             printf 'export WORKER_IMAGE_SHA=%q\n' "$WORKER_IMAGE_SHA"
             printf 'export DEPLOY_SHA=%q\n' "$GITHUB_SHA"
-            cat <<'EOF'
-          set -euo pipefail
-          cd /srv/apps/giro_mesa
-          if [ ! -f .env ]; then
-            echo "Missing /srv/apps/giro_mesa/.env. Create the VPS runtime env file before deploying." >&2
-            exit 1
-          fi
-          echo "${GHCR_TOKEN_GIRO_MESA}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
-          export GIROMESA_API_IMAGE="${API_IMAGE_SHA}"
-          export GIROMESA_WEB_IMAGE="${WEB_IMAGE_SHA}"
-          export GIROMESA_WORKER_IMAGE="${WORKER_IMAGE_SHA}"
-          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml pull api web worker
-          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml up -d postgres redis
-          backup_file="backups/pre-deploy-${DEPLOY_SHA}-$(date +%Y%m%d-%H%M%S).sql"
-          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml exec -T postgres \
-            sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "${backup_file}"
-          test -s "${backup_file}"
-          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml run --rm api pnpm db:migrate
-          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml up -d --remove-orphans api web worker
-          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml ps
-          curl --fail --silent --show-error http://127.0.0.1:3333/health
-          curl --fail --silent --show-error http://127.0.0.1:3002/ >/dev/null
-          printf '%s\n' "${DEPLOY_SHA}" > PRODUCTION_VERSION
-          EOF
+            echo 'cd /srv/apps/giro_mesa'
+            echo 'chmod 700 ghcr-production.sh'
+            echo './ghcr-production.sh'
           } | ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" bash -s
         env:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
