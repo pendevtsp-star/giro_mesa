@@ -7,7 +7,9 @@ const apiUrl = process.env.API_URL ?? "http://localhost:3333";
 test.describe("GiroMesa demo experience", () => {
   test("navigates the polished public and operations surfaces", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Gestão que gira. Resultados que ficam." })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Gestão que gira. Resultados que ficam." }),
+    ).toBeVisible();
 
     await page.getByRole("link", { name: /Entrar na demo guiada/ }).click();
     await expect(page.getByTestId("demo-dashboard")).toBeVisible();
@@ -91,24 +93,53 @@ test.describe("GiroMesa demo experience", () => {
     const productRows = (await products.json()).data as { id: string; name: string }[];
     expect(productRows.some((row) => row.name === productName)).toBe(true);
 
-    const modifierGroup = await api.post("/api/v1/catalog/modifier-groups", { data: { productId: product.id, name: "Extra E2E", minChoices: 0, maxChoices: 1 } });
+    const modifierGroup = await api.post("/api/v1/catalog/modifier-groups", {
+      data: { productId: product.id, name: "Extra E2E", minChoices: 0, maxChoices: 1 },
+    });
     expect(modifierGroup.ok()).toBe(true);
     const modifierGroupPayload = await modifierGroup.json();
-    const modifierOption = await api.post(`/api/v1/catalog/modifier-groups/${modifierGroupPayload.id}/options`, { data: { name: "Queijo extra", priceDeltaCents: 400 } });
+    const modifierOption = await api.post(
+      `/api/v1/catalog/modifier-groups/${modifierGroupPayload.id}/options`,
+      { data: { name: "Queijo extra", priceDeltaCents: 400 } },
+    );
     expect(modifierOption.ok()).toBe(true);
     const modifierOptionPayload = await modifierOption.json();
 
-    const supplier = await api.post("/api/v1/inventory/suppliers", { data: { name: `E2E Fornecedor ${Date.now()}`, phone: "11999999999" } });
+    const supplier = await api.post("/api/v1/inventory/suppliers", {
+      data: { name: `E2E Fornecedor ${Date.now()}`, phone: "11999999999" },
+    });
     expect(supplier.ok()).toBe(true);
     const supplierPayload = await supplier.json();
-    const inventoryItem = await api.post("/api/v1/inventory/items", { data: { name: `E2E Insumo ${Date.now()}`, unit: "un", averageCostCents: 750, minQuantity: "2" } });
+    const inventoryItem = await api.post("/api/v1/inventory/items", {
+      data: {
+        name: `E2E Insumo ${Date.now()}`,
+        unit: "un",
+        averageCostCents: 750,
+        minQuantity: "2",
+      },
+    });
     expect(inventoryItem.ok()).toBe(true);
     const inventoryPayload = await inventoryItem.json();
-    const purchase = await api.post("/api/v1/inventory/adjustments", { data: { branchId: context.branchId, supplierId: supplierPayload.id, inventoryItemId: inventoryPayload.id, type: "purchase_receipt", quantity: "8", unitCostCents: 750, reason: "Compra E2E para validação" } });
+    const purchase = await api.post("/api/v1/inventory/adjustments", {
+      data: {
+        branchId: context.branchId,
+        supplierId: supplierPayload.id,
+        inventoryItemId: inventoryPayload.id,
+        type: "purchase_receipt",
+        quantity: "8",
+        unitCostCents: 750,
+        reason: "Compra E2E para validação",
+      },
+    });
     expect(purchase.ok()).toBe(true);
     const summary = await api.get(`/api/v1/inventory/summary?branchId=${context.branchId}`);
     expect(summary.ok()).toBe(true);
-    expect((await summary.json()).data.some((row: { id: string; quantity: string }) => row.id === inventoryPayload.id && Number(row.quantity) >= 8)).toBe(true);
+    expect(
+      (await summary.json()).data.some(
+        (row: { id: string; quantity: string }) =>
+          row.id === inventoryPayload.id && Number(row.quantity) >= 8,
+      ),
+    ).toBe(true);
 
     const tables = await api.get(`/api/v1/pos/tables?branchId=${context.branchId}`);
     expect(tables.ok()).toBe(true);
@@ -116,7 +147,9 @@ test.describe("GiroMesa demo experience", () => {
     const table = tableRows[0];
     expect(table?.id).toBeTruthy();
 
-    const floorPlan = await api.patch("/api/v1/pos/floor-plan", { data: { branchId: context.branchId, layout: { [table.id]: { x: 18, y: 24 } } } });
+    const floorPlan = await api.patch("/api/v1/pos/floor-plan", {
+      data: { branchId: context.branchId, layout: { [table.id]: { x: 18, y: 24 } } },
+    });
     expect(floorPlan.ok()).toBe(true);
     const floorPlanRead = await api.get(`/api/v1/pos/floor-plan?branchId=${context.branchId}`);
     expect(floorPlanRead.ok()).toBe(true);

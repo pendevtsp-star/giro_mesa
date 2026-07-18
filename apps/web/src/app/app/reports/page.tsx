@@ -572,12 +572,22 @@ export default function ReportsPage() {
             Voltar ao painel
           </a>
           <details className="report-export-menu">
-            <summary className="button primary"><Download size={17} /> Exportar</summary>
+            <summary className="button primary">
+              <Download size={17} /> Exportar
+            </summary>
             <div>
-              <button type="button" onClick={handleExportCsv}>Relatório em CSV</button>
-              <button type="button" onClick={handleExportCashExecutiveCsv}>Fechamento de caixa em CSV</button>
-              <button type="button" onClick={handleExportCashExecutivePdf}>Fechamento de caixa em PDF</button>
-              <button type="button" onClick={handleExportExecutivePdf}>Resumo executivo em PDF</button>
+              <button type="button" onClick={handleExportCsv}>
+                Relatório em CSV
+              </button>
+              <button type="button" onClick={handleExportCashExecutiveCsv}>
+                Fechamento de caixa em CSV
+              </button>
+              <button type="button" onClick={handleExportCashExecutivePdf}>
+                Fechamento de caixa em PDF
+              </button>
+              <button type="button" onClick={handleExportExecutivePdf}>
+                Resumo executivo em PDF
+              </button>
             </div>
           </details>
         </div>

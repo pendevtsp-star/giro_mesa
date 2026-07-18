@@ -625,8 +625,11 @@ export class PosService {
       }
 
       if (input.customerId) {
-        const [customer] = await tx.select({ id: customers.id }).from(customers)
-          .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, input.customerId))).limit(1);
+        const [customer] = await tx
+          .select({ id: customers.id })
+          .from(customers)
+          .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, input.customerId)))
+          .limit(1);
         if (!customer) throw new NotFoundException("Customer not found");
       }
       const [order] = await tx
@@ -654,41 +657,121 @@ export class PosService {
     });
   }
 
-  async createTable(context: TenantContext, input: { branchId: string; code: string; name: string; seats: number }) {
-    const [table] = await this.database.db.insert(diningTables).values({ tenantId: context.tenantId, branchId: input.branchId, code: input.code.trim().toUpperCase(), name: input.name.trim(), seats: input.seats }).returning();
+  async createTable(
+    context: TenantContext,
+    input: { branchId: string; code: string; name: string; seats: number },
+  ) {
+    const [table] = await this.database.db
+      .insert(diningTables)
+      .values({
+        tenantId: context.tenantId,
+        branchId: input.branchId,
+        code: input.code.trim().toUpperCase(),
+        name: input.name.trim(),
+        seats: input.seats,
+      })
+      .returning();
     if (!table) throw new Error("Failed to create table");
-    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: input.branchId, userId: context.userId, requestId: context.requestId, action: "dining_table.created", entityType: "dining_table", entityId: table.id, metadata: { code: table.code, seats: table.seats } });
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "dining_table.created",
+      entityType: "dining_table",
+      entityId: table.id,
+      metadata: { code: table.code, seats: table.seats },
+    });
     return table;
   }
 
   async getFloorPlan(context: TenantContext, branchId: string) {
-    const [plan] = await this.database.db.select().from(floorPlans)
-      .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, branchId))).limit(1);
-    return { id: plan?.id ?? null, branchId, name: plan?.name ?? "Salão principal", layout: plan?.layout ?? {} };
+    const [plan] = await this.database.db
+      .select()
+      .from(floorPlans)
+      .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, branchId)))
+      .limit(1);
+    return {
+      id: plan?.id ?? null,
+      branchId,
+      name: plan?.name ?? "Salão principal",
+      layout: plan?.layout ?? {},
+    };
   }
 
-  async saveFloorPlan(context: TenantContext, input: { branchId: string; layout: Record<string, { x: number; y: number }> }) {
-    const [branch] = await this.database.db.select({ id: branches.id }).from(branches)
-      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId))).limit(1);
+  async saveFloorPlan(
+    context: TenantContext,
+    input: { branchId: string; layout: Record<string, { x: number; y: number }> },
+  ) {
+    const [branch] = await this.database.db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId)))
+      .limit(1);
     if (!branch) throw new NotFoundException("Branch not found");
-    const [existing] = await this.database.db.select({ id: floorPlans.id }).from(floorPlans)
-      .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, input.branchId), eq(floorPlans.name, "Salão principal"))).limit(1);
+    const [existing] = await this.database.db
+      .select({ id: floorPlans.id })
+      .from(floorPlans)
+      .where(
+        and(
+          eq(floorPlans.tenantId, context.tenantId),
+          eq(floorPlans.branchId, input.branchId),
+          eq(floorPlans.name, "Salão principal"),
+        ),
+      )
+      .limit(1);
     const [plan] = existing
-      ? await this.database.db.update(floorPlans).set({ layout: input.layout, updatedAt: new Date() }).where(eq(floorPlans.id, existing.id)).returning()
-      : await this.database.db.insert(floorPlans).values({ tenantId: context.tenantId, branchId: input.branchId, name: "Salão principal", layout: input.layout }).returning();
+      ? await this.database.db
+          .update(floorPlans)
+          .set({ layout: input.layout, updatedAt: new Date() })
+          .where(eq(floorPlans.id, existing.id))
+          .returning()
+      : await this.database.db
+          .insert(floorPlans)
+          .values({
+            tenantId: context.tenantId,
+            branchId: input.branchId,
+            name: "Salão principal",
+            layout: input.layout,
+          })
+          .returning();
     if (!plan) throw new Error("Failed to save floor plan");
-    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: input.branchId, userId: context.userId, requestId: context.requestId, action: "floor_plan.updated", entityType: "floor_plan", entityId: plan.id, metadata: { tableCount: Object.keys(input.layout).length } });
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "floor_plan.updated",
+      entityType: "floor_plan",
+      entityId: plan.id,
+      metadata: { tableCount: Object.keys(input.layout).length },
+    });
     return plan;
   }
 
   async assignCustomer(context: TenantContext, orderId: string, customerId: string) {
-    const [customer] = await this.database.db.select({ id: customers.id }).from(customers)
-      .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, customerId))).limit(1);
+    const [customer] = await this.database.db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, customerId)))
+      .limit(1);
     if (!customer) throw new NotFoundException("Customer not found");
-    const [order] = await this.database.db.update(orders).set({ customerId, updatedAt: new Date() })
-      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId))).returning();
+    const [order] = await this.database.db
+      .update(orders)
+      .set({ customerId, updatedAt: new Date() })
+      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+      .returning();
     if (!order) throw new NotFoundException("Order not found");
-    await this.database.db.insert(auditLogs).values({ tenantId: context.tenantId, branchId: order.branchId, userId: context.userId, requestId: context.requestId, action: "order.customer_assigned", entityType: "order", entityId: order.id, metadata: { customerId } });
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: order.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "order.customer_assigned",
+      entityType: "order",
+      entityId: order.id,
+      metadata: { customerId },
+    });
     return { ...order, audit: "order.customer_assigned" };
   }
 
@@ -715,23 +798,54 @@ export class PosService {
       }
 
       const selectedOptionIds = (input.modifiers ?? [])
-        .map((modifier) => typeof modifier.optionId === "string" ? modifier.optionId : null)
+        .map((modifier) => (typeof modifier.optionId === "string" ? modifier.optionId : null))
         .filter((optionId): optionId is string => Boolean(optionId));
       const selectedOptions = selectedOptionIds.length
-        ? await tx.select().from(modifierOptions).where(and(eq(modifierOptions.tenantId, context.tenantId), inArray(modifierOptions.id, selectedOptionIds), eq(modifierOptions.isAvailable, true)))
+        ? await tx
+            .select()
+            .from(modifierOptions)
+            .where(
+              and(
+                eq(modifierOptions.tenantId, context.tenantId),
+                inArray(modifierOptions.id, selectedOptionIds),
+                eq(modifierOptions.isAvailable, true),
+              ),
+            )
         : [];
-      if (selectedOptions.length !== selectedOptionIds.length) throw new BadRequestException("One or more modifiers are unavailable");
+      if (selectedOptions.length !== selectedOptionIds.length)
+        throw new BadRequestException("One or more modifiers are unavailable");
       const groups = selectedOptions.length
-        ? await tx.select().from(modifierGroups).where(and(eq(modifierGroups.tenantId, context.tenantId), eq(modifierGroups.productId, product.id)))
+        ? await tx
+            .select()
+            .from(modifierGroups)
+            .where(
+              and(
+                eq(modifierGroups.tenantId, context.tenantId),
+                eq(modifierGroups.productId, product.id),
+              ),
+            )
         : [];
       const selectedByGroup = new Map<string, number>();
-      for (const option of selectedOptions) selectedByGroup.set(option.groupId, (selectedByGroup.get(option.groupId) ?? 0) + 1);
+      for (const option of selectedOptions)
+        selectedByGroup.set(option.groupId, (selectedByGroup.get(option.groupId) ?? 0) + 1);
       for (const group of groups) {
         const selected = selectedByGroup.get(group.id) ?? 0;
-        if ((group.isRequired && selected < group.minChoices) || selected < group.minChoices || selected > group.maxChoices) throw new BadRequestException(`Invalid choices for modifier group ${group.name}`);
+        if (
+          (group.isRequired && selected < group.minChoices) ||
+          selected < group.minChoices ||
+          selected > group.maxChoices
+        )
+          throw new BadRequestException(`Invalid choices for modifier group ${group.name}`);
       }
-      const modifierDeltaCents = selectedOptions.reduce((sum, option) => sum + option.priceDeltaCents, 0);
-      const total = calculateOrderTotal({ lines: [{ quantity: input.quantity, unitPriceCents: product.priceCents + modifierDeltaCents }] });
+      const modifierDeltaCents = selectedOptions.reduce(
+        (sum, option) => sum + option.priceDeltaCents,
+        0,
+      );
+      const total = calculateOrderTotal({
+        lines: [
+          { quantity: input.quantity, unitPriceCents: product.priceCents + modifierDeltaCents },
+        ],
+      });
 
       const [item] = await tx
         .insert(orderItems)
@@ -744,7 +858,12 @@ export class PosService {
           unitPriceCents: product.priceCents + modifierDeltaCents,
           totalCents: total.totalCents,
           notes: input.notes,
-          modifiers: selectedOptions.map((option) => ({ optionId: option.id, groupId: option.groupId, name: option.name, priceDeltaCents: option.priceDeltaCents })),
+          modifiers: selectedOptions.map((option) => ({
+            optionId: option.id,
+            groupId: option.groupId,
+            name: option.name,
+            priceDeltaCents: option.priceDeltaCents,
+          })),
         })
         .returning();
 

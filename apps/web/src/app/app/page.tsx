@@ -35,15 +35,15 @@ import {
   type ApiError,
   type AuditEvent,
   addOrderItem,
-  assignOrderCustomer,
   adjustInventoryStock,
+  assignOrderCustomer,
   assignUserRole,
   buildPosEventsUrl,
   type CashSessionSummary,
   type Category,
+  type ClubWhiskyIntegrationConfig,
   type Customer,
   type CustomerOrderHistory,
-  type ClubWhiskyIntegrationConfig,
   cancelFiscalDocument,
   cancelQrOrderItem,
   closeCashSession,
@@ -60,8 +60,8 @@ import {
   type FiscalDocument,
   formatMoney,
   getCashSessionSummary,
-  getCustomerHistory,
   getClubWhiskyConfig,
+  getCustomerHistory,
   getPrinterConnectorConfig,
   getSession,
   getTenantBranding,
@@ -74,7 +74,6 @@ import {
   listAuditEvents,
   listCategories,
   listCustomers,
-  listProductModifiers,
   listFiscalDocuments,
   listInventoryAlerts,
   listInventorySummary,
@@ -86,12 +85,14 @@ import {
   listPrinterDevices,
   listPrintJobs,
   listPrintRoutes,
+  listProductModifiers,
   listProducts,
   listQrPendingOrders,
   listRoles,
   listTableHistory,
   listTables,
   listUsers,
+  type ModifierGroup,
   type OpenOrderResponse,
   type OrderItemResponse,
   type OrderPayment,
@@ -103,7 +104,6 @@ import {
   type PrintJob,
   type PrintRoute,
   type Product,
-  type ModifierGroup,
   printBillPreview,
   printCashSessionSummary,
   printPaymentReceipt,
@@ -147,7 +147,12 @@ const nav = [
   { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
   { icon: Users, label: "Clientes", href: "/app/customers", permissions: ["pos:operate"] },
   { icon: ChefHat, label: "KDS", href: "/app/kds", permissions: ["pos:kds_send", "kds:operate"] },
-  { icon: PackageOpen, label: "Estoque", href: "/app/inventory", permissions: ["inventory:manage"] },
+  {
+    icon: PackageOpen,
+    label: "Estoque",
+    href: "/app/inventory",
+    permissions: ["inventory:manage"],
+  },
   { icon: Banknote, label: "Caixa", href: "/app/cash", permissions: ["pos:payment_manage"] },
   { icon: CreditCard, label: "Relatórios", href: "/app/reports", permissions: ["reports:read"] },
   { icon: Printer, label: "Impressão", href: "/app/printing", permissions: ["hardware:manage"] },
@@ -1162,7 +1167,9 @@ export default function AppDashboardPage() {
 
   useEffect(() => {
     if (!isPosWorkspace || status !== "ready") return;
-    void listCustomers().then(setPosCustomers).catch(() => setPosCustomers([]));
+    void listCustomers()
+      .then(setPosCustomers)
+      .catch(() => setPosCustomers([]));
   }, [isPosWorkspace, status]);
 
   const metrics = useMemo(() => {
@@ -1479,7 +1486,11 @@ export default function AppDashboardPage() {
 
   async function addProductToOrder(product: Product, modifierIds: string[] = []) {
     const order = await ensureOrder();
-    const item = await addOrderItem(order.id, product.id, modifierIds.map((optionId) => ({ optionId })));
+    const item = await addOrderItem(
+      order.id,
+      product.id,
+      modifierIds.map((optionId) => ({ optionId })),
+    );
     setTicketItems((current) => [...current, item]);
     setOrderStatus("opened");
     setActionStatus(`${item.nameSnapshot} lançado na comanda.`);
@@ -2196,18 +2207,54 @@ export default function AppDashboardPage() {
                   </div>
                   <label className="pos-customer-select">
                     Cliente
-                    <input list="pos-customers" value={customerSearch} onChange={(event) => {
-                      const value = event.target.value;
-                      setCustomerSearch(value);
-                      const customer = posCustomers.find((item) => `${item.name} · ${item.phone ?? item.email ?? ""}` === value);
-                      if (!customer) return;
-                      setSelectedCustomerId(customer.id);
-                      void getCustomerHistory(customer.id).then(setCustomerHistory).catch(() => setCustomerHistory([]));
-                      if (currentOrder) void runAction(async () => { await assignOrderCustomer(currentOrder.id, customer.id); setActionStatus("Cliente vinculado à comanda."); });
-                    }} placeholder="Buscar nome ou telefone" />
-                    <datalist id="pos-customers">{posCustomers.map((customer) => <option key={customer.id} value={`${customer.name} · ${customer.phone ?? customer.email ?? ""}`} />)}</datalist>
+                    <input
+                      list="pos-customers"
+                      value={customerSearch}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setCustomerSearch(value);
+                        const customer = posCustomers.find(
+                          (item) => `${item.name} · ${item.phone ?? item.email ?? ""}` === value,
+                        );
+                        if (!customer) return;
+                        setSelectedCustomerId(customer.id);
+                        void getCustomerHistory(customer.id)
+                          .then(setCustomerHistory)
+                          .catch(() => setCustomerHistory([]));
+                        if (currentOrder)
+                          void runAction(async () => {
+                            await assignOrderCustomer(currentOrder.id, customer.id);
+                            setActionStatus("Cliente vinculado à comanda.");
+                          });
+                      }}
+                      placeholder="Buscar nome ou telefone"
+                    />
+                    <datalist id="pos-customers">
+                      {posCustomers.map((customer) => (
+                        <option
+                          key={customer.id}
+                          value={`${customer.name} · ${customer.phone ?? customer.email ?? ""}`}
+                        />
+                      ))}
+                    </datalist>
                   </label>
-                  {selectedCustomerId ? <div className="pos-customer-history"><strong>{customerHistory.length ? `Últimas ${Math.min(customerHistory.length, 3)} visitas` : "Sem consumo anterior"}</strong>{customerHistory.slice(0, 3).map((order) => <span key={order.id}>{order.closedAt ? new Date(order.closedAt).toLocaleDateString("pt-BR") : "Em aberto"} · {formatMoney(order.totalCents)}</span>)}</div> : null}
+                  {selectedCustomerId ? (
+                    <div className="pos-customer-history">
+                      <strong>
+                        {customerHistory.length
+                          ? `Últimas ${Math.min(customerHistory.length, 3)} visitas`
+                          : "Sem consumo anterior"}
+                      </strong>
+                      {customerHistory.slice(0, 3).map((order) => (
+                        <span key={order.id}>
+                          {order.closedAt
+                            ? new Date(order.closedAt).toLocaleDateString("pt-BR")
+                            : "Em aberto"}{" "}
+                          · {formatMoney(order.totalCents)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="ticket-lines">
                     {(ticketItems.length > 0 ? ticketItems : demoTicketLines()).map((item) => (
                       <div className="ticket-line" key={item.id}>
@@ -3965,7 +4012,84 @@ export default function AppDashboardPage() {
           <QrCode size={18} />
           QR Mesa {selectedTable?.code ?? "M03"}
         </a>
-        {modifierProduct ? <div className="modifier-modal-backdrop" role="presentation"><section className="modifier-modal" role="dialog" aria-modal="true" aria-label={`Opções de ${modifierProduct.name}`}><div className="panel-title"><div><span className="section-kicker">Personalize o item</span><h2>{modifierProduct.name}</h2></div><button className="icon-button" onClick={() => setModifierProduct(null)} type="button" title="Fechar"><X size={18} /></button></div>{modifierGroups.map((group) => <fieldset className="modifier-choice-group" key={group.id}><legend>{group.name} {group.isRequired ? "(obrigatório)" : ""}</legend>{group.options.map((option) => <label key={option.id}><input checked={selectedModifierIds.includes(option.id)} onChange={(event) => setSelectedModifierIds((current) => event.target.checked ? [...current.filter((id) => !group.options.some((item) => item.id === id)), option.id] : current.filter((id) => id !== option.id))} type="checkbox" /> <span>{option.name}</span><strong>{option.priceDeltaCents ? `+ ${formatMoney(option.priceDeltaCents)}` : "Incluído"}</strong></label>)}</fieldset>)}<div className="modifier-modal-actions"><button className="button secondary" onClick={() => setModifierProduct(null)} type="button">Cancelar</button><button className="button primary" onClick={() => { const product = modifierProduct; setModifierProduct(null); void runAction(() => addProductToOrder(product, selectedModifierIds)); }} type="button">Adicionar ao pedido</button></div></section></div> : null}
+        {modifierProduct ? (
+          <div className="modifier-modal-backdrop" role="presentation">
+            <section
+              className="modifier-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Opções de ${modifierProduct.name}`}
+            >
+              <div className="panel-title">
+                <div>
+                  <span className="section-kicker">Personalize o item</span>
+                  <h2>{modifierProduct.name}</h2>
+                </div>
+                <button
+                  className="icon-button"
+                  onClick={() => setModifierProduct(null)}
+                  type="button"
+                  title="Fechar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              {modifierGroups.map((group) => (
+                <fieldset className="modifier-choice-group" key={group.id}>
+                  <legend>
+                    {group.name} {group.isRequired ? "(obrigatório)" : ""}
+                  </legend>
+                  {group.options.map((option) => (
+                    <label key={option.id}>
+                      <input
+                        checked={selectedModifierIds.includes(option.id)}
+                        onChange={(event) =>
+                          setSelectedModifierIds((current) =>
+                            event.target.checked
+                              ? [
+                                  ...current.filter(
+                                    (id) => !group.options.some((item) => item.id === id),
+                                  ),
+                                  option.id,
+                                ]
+                              : current.filter((id) => id !== option.id),
+                          )
+                        }
+                        type="checkbox"
+                      />{" "}
+                      <span>{option.name}</span>
+                      <strong>
+                        {option.priceDeltaCents
+                          ? `+ ${formatMoney(option.priceDeltaCents)}`
+                          : "Incluído"}
+                      </strong>
+                    </label>
+                  ))}
+                </fieldset>
+              ))}
+              <div className="modifier-modal-actions">
+                <button
+                  className="button secondary"
+                  onClick={() => setModifierProduct(null)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="button primary"
+                  onClick={() => {
+                    const product = modifierProduct;
+                    setModifierProduct(null);
+                    void runAction(() => addProductToOrder(product, selectedModifierIds));
+                  }}
+                  type="button"
+                >
+                  Adicionar ao pedido
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </section>
     </main>
   );

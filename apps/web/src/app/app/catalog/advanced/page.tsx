@@ -1,17 +1,336 @@
 "use client";
 
 import { ListPlus, Plus, Trash2, UtensilsCrossed } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
-import { createModifierGroup, createModifierOption, getSession, listInventorySummary, listProductModifiers, listProducts, type InventorySummaryItem, type ModifierGroup, type Product, upsertRecipe } from "../../../../lib/giromesa-api";
+import { type FormEvent, useEffect, useState } from "react";
+import {
+  createModifierGroup,
+  createModifierOption,
+  getSession,
+  type InventorySummaryItem,
+  listInventorySummary,
+  listProductModifiers,
+  listProducts,
+  type ModifierGroup,
+  type Product,
+  upsertRecipe,
+} from "../../../../lib/giromesa-api";
 
-type RecipeLine = { inventoryItemId: string; quantity: string };
+type RecipeLine = { id: string; inventoryItemId: string; quantity: string };
+const newRecipeLine = (): RecipeLine => ({
+  id: crypto.randomUUID(),
+  inventoryItemId: "",
+  quantity: "1",
+});
 export default function AdvancedCatalogPage() {
-  const [products, setProducts] = useState<Product[]>([]); const [items, setItems] = useState<InventorySummaryItem[]>([]); const [groups, setGroups] = useState<ModifierGroup[]>([]); const [productId, setProductId] = useState(""); const [message, setMessage] = useState("Carregando cadastros avançados...");
-  const [group, setGroup] = useState({ name: "", min: "0", max: "1", required: false }); const [option, setOption] = useState({ groupId: "", name: "", price: "0" }); const [recipe, setRecipe] = useState({ yieldQuantity: "1", loss: "0", lines: [{ inventoryItemId: "", quantity: "1" }] as RecipeLine[] });
-  async function load(selected = productId) { try { const session = await getSession(); if (!session.branchId) throw new Error(); const [productRows, inventoryRows] = await Promise.all([listProducts(), listInventorySummary(session.branchId)]); setProducts(productRows); setItems(inventoryRows); setGroups(selected ? await listProductModifiers(selected) : []); setMessage("Configure opções de venda e consumo de insumos por produto."); } catch { setMessage("Entre com uma conta de gestão de catálogo para continuar."); } }
-  useEffect(() => { void load(); }, []);
-  async function submitGroup(e: FormEvent) { e.preventDefault(); if (!productId || !group.name) return; await createModifierGroup({ productId, name: group.name, minChoices: Number(group.min), maxChoices: Number(group.max), isRequired: group.required }); setGroup({ name: "", min: "0", max: "1", required: false }); await load(productId); }
-  async function submitOption(e: FormEvent) { e.preventDefault(); if (!option.groupId || !option.name) return; await createModifierOption(option.groupId, { name: option.name, priceDeltaCents: Math.round(Number(option.price.replace(",", ".")) * 100) || 0 }); setOption({ groupId: "", name: "", price: "0" }); await load(productId); }
-  async function submitRecipe(e: FormEvent) { e.preventDefault(); if (!productId) return; const valid = recipe.lines.filter((line) => line.inventoryItemId && Number(line.quantity) > 0).map((line) => ({ ...line, unit: items.find((item) => item.id === line.inventoryItemId)?.unit ?? "un" })); if (!valid.length) { setMessage("Inclua ao menos um insumo na ficha técnica."); return; } await upsertRecipe({ productId, yieldQuantity: recipe.yieldQuantity, technicalLossRate: recipe.loss, items: valid }); setMessage(`${valid.length} insumo(s) salvos na ficha técnica.`); }
-  return <main className="workspace-page"><header className="workspace-topbar"><a className="brand" href="/app/catalog"><span className="brand-mark">G</span><span>GiroMesa</span></a></header><section className="workspace-heading"><span className="section-kicker"><UtensilsCrossed size={16} /> Catálogo avançado</span><h1>Modificadores e fichas técnicas</h1><p>{message}</p></section><section className="catalog-layout"><article className="workspace-panel"><div className="panel-heading"><div><span className="section-kicker"><ListPlus size={15} /> Produto</span><h2>Configurar opções</h2></div></div><label className="workspace-form">Produto<select value={productId} onChange={(e) => { setProductId(e.target.value); void load(e.target.value); }}><option value="">Selecione</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label><form className="workspace-form" onSubmit={submitGroup}><label>Grupo de opções<input value={group.name} onChange={(e) => setGroup((c) => ({ ...c, name: e.target.value }))} placeholder="Ex.: Escolha o ponto" /></label><div className="workspace-form-grid"><label>Mínimo<input value={group.min} onChange={(e) => setGroup((c) => ({ ...c, min: e.target.value }))} inputMode="numeric" /></label><label>Máximo<input value={group.max} onChange={(e) => setGroup((c) => ({ ...c, max: e.target.value }))} inputMode="numeric" /></label></div><label className="check-label"><input checked={group.required} onChange={(e) => setGroup((c) => ({ ...c, required: e.target.checked }))} type="checkbox" /> Obrigatório no pedido</label><button className="button primary" type="submit">Criar grupo</button></form></article><article className="workspace-panel"><div className="panel-heading"><div><span className="section-kicker">Opções</span><h2>Complementos</h2></div></div><form className="workspace-form" onSubmit={submitOption}><label>Grupo<select value={option.groupId} onChange={(e) => setOption((c) => ({ ...c, groupId: e.target.value }))}><option value="">Selecione</option>{groups.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label>Opção<input value={option.name} onChange={(e) => setOption((c) => ({ ...c, name: e.target.value }))} placeholder="Ex.: Bacon extra" /></label><label>Adicional no preço<input value={option.price} onChange={(e) => setOption((c) => ({ ...c, price: e.target.value }))} inputMode="decimal" /></label><button className="button secondary" type="submit">Adicionar opção</button></form><div className="category-pills">{groups.flatMap((row) => row.options.map((item) => <span key={item.id}>{row.name}: {item.name}</span>))}</div></article><article className="workspace-panel"><div className="panel-heading"><div><span className="section-kicker">Estoque</span><h2>Ficha técnica multi-insumo</h2></div></div><form className="workspace-form" onSubmit={submitRecipe}>{recipe.lines.map((line, index) => <div className="recipe-line" key={index}><label>Insumo<select value={line.inventoryItemId} onChange={(e) => setRecipe((current) => ({ ...current, lines: current.lines.map((row, rowIndex) => rowIndex === index ? { ...row, inventoryItemId: e.target.value } : row) }))}><option value="">Selecione</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>)}</select></label><label>Quantidade<input value={line.quantity} onChange={(e) => setRecipe((current) => ({ ...current, lines: current.lines.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: e.target.value } : row) }))} inputMode="decimal" /></label>{recipe.lines.length > 1 ? <button className="icon-button" onClick={() => setRecipe((current) => ({ ...current, lines: current.lines.filter((_, rowIndex) => rowIndex !== index) }))} type="button" title="Remover insumo"><Trash2 size={16} /></button> : null}</div>)}<button className="button secondary" onClick={() => setRecipe((current) => ({ ...current, lines: [...current.lines, { inventoryItemId: "", quantity: "1" }] }))} type="button"><Plus size={16} /> Adicionar insumo</button><div className="workspace-form-grid"><label>Rendimento<input value={recipe.yieldQuantity} onChange={(e) => setRecipe((c) => ({ ...c, yieldQuantity: e.target.value }))} inputMode="decimal" /></label><label>Perda técnica<input value={recipe.loss} onChange={(e) => setRecipe((c) => ({ ...c, loss: e.target.value }))} inputMode="decimal" /></label></div><button className="button primary" type="submit">Salvar ficha técnica</button></form></article></section></main>;
+  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<InventorySummaryItem[]>([]);
+  const [groups, setGroups] = useState<ModifierGroup[]>([]);
+  const [productId, setProductId] = useState("");
+  const [message, setMessage] = useState("Carregando cadastros avançados...");
+  const [group, setGroup] = useState({ name: "", min: "0", max: "1", required: false });
+  const [option, setOption] = useState({ groupId: "", name: "", price: "0" });
+  const [recipe, setRecipe] = useState({
+    yieldQuantity: "1",
+    loss: "0",
+    lines: [newRecipeLine()],
+  });
+  async function load(selected = productId) {
+    try {
+      const session = await getSession();
+      if (!session.branchId) throw new Error();
+      const [productRows, inventoryRows] = await Promise.all([
+        listProducts(),
+        listInventorySummary(session.branchId),
+      ]);
+      setProducts(productRows);
+      setItems(inventoryRows);
+      setGroups(selected ? await listProductModifiers(selected) : []);
+      setMessage("Configure opções de venda e consumo de insumos por produto.");
+    } catch {
+      setMessage("Entre com uma conta de gestão de catálogo para continuar.");
+    }
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: carregamento inicial da tela de catalogo avancado.
+  useEffect(() => {
+    void load();
+  }, []);
+  async function submitGroup(e: FormEvent) {
+    e.preventDefault();
+    if (!productId || !group.name) return;
+    await createModifierGroup({
+      productId,
+      name: group.name,
+      minChoices: Number(group.min),
+      maxChoices: Number(group.max),
+      isRequired: group.required,
+    });
+    setGroup({ name: "", min: "0", max: "1", required: false });
+    await load(productId);
+  }
+  async function submitOption(e: FormEvent) {
+    e.preventDefault();
+    if (!option.groupId || !option.name) return;
+    await createModifierOption(option.groupId, {
+      name: option.name,
+      priceDeltaCents: Math.round(Number(option.price.replace(",", ".")) * 100) || 0,
+    });
+    setOption({ groupId: "", name: "", price: "0" });
+    await load(productId);
+  }
+  async function submitRecipe(e: FormEvent) {
+    e.preventDefault();
+    if (!productId) return;
+    const valid = recipe.lines
+      .filter((line) => line.inventoryItemId && Number(line.quantity) > 0)
+      .map((line) => ({
+        ...line,
+        unit: items.find((item) => item.id === line.inventoryItemId)?.unit ?? "un",
+      }));
+    if (!valid.length) {
+      setMessage("Inclua ao menos um insumo na ficha técnica.");
+      return;
+    }
+    await upsertRecipe({
+      productId,
+      yieldQuantity: recipe.yieldQuantity,
+      technicalLossRate: recipe.loss,
+      items: valid,
+    });
+    setMessage(`${valid.length} insumo(s) salvos na ficha técnica.`);
+  }
+  return (
+    <main className="workspace-page">
+      <header className="workspace-topbar">
+        <a className="brand" href="/app/catalog">
+          <span className="brand-mark">G</span>
+          <span>GiroMesa</span>
+        </a>
+      </header>
+      <section className="workspace-heading">
+        <span className="section-kicker">
+          <UtensilsCrossed size={16} /> Catálogo avançado
+        </span>
+        <h1>Modificadores e fichas técnicas</h1>
+        <p>{message}</p>
+      </section>
+      <section className="catalog-layout">
+        <article className="workspace-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="section-kicker">
+                <ListPlus size={15} /> Produto
+              </span>
+              <h2>Configurar opções</h2>
+            </div>
+          </div>
+          <label className="workspace-form">
+            Produto
+            <select
+              value={productId}
+              onChange={(e) => {
+                setProductId(e.target.value);
+                void load(e.target.value);
+              }}
+            >
+              <option value="">Selecione</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <form className="workspace-form" onSubmit={submitGroup}>
+            <label>
+              Grupo de opções
+              <input
+                value={group.name}
+                onChange={(e) => setGroup((c) => ({ ...c, name: e.target.value }))}
+                placeholder="Ex.: Escolha o ponto"
+              />
+            </label>
+            <div className="workspace-form-grid">
+              <label>
+                Mínimo
+                <input
+                  value={group.min}
+                  onChange={(e) => setGroup((c) => ({ ...c, min: e.target.value }))}
+                  inputMode="numeric"
+                />
+              </label>
+              <label>
+                Máximo
+                <input
+                  value={group.max}
+                  onChange={(e) => setGroup((c) => ({ ...c, max: e.target.value }))}
+                  inputMode="numeric"
+                />
+              </label>
+            </div>
+            <label className="check-label">
+              <input
+                checked={group.required}
+                onChange={(e) => setGroup((c) => ({ ...c, required: e.target.checked }))}
+                type="checkbox"
+              />{" "}
+              Obrigatório no pedido
+            </label>
+            <button className="button primary" type="submit">
+              Criar grupo
+            </button>
+          </form>
+        </article>
+        <article className="workspace-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="section-kicker">Opções</span>
+              <h2>Complementos</h2>
+            </div>
+          </div>
+          <form className="workspace-form" onSubmit={submitOption}>
+            <label>
+              Grupo
+              <select
+                value={option.groupId}
+                onChange={(e) => setOption((c) => ({ ...c, groupId: e.target.value }))}
+              >
+                <option value="">Selecione</option>
+                {groups.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Opção
+              <input
+                value={option.name}
+                onChange={(e) => setOption((c) => ({ ...c, name: e.target.value }))}
+                placeholder="Ex.: Bacon extra"
+              />
+            </label>
+            <label>
+              Adicional no preço
+              <input
+                value={option.price}
+                onChange={(e) => setOption((c) => ({ ...c, price: e.target.value }))}
+                inputMode="decimal"
+              />
+            </label>
+            <button className="button secondary" type="submit">
+              Adicionar opção
+            </button>
+          </form>
+          <div className="category-pills">
+            {groups.flatMap((row) =>
+              row.options.map((item) => (
+                <span key={item.id}>
+                  {row.name}: {item.name}
+                </span>
+              )),
+            )}
+          </div>
+        </article>
+        <article className="workspace-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="section-kicker">Estoque</span>
+              <h2>Ficha técnica multi-insumo</h2>
+            </div>
+          </div>
+          <form className="workspace-form" onSubmit={submitRecipe}>
+            {recipe.lines.map((line, index) => (
+              <div className="recipe-line" key={line.id}>
+                <label>
+                  Insumo
+                  <select
+                    value={line.inventoryItemId}
+                    onChange={(e) =>
+                      setRecipe((current) => ({
+                        ...current,
+                        lines: current.lines.map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, inventoryItemId: e.target.value } : row,
+                        ),
+                      }))
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    {items.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.unit})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Quantidade
+                  <input
+                    value={line.quantity}
+                    onChange={(e) =>
+                      setRecipe((current) => ({
+                        ...current,
+                        lines: current.lines.map((row, rowIndex) =>
+                          rowIndex === index ? { ...row, quantity: e.target.value } : row,
+                        ),
+                      }))
+                    }
+                    inputMode="decimal"
+                  />
+                </label>
+                {recipe.lines.length > 1 ? (
+                  <button
+                    className="icon-button"
+                    onClick={() =>
+                      setRecipe((current) => ({
+                        ...current,
+                        lines: current.lines.filter((_, rowIndex) => rowIndex !== index),
+                      }))
+                    }
+                    type="button"
+                    title="Remover insumo"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            <button
+              className="button secondary"
+              onClick={() =>
+                setRecipe((current) => ({
+                  ...current,
+                  lines: [...current.lines, newRecipeLine()],
+                }))
+              }
+              type="button"
+            >
+              <Plus size={16} /> Adicionar insumo
+            </button>
+            <div className="workspace-form-grid">
+              <label>
+                Rendimento
+                <input
+                  value={recipe.yieldQuantity}
+                  onChange={(e) => setRecipe((c) => ({ ...c, yieldQuantity: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </label>
+              <label>
+                Perda técnica
+                <input
+                  value={recipe.loss}
+                  onChange={(e) => setRecipe((c) => ({ ...c, loss: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </label>
+            </div>
+            <button className="button primary" type="submit">
+              Salvar ficha técnica
+            </button>
+          </form>
+        </article>
+      </section>
+    </main>
+  );
 }

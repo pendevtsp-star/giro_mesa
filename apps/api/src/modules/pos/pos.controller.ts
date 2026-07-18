@@ -56,9 +56,17 @@ const cashCloseSchema = z.object({
 });
 const floorLayoutSchema = z.object({
   branchId: z.string().min(1),
-  layout: z.record(z.string(), z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) })),
+  layout: z.record(
+    z.string(),
+    z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }),
+  ),
 });
-const createTableSchema = z.object({ branchId: z.string().min(1), code: z.string().min(1).max(40), name: z.string().min(1).max(80), seats: z.number().int().min(1).max(40) });
+const createTableSchema = z.object({
+  branchId: z.string().min(1),
+  code: z.string().min(1).max(40),
+  name: z.string().min(1).max(80),
+  seats: z.number().int().min(1).max(40),
+});
 
 const qrOrderItemUpdateSchema = z.object({
   quantity: z.number().positive().max(99),
@@ -170,7 +178,11 @@ export class PosController {
   ) {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers);
-    return this.posService.assignCustomer(context, orderId, assignCustomerSchema.parse(body).customerId);
+    return this.posService.assignCustomer(
+      context,
+      orderId,
+      assignCustomerSchema.parse(body).customerId,
+    );
   }
 
   @Post("orders/:orderId/items")

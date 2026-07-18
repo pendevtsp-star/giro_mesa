@@ -1,5 +1,159 @@
 "use client";
 import { ClipboardPlus } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
-import { adjustInventoryStock, getSession, listInventorySummary, listSuppliers, type InventorySummaryItem, type Supplier } from "../../../../lib/giromesa-api";
-export default function PurchasesPage() { const [branchId, setBranchId] = useState(""); const [items, setItems] = useState<InventorySummaryItem[]>([]); const [suppliers, setSuppliers] = useState<Supplier[]>([]); const [message, setMessage] = useState("Carregando entrada de compra..."); const [form, setForm] = useState({ supplierId: "", inventoryItemId: "", quantity: "", unitCost: "", reason: "" }); async function load() { try { const session = await getSession(); if (!session.branchId) throw new Error(); setBranchId(session.branchId); const [itemRows, supplierRows] = await Promise.all([listInventorySummary(session.branchId), listSuppliers()]); setItems(itemRows); setSuppliers(supplierRows); setMessage("Registre a nota ou comprovante para manter o custo rastreável."); } catch { setMessage("Entre com uma conta de estoque para registrar compras."); } } useEffect(() => { void load(); }, []); async function submit(e: FormEvent) { e.preventDefault(); if (!branchId || !form.supplierId || !form.inventoryItemId || !form.quantity || form.reason.length < 5) { setMessage("Preencha fornecedor, insumo, quantidade e referência da compra."); return; } await adjustInventoryStock({ branchId, supplierId: form.supplierId, inventoryItemId: form.inventoryItemId, type: "purchase_receipt", quantity: form.quantity, unitCostCents: Math.round((Number(form.unitCost.replace(",", ".")) || 0) * 100), reason: form.reason }); setForm({ supplierId: "", inventoryItemId: "", quantity: "", unitCost: "", reason: "" }); await load(); setMessage("Entrada de compra registrada e vinculada ao fornecedor."); } return <main className="workspace-page"><header className="workspace-topbar"><a className="brand" href="/app/inventory"><span className="brand-mark">G</span><span>GiroMesa</span></a></header><section className="workspace-heading"><span className="section-kicker"><ClipboardPlus size={16} /> Compras</span><h1>Entrada de mercadoria</h1><p>{message}</p></section><section className="catalog-layout"><article className="workspace-panel"><form className="workspace-form" onSubmit={submit}><label>Fornecedor<select value={form.supplierId} onChange={(e) => setForm((c) => ({ ...c, supplierId: e.target.value }))}><option value="">Selecione</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label><label>Insumo<select value={form.inventoryItemId} onChange={(e) => setForm((c) => ({ ...c, inventoryItemId: e.target.value }))}><option value="">Selecione</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>)}</select></label><div className="workspace-form-grid"><label>Quantidade<input value={form.quantity} onChange={(e) => setForm((c) => ({ ...c, quantity: e.target.value }))} inputMode="decimal" /></label><label>Custo unitário<input value={form.unitCost} onChange={(e) => setForm((c) => ({ ...c, unitCost: e.target.value }))} inputMode="decimal" /></label></div><label>Nota, pedido ou justificativa<input value={form.reason} onChange={(e) => setForm((c) => ({ ...c, reason: e.target.value }))} placeholder="Ex.: NF 1234" /></label><button className="button primary" type="submit">Registrar entrada</button></form></article><article className="workspace-panel"><h2>Compras rastreáveis</h2><p className="muted-copy">Cada entrada atualiza o custo médio do insumo e mantém fornecedor, justificativa e auditoria no movimento de estoque.</p><a className="button secondary" href="/app/inventory/suppliers">Cadastrar fornecedor</a></article></section></main>; }
+import { type FormEvent, useEffect, useState } from "react";
+import {
+  adjustInventoryStock,
+  getSession,
+  type InventorySummaryItem,
+  listInventorySummary,
+  listSuppliers,
+  type Supplier,
+} from "../../../../lib/giromesa-api";
+export default function PurchasesPage() {
+  const [branchId, setBranchId] = useState("");
+  const [items, setItems] = useState<InventorySummaryItem[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [message, setMessage] = useState("Carregando entrada de compra...");
+  const [form, setForm] = useState({
+    supplierId: "",
+    inventoryItemId: "",
+    quantity: "",
+    unitCost: "",
+    reason: "",
+  });
+  async function load() {
+    try {
+      const session = await getSession();
+      if (!session.branchId) throw new Error();
+      setBranchId(session.branchId);
+      const [itemRows, supplierRows] = await Promise.all([
+        listInventorySummary(session.branchId),
+        listSuppliers(),
+      ]);
+      setItems(itemRows);
+      setSuppliers(supplierRows);
+      setMessage("Registre a nota ou comprovante para manter o custo rastreável.");
+    } catch {
+      setMessage("Entre com uma conta de estoque para registrar compras.");
+    }
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: carregamento inicial de compras e insumos.
+  useEffect(() => {
+    void load();
+  }, []);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (
+      !branchId ||
+      !form.supplierId ||
+      !form.inventoryItemId ||
+      !form.quantity ||
+      form.reason.length < 5
+    ) {
+      setMessage("Preencha fornecedor, insumo, quantidade e referência da compra.");
+      return;
+    }
+    await adjustInventoryStock({
+      branchId,
+      supplierId: form.supplierId,
+      inventoryItemId: form.inventoryItemId,
+      type: "purchase_receipt",
+      quantity: form.quantity,
+      unitCostCents: Math.round((Number(form.unitCost.replace(",", ".")) || 0) * 100),
+      reason: form.reason,
+    });
+    setForm({ supplierId: "", inventoryItemId: "", quantity: "", unitCost: "", reason: "" });
+    await load();
+    setMessage("Entrada de compra registrada e vinculada ao fornecedor.");
+  }
+  return (
+    <main className="workspace-page">
+      <header className="workspace-topbar">
+        <a className="brand" href="/app/inventory">
+          <span className="brand-mark">G</span>
+          <span>GiroMesa</span>
+        </a>
+      </header>
+      <section className="workspace-heading">
+        <span className="section-kicker">
+          <ClipboardPlus size={16} /> Compras
+        </span>
+        <h1>Entrada de mercadoria</h1>
+        <p>{message}</p>
+      </section>
+      <section className="catalog-layout">
+        <article className="workspace-panel">
+          <form className="workspace-form" onSubmit={submit}>
+            <label>
+              Fornecedor
+              <select
+                value={form.supplierId}
+                onChange={(e) => setForm((c) => ({ ...c, supplierId: e.target.value }))}
+              >
+                <option value="">Selecione</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Insumo
+              <select
+                value={form.inventoryItemId}
+                onChange={(e) => setForm((c) => ({ ...c, inventoryItemId: e.target.value }))}
+              >
+                <option value="">Selecione</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ({item.unit})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="workspace-form-grid">
+              <label>
+                Quantidade
+                <input
+                  value={form.quantity}
+                  onChange={(e) => setForm((c) => ({ ...c, quantity: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </label>
+              <label>
+                Custo unitário
+                <input
+                  value={form.unitCost}
+                  onChange={(e) => setForm((c) => ({ ...c, unitCost: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </label>
+            </div>
+            <label>
+              Nota, pedido ou justificativa
+              <input
+                value={form.reason}
+                onChange={(e) => setForm((c) => ({ ...c, reason: e.target.value }))}
+                placeholder="Ex.: NF 1234"
+              />
+            </label>
+            <button className="button primary" type="submit">
+              Registrar entrada
+            </button>
+          </form>
+        </article>
+        <article className="workspace-panel">
+          <h2>Compras rastreáveis</h2>
+          <p className="muted-copy">
+            Cada entrada atualiza o custo médio do insumo e mantém fornecedor, justificativa e
+            auditoria no movimento de estoque.
+          </p>
+          <a className="button secondary" href="/app/inventory/suppliers">
+            Cadastrar fornecedor
+          </a>
+        </article>
+      </section>
+    </main>
+  );
+}

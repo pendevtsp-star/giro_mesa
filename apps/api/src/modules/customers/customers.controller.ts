@@ -9,7 +9,10 @@ const customerSchema = z.object({
   name: z.string().min(2).max(160),
   phone: z.string().max(40).optional(),
   email: z.string().email().max(255).optional(),
-  birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  birthday: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   marketingOptIn: z.boolean().optional(),
 });
 

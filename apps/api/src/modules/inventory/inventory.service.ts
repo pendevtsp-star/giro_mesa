@@ -135,7 +135,11 @@ export class InventoryService {
       })
       .returning();
     if (!supplier) throw new Error("Failed to create supplier");
-    await this.audit(context, { action: "inventory.supplier_created", entityType: "supplier", entityId: supplier.id });
+    await this.audit(context, {
+      action: "inventory.supplier_created",
+      entityType: "supplier",
+      entityId: supplier.id,
+    });
     return supplier;
   }
 
@@ -250,7 +254,13 @@ export class InventoryService {
       action: `inventory.${input.type}`,
       entityType: "stock_movement",
       entityId: movement.id,
-      metadata: { inventoryItemId: item.id, quantity, type: input.type, supplierId: input.supplierId, reason: input.reason },
+      metadata: {
+        inventoryItemId: item.id,
+        quantity,
+        type: input.type,
+        supplierId: input.supplierId,
+        reason: input.reason,
+      },
     });
 
     return movement;
@@ -367,7 +377,11 @@ export class InventoryService {
     return Number(row?.quantity ?? 0);
   }
 
-  private normalizeMovementQuantity(type: StockAdjustmentInput["type"], quantity: string, current: number) {
+  private normalizeMovementQuantity(
+    type: StockAdjustmentInput["type"],
+    quantity: string,
+    current: number,
+  ) {
     const parsed = Number(quantity);
     if (!Number.isFinite(parsed) || parsed === 0) {
       throw new Error("Stock movement quantity must be non-zero");
