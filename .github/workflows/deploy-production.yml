@@ -237,11 +237,16 @@ jobs:
             cat <<'EOF'
           set -euo pipefail
           cd /srv/apps/giro_mesa
+          if [ ! -f .env ]; then
+            echo "Missing /srv/apps/giro_mesa/.env. Create the VPS runtime env file before deploying." >&2
+            exit 1
+          fi
           echo "${GHCR_TOKEN_GIRO_MESA}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
           export GIROMESA_API_IMAGE="${API_IMAGE_SHA}"
           export GIROMESA_WEB_IMAGE="${WEB_IMAGE_SHA}"
           export GIROMESA_WORKER_IMAGE="${WORKER_IMAGE_SHA}"
           docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml pull api web worker
+          docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml up -d postgres redis
           backup_file="backups/pre-deploy-${DEPLOY_SHA}-$(date +%Y%m%d-%H%M%S).sql"
           docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml exec -T postgres \
             sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "${backup_file}"
@@ -250,7 +255,7 @@ jobs:
           docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml up -d --remove-orphans api web worker
           docker compose -f docker-compose.prod.yml -f docker-compose.ghcr.yml ps
           curl --fail --silent --show-error http://127.0.0.1:3333/health
-          curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:3002/ >/dev/null
           printf '%s\n' "${DEPLOY_SHA}" > PRODUCTION_VERSION
           EOF
           } | ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" bash -s
