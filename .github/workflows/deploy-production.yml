@@ -179,19 +179,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve deploy target
+        id: target
+        run: |
+          raw_host="${{ secrets.VPS_HOST }}"
+          raw_user="${{ secrets.VPS_USER }}"
+          raw_port="${{ secrets.VPS_PORT }}"
+          target="${raw_host#ssh }"
+          target="${target#ssh://}"
+          target="${target%%/*}"
+          embedded_user=""
+          if [[ "$target" == *@* ]]; then
+            embedded_user="${target%@*}"
+            target="${target#*@}"
+          fi
+          host="${target%%:*}"
+          port="${raw_port:-22}"
+          if [[ "$target" == *:* ]]; then
+            maybe_port="${target##*:}"
+            if [[ "$maybe_port" =~ ^[0-9]+$ ]]; then
+              port="$maybe_port"
+            fi
+          fi
+          user="${raw_user:-$embedded_user}"
+          user="${user:-root}"
+          if [[ -z "$host" ]]; then
+            echo "VPS_HOST is empty after normalization." >&2
+            exit 1
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "port=$port" >> "$GITHUB_OUTPUT"
+          echo "user=$user" >> "$GITHUB_OUTPUT"
+
       - name: Prepare SSH
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "${{ secrets.VPS_PORT }}" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -T 20 -p "${{ steps.target.outputs.port }}" -H "${{ steps.target.outputs.host }}" >> ~/.ssh/known_hosts
 
       - name: Copy compose files
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+          ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" \
             "mkdir -p /srv/apps/giro_mesa/backups"
-          scp -i ~/.ssh/deploy_key -P "${{ secrets.VPS_PORT }}" docker-compose.prod.yml docker-compose.ghcr.yml \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/srv/apps/giro_mesa/"
+          scp -i ~/.ssh/deploy_key -P "${{ steps.target.outputs.port }}" docker-compose.prod.yml docker-compose.ghcr.yml \
+            "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}:/srv/apps/giro_mesa/"
 
       - name: Deploy on VPS
         run: |
@@ -221,7 +253,7 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null
           printf '%s\n' "${DEPLOY_SHA}" > PRODUCTION_VERSION
           EOF
-          } | ssh -i ~/.ssh/deploy_key -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash -s
+          } | ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" bash -s
         env:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN_GIRO_MESA: ${{ secrets.GHCR_TOKEN_GIRO_MESA }}
