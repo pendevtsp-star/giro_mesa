@@ -41,6 +41,25 @@ function controllerWithContext(permissions: string[]) {
       differenceCents: 0,
       audit: "cash_session.closed",
     })),
+    openShift: vi.fn(async (_context, input) => ({
+      id: "shift-id",
+      branchId: input.branchId,
+      status: "open",
+      audit: "shift.opened",
+    })),
+    closeShift: vi.fn(async (_context, input) => ({
+      id: "shift-id",
+      branchId: input.branchId,
+      status: "closed",
+      audit: "shift.closed",
+    })),
+    registerCashMovement: vi.fn(async (_context, type, input) => ({
+      id: "movement-id",
+      type,
+      amountCents: input.amountCents,
+      reason: input.reason,
+      audit: "cash_movement.created",
+    })),
   } as unknown as PosService;
 
   return {
@@ -123,5 +142,64 @@ describe("PosController", () => {
       { countedAmountCents: 12000 },
     );
     expect(result.audit).toBe("cash_session.closed");
+  });
+
+  it("opens a shift through the protected endpoint", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+
+    const result = await controller.openShift(
+      { branchId: "11111111-1111-4111-8111-111111111111" },
+      {},
+    );
+
+    expect(posService.openShift).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      expect.objectContaining({ branchId: "11111111-1111-4111-8111-111111111111" }),
+    );
+    expect(result.audit).toBe("shift.opened");
+  });
+
+  it("requires cash permission to close shift", async () => {
+    const { controller } = controllerWithContext(["pos:operate"]);
+
+    await expect(
+      controller.closeShift({ branchId: "11111111-1111-4111-8111-111111111111" }, {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("rejects tenant overrides in cash movement payloads", async () => {
+    const { controller } = controllerWithContext(["cash:manage"]);
+
+    await expect(
+      controller.supplyCash(
+        {
+          branchId: "11111111-1111-4111-8111-111111111111",
+          amountCents: 5000,
+          reason: "Troco inicial",
+          tenantId: "evil",
+        },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("registers cash withdrawal through cash:manage endpoint", async () => {
+    const { controller, posService } = controllerWithContext(["cash:manage"]);
+
+    const result = await controller.withdrawCash(
+      {
+        branchId: "11111111-1111-4111-8111-111111111111",
+        amountCents: 3000,
+        reason: "Retirada para cofre",
+      },
+      {},
+    );
+
+    expect(posService.registerCashMovement).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      "withdrawal",
+      expect.objectContaining({ amountCents: 3000 }),
+    );
+    expect(result.audit).toBe("cash_movement.created");
   });
 });

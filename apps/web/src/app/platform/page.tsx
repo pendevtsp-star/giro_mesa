@@ -104,7 +104,7 @@ const initialTenants: PlatformTenant[] = [
 const plans = [
   ["Starter", "R$ 149", "PDV, mesas e cardápio QR"],
   ["Professional", "R$ 299", "KDS, estoque e caixa completo"],
-  ["Premium", "R$ 499", "Multi-filial, WhatsApp e automacoes"],
+  ["Premium", "R$ 499", "Multi-filial, WhatsApp e automações"],
 ] as const;
 
 const planPrices: Record<PlatformTenant["plan"], string> = {
@@ -329,7 +329,7 @@ export default function PlatformPage() {
         setPlatformNote(
           maybeApiError.status === 403 || maybeApiError.status === 401
             ? "Entre como owner@giromesa.local para operar o backoffice SaaS real."
-            : "API de plataforma indisponivel. Mantendo modo demonstracao.",
+            : "Não foi possível carregar o backoffice agora. Exibindo uma prévia guiada.",
         );
       }
     }
@@ -487,10 +487,10 @@ export default function PlatformPage() {
       documentLabel: "Backoffice SaaS",
       title: "Panorama executivo de tenants",
       subtitle:
-        "Leitura consolidada de operacao comercial, saude, trials e tenants em acompanhamento.",
+        "Leitura consolidada de operação comercial, saúde, trials e tenants em acompanhamento.",
       metadata: [
         { label: "Total filtrado", value: String(filteredTenants.length) },
-        { label: "Modo", value: apiMode === "connected" ? "API conectada" : "Demonstracao" },
+        { label: "Modo", value: apiMode === "connected" ? "Operação conectada" : "Prévia guiada" },
         { label: "Gerado em", value: new Date().toLocaleString("pt-BR") },
       ],
       metrics: [
@@ -517,7 +517,7 @@ export default function PlatformPage() {
           </table>
         </section>
         <section class="section">
-          <h2>Comunicacoes recentes</h2>
+          <h2>Comunicações recentes</h2>
           <table>
             <thead>
               <tr>
@@ -619,10 +619,10 @@ export default function PlatformPage() {
             <small>Trial, suspenso ou inadimplente</small>
           </div>
           <div className="metric">
-            <span>Status do modulo</span>
-            <strong>{apiMode === "connected" ? "API" : "Local"}</strong>
+            <span>Status do módulo</span>
+            <strong>{apiMode === "connected" ? "Online" : "Prévia"}</strong>
             <small>
-              {apiMode === "connected" ? "Endpoint protegido ativo" : "Modo demonstracao"}
+              {apiMode === "connected" ? "Endpoint protegido ativo" : "Ambiente ilustrativo"}
             </small>
           </div>
           <div className="metric">
@@ -811,7 +811,7 @@ export default function PlatformPage() {
             <div className="panel-title">
               <CalendarClock size={20} />
               <div>
-                <h2>Proximas acoes</h2>
+                <h2>Próximas ações</h2>
                 <p>O que precisa de atencao antes de vender em escala.</p>
               </div>
             </div>
@@ -954,7 +954,7 @@ export default function PlatformPage() {
             <div className="panel-title">
               <CalendarClock size={20} />
               <div>
-                <h2>Comunicacoes globais</h2>
+                <h2>Comunicações globais</h2>
                 <p>Historico recente de trial, inadimplencia e follow-up no nivel SaaS.</p>
               </div>
             </div>

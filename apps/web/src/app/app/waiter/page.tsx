@@ -245,7 +245,7 @@ export default function WaiterPage() {
       setSession(activeSession);
       if (!activeSession.branchId) {
         setStatus("demo");
-        setMessage("Sessao sem filial ativa. Exibindo modo demonstracao.");
+        setMessage("Sessão sem filial ativa. Entre novamente para carregar a operação.");
         return;
       }
 

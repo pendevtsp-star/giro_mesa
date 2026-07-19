@@ -8,6 +8,8 @@ type RequestOptions = {
   body?: unknown;
 };
 
+let csrfTokenCache: string | null = null;
+
 export type TenantSession = {
   tenantId: string;
   branchId?: string;
@@ -310,10 +312,71 @@ export type CashSessionSummary = {
       sharePercent: number;
     }>;
   };
+  movements: Array<{
+    id: string;
+    type: "supply" | "withdrawal" | "adjustment";
+    amountCents: number;
+    reason: string;
+    createdAt: string;
+  }>;
   openOrders: {
     count: number;
     totalCents: number;
   };
+};
+
+export type OperationalShift = {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  openedByUserId: string;
+  closedByUserId: string | null;
+  status: "open" | "closed" | "canceled";
+  openedAt: string;
+  closedAt: string | null;
+  notes: string | null;
+  audit?: string;
+};
+
+export type CurrentShiftResponse = {
+  branchId: string;
+  shift: OperationalShift | null;
+};
+
+export type OnboardingStepStatus = "pending" | "in_progress" | "completed" | "skipped" | "blocked";
+
+export type OnboardingStatus = {
+  tenantId: string;
+  branchId: string;
+  readiness: "ready" | "blocked" | "in_progress";
+  progressPercent: number;
+  completedSteps: number;
+  totalSteps: number;
+  counts: {
+    branches: number;
+    tables: number;
+    products: number;
+    categories: number;
+    users: number;
+    roles: number;
+    printers: number;
+    openCashSessions: number;
+  };
+  blockers: Array<{ key: string; label: string }>;
+  nextStep: OnboardingStep | null;
+  steps: OnboardingStep[];
+};
+
+export type OnboardingStep = {
+  key: string;
+  title: string;
+  description: string;
+  href: string;
+  skippable: boolean;
+  status: OnboardingStepStatus;
+  updatedAt: string | null;
+  blockedReason: string | null;
+  metadata: Record<string, unknown>;
 };
 
 export type FinancialReport = {
@@ -803,6 +866,30 @@ export class ApiError extends Error {
   }
 }
 
+export function isUnauthorized(error: unknown) {
+  return error instanceof ApiError && error.status === 401;
+}
+
+export function isApiUnavailable(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.status >= 500 || error.status === 0;
+  }
+  return error instanceof TypeError;
+}
+
+export function getErrorMessage(
+  error: unknown,
+  fallback = "Não foi possível concluir a solicitação agora.",
+) {
+  if (error instanceof ApiError || error instanceof Error) {
+    return error.message || fallback;
+  }
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+  return fallback;
+}
+
 export function formatMoney(cents: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -811,14 +898,22 @@ export function formatMoney(cents: number) {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method ?? "GET";
   const requestInit: RequestInit = {
-    method: options.method ?? "GET",
+    method,
     credentials: "include",
   };
 
   if (options.body !== undefined) {
-    requestInit.headers = {
+    const headers: Record<string, string> = {
       "content-type": "application/json",
+    };
+    const csrfToken = await csrfTokenForRequest(path, method);
+    if (csrfToken) {
+      headers["x-csrf-token"] = csrfToken;
+    }
+    requestInit.headers = {
+      ...headers,
     };
     requestInit.body = JSON.stringify(options.body);
   }
@@ -834,6 +929,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export async function login(email: string, password: string, mfaCode?: string) {
+  csrfTokenCache = null;
   return apiRequest<{
     user: {
       id: string;
@@ -852,6 +948,33 @@ export async function login(email: string, password: string, mfaCode?: string) {
     method: "POST",
     body: { email, password, ...(mfaCode ? { mfaCode } : {}) },
   });
+}
+
+async function csrfTokenForRequest(path: string, method: string) {
+  if (
+    method === "GET" ||
+    path === "/api/v1/auth/login" ||
+    path.startsWith("/api/v1/catalog/public/")
+  ) {
+    return null;
+  }
+  if (csrfTokenCache) {
+    return csrfTokenCache;
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/v1/auth/csrf`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = (await response.json()) as { csrfToken?: unknown };
+    csrfTokenCache = typeof payload.csrfToken === "string" ? payload.csrfToken : null;
+    return csrfTokenCache;
+  } catch {
+    return null;
+  }
 }
 
 export function completeGoogleMfa(input: { challengeToken: string; code: string }) {
@@ -1378,6 +1501,73 @@ export function getCashSessionSummary(branchId: string) {
   );
 }
 
+export function getOnboardingStatus(branchId?: string) {
+  const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
+  return apiRequest<OnboardingStatus>(`/api/v1/onboarding/status${query}`);
+}
+
+export function startOnboardingStep(stepKey: string, metadata?: Record<string, unknown>) {
+  return apiRequest<OnboardingStatus>("/api/v1/onboarding/steps/start", {
+    method: "POST",
+    body: { stepKey, metadata },
+  });
+}
+
+export function completeOnboardingStep(stepKey: string, metadata?: Record<string, unknown>) {
+  return apiRequest<OnboardingStatus>("/api/v1/onboarding/steps/complete", {
+    method: "POST",
+    body: { stepKey, metadata },
+  });
+}
+
+export function skipOnboardingStep(stepKey: string, metadata?: Record<string, unknown>) {
+  return apiRequest<OnboardingStatus>("/api/v1/onboarding/steps/skip", {
+    method: "POST",
+    body: { stepKey, metadata },
+  });
+}
+
+export function recalculateOnboardingReadiness(branchId?: string) {
+  return apiRequest<OnboardingStatus>("/api/v1/onboarding/readiness/recalculate", {
+    method: "POST",
+    body: branchId ? { branchId } : {},
+  });
+}
+
+export function getCurrentShift(branchId: string) {
+  return apiRequest<CurrentShiftResponse>(
+    `/api/v1/pos/shift/current?branchId=${encodeURIComponent(branchId)}`,
+  );
+}
+
+export function openShift(branchId: string, notes?: string) {
+  return apiRequest<OperationalShift>("/api/v1/pos/shift/open", {
+    method: "POST",
+    body: { branchId, notes },
+  });
+}
+
+export function closeShift(branchId: string, notes?: string) {
+  return apiRequest<OperationalShift>("/api/v1/pos/shift/close", {
+    method: "POST",
+    body: { branchId, notes },
+  });
+}
+
+export function registerCashSupply(branchId: string, amountCents: number, reason: string) {
+  return apiRequest<Record<string, unknown>>("/api/v1/pos/cash/supply", {
+    method: "POST",
+    body: { branchId, amountCents, reason },
+  });
+}
+
+export function registerCashWithdrawal(branchId: string, amountCents: number, reason: string) {
+  return apiRequest<Record<string, unknown>>("/api/v1/pos/cash/withdrawal", {
+    method: "POST",
+    body: { branchId, amountCents, reason },
+  });
+}
+
 export function printCashSessionSummary(cashSessionId: string) {
   return apiRequest<PrintJob>(`/api/v1/pos/cash-sessions/${cashSessionId}/print-summary`, {
     method: "POST",
@@ -1829,5 +2019,5 @@ function readErrorMessage(payload: unknown, status: number) {
     return String((payload as { error: unknown }).error);
   }
 
-  return `API request failed with status ${status}`;
+  return `Nao foi possivel concluir a solicitacao agora. Codigo ${status}.`;
 }

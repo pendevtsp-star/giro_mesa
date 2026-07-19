@@ -1,3 +1,4 @@
+import { loadEnv } from "@giromesa/config";
 import {
   Body,
   Controller,
@@ -9,11 +10,14 @@ import {
   Post,
   Query,
   Res,
+  UnauthorizedException,
 } from "@nestjs/common";
 import type { FastifyReply } from "fastify";
 import { z } from "zod";
+import { createCsrfToken } from "../../common/csrf";
 import type { HeaderRecord } from "../../common/http";
-import { sessionCookie } from "../../common/http";
+import { firstHeader, parseCookies, sessionCookie } from "../../common/http";
+import { RateLimitService } from "../../common/rate-limit";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "./auth.service";
 
@@ -90,7 +94,10 @@ const updateRoleSchema = z
 
 @Controller("auth")
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly authService: AuthService) {}
+  constructor(
+    @Inject(AuthService) private readonly authService: AuthService,
+    @Inject(RateLimitService) private readonly rateLimitService: RateLimitService,
+  ) {}
 
   @Get("google/start")
   async googleStart(
@@ -98,6 +105,11 @@ export class AuthController {
     @Headers() headers: HeaderRecord,
     @Res() reply: FastifyReply,
   ) {
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "google_oauth_start",
+      limit: 30,
+      windowMs: 60_000,
+    });
     const parsed = googleStartSchema.parse(query);
     if (parsed.mode === "link") {
       const context = await this.authService.resolveContext(headers);
@@ -124,6 +136,11 @@ export class AuthController {
     @Res() reply: FastifyReply,
     @Headers() headers: HeaderRecord,
   ) {
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "google_oauth_callback",
+      limit: 60,
+      windowMs: 60_000,
+    });
     try {
       const result = await this.authService.completeGoogleLogin(
         googleCallbackSchema.parse(query),
@@ -145,10 +162,14 @@ export class AuthController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     rejectTenantOverride(body);
-    const result = await this.authService.completeGoogleMfa(
-      googleMfaCompleteSchema.parse(body),
-      headers,
-    );
+    const input = googleMfaCompleteSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "google_mfa_complete",
+      limit: 6,
+      windowMs: 60_000,
+      identifier: input.challengeToken,
+    });
+    const result = await this.authService.completeGoogleMfa(input, headers);
     reply.header("set-cookie", sessionCookie(result.token, result.maxAgeSeconds));
     return {
       redirectTo: result.redirectTo,
@@ -165,7 +186,14 @@ export class AuthController {
     @Headers() headers: HeaderRecord,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const session = await this.authService.login(loginSchema.parse(body), headers);
+    const input = loginSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "auth_login",
+      limit: 8,
+      windowMs: 60_000,
+      identifier: input.email.toLowerCase(),
+    });
+    const session = await this.authService.login(input, headers);
     if (session.token) {
       reply.header("set-cookie", sessionCookie(session.token, session.maxAgeSeconds));
     }
@@ -184,6 +212,19 @@ export class AuthController {
   async me(@Headers() headers: HeaderRecord) {
     return {
       context: await this.authService.resolveContext(headers),
+    };
+  }
+
+  @Get("csrf")
+  async csrf(@Headers() headers: HeaderRecord) {
+    await this.authService.resolveContext(headers);
+    const token = parseCookies(firstHeader(headers.cookie)).get("gm_session");
+    if (!token) {
+      throw new UnauthorizedException("Missing session");
+    }
+
+    return {
+      csrfToken: createCsrfToken(token, loadEnv().SESSION_SECRET),
     };
   }
 
@@ -286,10 +327,14 @@ export class AuthController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     rejectTenantOverride(body);
-    const session = await this.authService.acceptInvitation(
-      acceptInvitationSchema.parse(body),
-      headers,
-    );
+    const input = acceptInvitationSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "invitation_accept",
+      limit: 6,
+      windowMs: 60_000,
+      identifier: input.token,
+    });
+    const session = await this.authService.acceptInvitation(input, headers);
     reply.header("set-cookie", sessionCookie(session.token, session.maxAgeSeconds));
 
     return {
@@ -314,13 +359,27 @@ export class AuthController {
   @Post("password/reset/request")
   async requestPasswordReset(@Body() body: unknown, @Headers() headers: HeaderRecord) {
     rejectTenantOverride(body);
-    return this.authService.requestPasswordReset(resetPasswordRequestSchema.parse(body), headers);
+    const input = resetPasswordRequestSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "password_reset_request",
+      limit: 5,
+      windowMs: 60_000,
+      identifier: input.email.toLowerCase(),
+    });
+    return this.authService.requestPasswordReset(input, headers);
   }
 
   @Post("password/reset/complete")
   async resetPassword(@Body() body: unknown, @Headers() headers: HeaderRecord) {
     rejectTenantOverride(body);
-    return this.authService.resetPassword(resetPasswordSchema.parse(body), headers);
+    const input = resetPasswordSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "password_reset_complete",
+      limit: 6,
+      windowMs: 60_000,
+      identifier: input.token,
+    });
+    return this.authService.resetPassword(input, headers);
   }
 
   @Post("mfa/configure")
@@ -341,6 +400,11 @@ export class AuthController {
   async verifyMfa(@Body() body: unknown, @Headers() headers: HeaderRecord) {
     rejectTenantOverride(body);
     const input = mfaVerifySchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "mfa_verify",
+      limit: 8,
+      windowMs: 60_000,
+    });
     const context = await this.authService.resolveContext(headers);
     return this.authService.verifyMfaSetup(context, input.code);
   }

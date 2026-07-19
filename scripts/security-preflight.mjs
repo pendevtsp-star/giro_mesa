@@ -111,7 +111,9 @@ const checks = {
     pathRoot: httpTs.includes("Path=/"),
   },
   webhooks: {
-    asaasSecretGuard: webhookControllerTs.includes("Invalid Asaas webhook secret"),
+    asaasSecretGuard:
+      webhookControllerTs.includes("ASAAS_WEBHOOK_SECRET") &&
+      webhookControllerTs.includes("Invalid webhook authentication"),
     clubSecretRequired: webhookControllerTs.includes(
       "Club Whisky webhook secret is not configured",
     ),

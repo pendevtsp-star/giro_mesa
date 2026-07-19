@@ -78,6 +78,13 @@
       "when": 1783789200000,
       "tag": "0010_repair_supplier_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784592000000,
+      "tag": "0011_operational_onboarding_cash",
+      "breakpoints": true
     }
   ]
 }

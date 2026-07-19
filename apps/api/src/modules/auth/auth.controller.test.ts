@@ -1,5 +1,6 @@
 import { UnauthorizedException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
+import { RateLimitService } from "../../common/rate-limit";
 import { AuthController } from "./auth.controller";
 
 function createReply() {
@@ -44,7 +45,7 @@ function createController() {
   };
 
   return {
-    controller: new AuthController(authService as never),
+    controller: new AuthController(authService as never, new RateLimitService()),
     authService,
   };
 }

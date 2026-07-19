@@ -51,6 +51,17 @@ const cashOpenSchema = z.object({
   openingAmountCents: z.number().int().nonnegative(),
 });
 
+const shiftSchema = z.object({
+  branchId: z.string().min(1),
+  notes: z.string().max(500).optional(),
+});
+
+const cashMovementSchema = z.object({
+  branchId: z.string().min(1),
+  amountCents: z.number().int().positive(),
+  reason: z.string().min(3).max(240),
+});
+
 const cashCloseSchema = z.object({
   countedAmountCents: z.number().int().nonnegative(),
 });
@@ -301,6 +312,60 @@ export class PosController {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers, "cash:manage");
     return this.posService.openCashSession(context, cashOpenSchema.parse(body));
+  }
+
+  @Get("shift/current")
+  async getCurrentShift(@Headers() headers: HeaderRecord, @Query("branchId") branchId: string) {
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return this.posService.getCurrentShift(context, branchId);
+  }
+
+  @Post("shift/open")
+  async openShift(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return this.posService.openShift(context, shiftSchema.parse(body));
+  }
+
+  @Post("shift/close")
+  async closeShift(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "cash:manage");
+    return this.posService.closeShift(context, shiftSchema.parse(body));
+  }
+
+  @Get("cash/current")
+  async getCurrentCashSession(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "cash:manage");
+    return this.posService.getCurrentCashSession(context, branchId);
+  }
+
+  @Post("cash/open")
+  async openCash(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "cash:manage");
+    return this.posService.openCashSession(context, cashOpenSchema.parse(body));
+  }
+
+  @Post("cash/supply")
+  async supplyCash(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "cash:manage");
+    return this.posService.registerCashMovement(context, "supply", cashMovementSchema.parse(body));
+  }
+
+  @Post("cash/withdrawal")
+  async withdrawCash(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "cash:manage");
+    return this.posService.registerCashMovement(
+      context,
+      "withdrawal",
+      cashMovementSchema.parse(body),
+    );
   }
 
   @Get("cash-sessions/summary")

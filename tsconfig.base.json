@@ -17,7 +17,7 @@
       "@giromesa/config": ["packages/config/src/index.ts"],
       "@giromesa/db": ["packages/db/src/index.ts"],
       "@giromesa/domain": ["packages/domain/src/index.ts"],
-      "@giromesa/ui": ["packages/ui/src/index.ts"]
+      "@giromesa/ui": ["packages/ui/src/index.tsx"]
     }
   }
 }

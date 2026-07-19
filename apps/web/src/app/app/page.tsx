@@ -3,34 +3,112 @@
 import { escapeHtml, renderBrandedPrintDocument } from "@giromesa/domain";
 import {
   BadgeDollarSign,
-  Banknote,
-  Bell,
-  ChefHat,
   ClipboardList,
   Copy,
-  CreditCard,
   FileCheck2,
   FileText,
   Gauge,
   KeyRound,
-  LayoutDashboard,
-  MapPinned,
   PackageOpen,
   Palette,
   Printer,
   QrCode,
   ReceiptText,
-  Rocket,
   RotateCw,
   Search,
-  Settings,
   ShieldCheck,
-  Store,
-  Users,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell } from "../../components/app-shell/AppShell";
+import { filterNavigationByPermissions } from "../../components/app-shell/navigation";
+import { CatalogManagementPanel } from "../../features/catalog/CatalogManagementPanel";
+import {
+  OperationalSummaryCards,
+  ProfileActionStrip,
+  ShiftPriorities,
+} from "../../features/dashboard/DashboardOverview";
+import type {
+  AppStatus,
+  HistoryFilter,
+  RealtimeStatus,
+} from "../../features/dashboard/dashboard-types";
+import { FloorMapPanel } from "../../features/floor/FloorMapPanel";
+import {
+  ModifierSelectorDialog,
+  PosProductGrid,
+  PosTicketPreview,
+} from "../../features/pos/PosWorkspace";
+import { QrOperationsPanel } from "../../features/qr/QrOperationsPanel";
+import { TeamAccessPanel } from "../../features/team/TeamAccessPanel";
+import {
+  defaultAuditFilters,
+  defaultCategoryForm,
+  defaultInventoryForm,
+  defaultInvitationForm,
+  defaultPrinterForm,
+  defaultPrintRouteForm,
+  defaultProductForm,
+  defaultStockAdjustmentForm,
+  defaultUserRoleForm,
+  demoAuditEvents,
+  demoBranding,
+  demoFiscalRows,
+  demoInventoryRows,
+  demoInvitations,
+  demoKdsStations,
+  demoOutboxEvents,
+  demoPrinterConnectorConfig,
+  demoPrinterDevices,
+  demoPrintJobs,
+  demoPrintRoutes,
+  demoProducts,
+  demoRoles,
+  demoTables,
+  demoTicketLines,
+  demoTickets,
+  demoUsers,
+  type paymentMethodOptions,
+  permissionGroups,
+} from "../../lib/fixtures/app-dashboard-demo";
+import {
+  isHistoryEventInFilter,
+  isHistoryEventMatchingQuery,
+  parseMoneyToCents,
+  playQrNotification,
+  readAuditOperator,
+  readAuditSummary,
+  readCategoryLabel,
+  readConnectorHeartbeatValue,
+  readConnectorLastSeen,
+  readFiscalBadgeTone,
+  readFiscalStatus,
+  readFiscalSummary,
+  readFiscalTone,
+  readHistoryActionLabel,
+  readHistoryDetail,
+  readHistoryOperator,
+  readOperatorProfile,
+  readOutboxPayloadSummary,
+  readOutboxStatus,
+  readOutboxTone,
+  readPrepTime,
+  readPrintBadgeTone,
+  readPrintKind,
+  readPrintStatus,
+  readPrintSummary,
+  readPrintTone,
+  readQrOrderLabel,
+  readQrOrderSummary,
+  readQuantity,
+  readRealtimeStatus,
+  readRelativeTime,
+  readStatusTitle,
+  readTicketCode,
+  readTicketSummary,
+  readTicketTone,
+} from "../../lib/formatters/app-dashboard";
 import {
   type ApiError,
   type AuditEvent,
@@ -42,6 +120,7 @@ import {
   type CashSessionSummary,
   type Category,
   type ClubWhiskyIntegrationConfig,
+  type CurrentShiftResponse,
   type Customer,
   type CustomerOrderHistory,
   cancelFiscalDocument,
@@ -61,7 +140,9 @@ import {
   formatMoney,
   getCashSessionSummary,
   getClubWhiskyConfig,
+  getCurrentShift,
   getCustomerHistory,
+  getOnboardingStatus,
   getPrinterConnectorConfig,
   getSession,
   getTenantBranding,
@@ -93,6 +174,7 @@ import {
   listTables,
   listUsers,
   type ModifierGroup,
+  type OnboardingStatus,
   type OpenOrderResponse,
   type OrderItemResponse,
   type OrderPayment,
@@ -134,506 +216,7 @@ function Badge({
   return <span className={`gm-badge gm-badge-${tone}`}>{children}</span>;
 }
 
-type AppStatus = "loading" | "ready" | "unauthenticated" | "offline";
-type RealtimeStatus = "offline" | "connecting" | "live";
-type HistoryFilter = "all" | "qr" | "kds" | "payments" | "ops";
 type OutboxStatusFilter = "all" | "pending" | "processed" | "failed";
-
-const nav = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/app", permissions: [] },
-  { icon: Rocket, label: "Implantação", href: "/app/onboarding", permissions: ["tenant:manage"] },
-  { icon: ClipboardList, label: "PDV", href: "/app?view=pos", permissions: ["pos:operate"] },
-  { icon: MapPinned, label: "Salão", href: "/app/salon", permissions: ["pos:operate"] },
-  { icon: Users, label: "Garçom", href: "/app/waiter", permissions: ["pos:operate"] },
-  { icon: Users, label: "Clientes", href: "/app/customers", permissions: ["pos:operate"] },
-  { icon: ChefHat, label: "KDS", href: "/app/kds", permissions: ["pos:kds_send", "kds:operate"] },
-  {
-    icon: PackageOpen,
-    label: "Estoque",
-    href: "/app/inventory",
-    permissions: ["inventory:manage"],
-  },
-  { icon: Banknote, label: "Caixa", href: "/app/cash", permissions: ["pos:payment_manage"] },
-  { icon: CreditCard, label: "Relatórios", href: "/app/reports", permissions: ["reports:read"] },
-  { icon: Printer, label: "Impressão", href: "/app/printing", permissions: ["hardware:manage"] },
-  {
-    icon: QrCode,
-    label: "Cardápio",
-    href: "/app/catalog",
-    permissions: ["catalog:manage", "pos:qr_review"],
-  },
-  {
-    icon: Settings,
-    label: "Configurações",
-    href: "/app/settings/branding",
-    permissions: ["tenant:manage"],
-  },
-] as const;
-
-const demoTables: DiningTable[] = [
-  { id: "demo-m01", branchId: "demo", code: "M01", name: "Mesa 1", seats: 4, status: "free" },
-  { id: "demo-m02", branchId: "demo", code: "M02", name: "Mesa 2", seats: 2, status: "occupied" },
-  { id: "demo-m03", branchId: "demo", code: "M03", name: "Mesa 3", seats: 4, status: "preparing" },
-  {
-    id: "demo-m04",
-    branchId: "demo",
-    code: "M04",
-    name: "Mesa 4",
-    seats: 4,
-    status: "waiting_payment",
-  },
-  { id: "demo-m05", branchId: "demo", code: "M05", name: "Mesa 5", seats: 6, status: "reserved" },
-  { id: "demo-m06", branchId: "demo", code: "M06", name: "Mesa 6", seats: 5, status: "served" },
-  { id: "demo-m07", branchId: "demo", code: "M07", name: "Mesa 7", seats: 2, status: "free" },
-  {
-    id: "demo-m08",
-    branchId: "demo",
-    code: "M08",
-    name: "Mesa 8",
-    seats: 2,
-    status: "order_sent",
-  },
-];
-
-const demoProducts: Product[] = [
-  {
-    id: "demo-burger",
-    name: "Burger Classico",
-    description: "Blend da casa, queijo, molho especial e pao brioche.",
-    categoryId: "hamburgueres",
-    priceCents: 3200,
-    costCents: 1150,
-    isAvailable: true,
-    channels: ["pos", "qr"],
-  },
-  {
-    id: "demo-pizza",
-    name: "Pizza meia lua",
-    description: "Mussarela, tomate confit, manjericao e borda crocante.",
-    categoryId: "pizzas",
-    priceCents: 5800,
-    costCents: 1850,
-    isAvailable: true,
-    channels: ["pos", "qr"],
-  },
-  {
-    id: "demo-chopp",
-    name: "Chopp Pilsen 400ml",
-    description: "Tirado na hora, gelado e com colarinho cremoso.",
-    categoryId: "bebidas",
-    priceCents: 1400,
-    costCents: 420,
-    isAvailable: true,
-    channels: ["pos", "qr"],
-  },
-  {
-    id: "demo-brownie",
-    name: "Brownie da casa",
-    description: "Chocolate intenso, sorvete e calda quente.",
-    categoryId: "sobremesas",
-    priceCents: 2200,
-    costCents: 620,
-    isAvailable: true,
-    channels: ["pos", "qr"],
-  },
-];
-
-const demoTickets: KdsTicket[] = [
-  {
-    id: "demo-kds-1",
-    branchId: "demo",
-    stationName: "Chapa",
-    orderId: "M03",
-    orderChannel: "table",
-    orderStatus: "sent_to_kitchen",
-    status: "preparing",
-    priority: 1,
-    payload: { tableId: "M03", summary: "2 burgers" },
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-kds-2",
-    branchId: "demo",
-    stationName: "Cozinha",
-    orderId: "C07",
-    orderChannel: "tab",
-    orderStatus: "ready",
-    status: "ready",
-    priority: 0,
-    payload: { tableId: "C07", summary: "Pizza meia lua" },
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-kds-3",
-    branchId: "demo",
-    stationName: "Bar",
-    orderId: "M12",
-    orderChannel: "table",
-    orderStatus: "sent_to_kitchen",
-    status: "sent",
-    priority: 0,
-    payload: { tableId: "M12", summary: "3 chopps" },
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-kds-4",
-    branchId: "demo",
-    stationName: "Expedicao",
-    orderId: "Balcao 03",
-    orderChannel: "counter",
-    orderStatus: "waiting_payment",
-    status: "served",
-    priority: 0,
-    payload: { tableId: "Balcao 03", summary: "Combo executivo" },
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const demoKdsStations: KdsStation[] = [
-  { id: "demo-kitchen", branchId: "demo", name: "Cozinha", type: "kitchen", isActive: true },
-  { id: "demo-bar", branchId: "demo", name: "Bar", type: "bar", isActive: true },
-];
-
-const demoPrinterDevices: PrinterDevice[] = [
-  {
-    id: "demo-printer-kitchen",
-    branchId: "demo",
-    name: "Termica Cozinha",
-    role: "kitchen",
-    connectionType: "network",
-    address: "192.168.15.41",
-    port: 9100,
-    paperWidth: 80,
-    charactersPerLine: 48,
-    isActive: true,
-  },
-  {
-    id: "demo-printer-bar",
-    branchId: "demo",
-    name: "Termica Bar",
-    role: "bar",
-    connectionType: "network",
-    address: "192.168.15.42",
-    port: 9100,
-    paperWidth: 80,
-    charactersPerLine: 48,
-    isActive: true,
-  },
-];
-
-const demoPrintRoutes: PrintRoute[] = [
-  {
-    id: "demo-route-kitchen",
-    branchId: "demo",
-    name: "Cozinha recebe pedidos do KDS",
-    trigger: "kds_ticket_created",
-    targetType: "kitchen_ticket",
-    stationId: "demo-kitchen",
-    stationName: "Cozinha",
-    printerDeviceId: "demo-printer-kitchen",
-    printerName: "Termica Cozinha",
-    copies: 1,
-    isActive: true,
-  },
-  {
-    id: "demo-route-bar",
-    branchId: "demo",
-    name: "Bar recebe bebidas do KDS",
-    trigger: "kds_ticket_created",
-    targetType: "bar_ticket",
-    stationId: "demo-bar",
-    stationName: "Bar",
-    printerDeviceId: "demo-printer-bar",
-    printerName: "Termica Bar",
-    copies: 1,
-    isActive: true,
-  },
-];
-
-const demoPrintJobs: PrintJob[] = [
-  {
-    id: "demo-print-1",
-    branchId: "demo",
-    printerDeviceId: "demo-printer-kitchen",
-    printerName: "Termica Cozinha",
-    orderId: "demo-order",
-    kdsTicketId: "demo-kds-1",
-    kind: "kitchen_ticket",
-    status: "pending",
-    copies: 1,
-    attemptCount: 0,
-    maxAttempts: 3,
-    renderedText: "GIROMESA\nCOZINHA\n2x Burger Classico\n\n",
-    errorMessage: null,
-    printedAt: null,
-    createdAt: new Date().toISOString(),
-    payload: { source: "demo" },
-  },
-];
-
-const demoPrinterConnectorConfig: PrinterConnectorConfig = {
-  provider: "local_printer_connector",
-  status: "not_configured",
-  branchId: null,
-  scopes: [],
-  hasApiKey: false,
-};
-
-const demoBranding: TenantBranding = {
-  displayName: "Bar Aurora",
-  logoUrl: null,
-  themeMode: "light",
-  accentPreset: "emerald",
-};
-
-const demoRoles: Role[] = [
-  {
-    id: "demo-owner-role",
-    code: "owner",
-    name: "Dono / administrador",
-    permissions: [
-      "tenant:manage",
-      "catalog:manage",
-      "pos:operate",
-      "pos:kds_send",
-      "pos:qr_review",
-      "pos:payment_manage",
-      "pos:close_order",
-      "inventory:manage",
-      "reports:read",
-      "fiscal:manage",
-      "printing:manage",
-    ],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-operator-role",
-    code: "operator",
-    name: "Operacao de salao",
-    permissions: ["pos:operate", "pos:kds_send", "pos:qr_review", "pos:payment_manage"],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
-const demoOutboxEvents: OutboxEvent[] = [
-  {
-    id: "demo-outbox-payment",
-    topic: "payment.confirmed",
-    payload: { orderId: "demo-order", amountCents: 7400, method: "pix_manual" },
-    status: "pending",
-    attempts: 0,
-    availableAt: new Date().toISOString(),
-    processedAt: null,
-    errorMessage: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-outbox-stock",
-    topic: "stock.updated",
-    payload: { source: "demo" },
-    status: "processed",
-    attempts: 1,
-    availableAt: new Date().toISOString(),
-    processedAt: new Date().toISOString(),
-    errorMessage: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
-const demoUsers: TenantUser[] = [
-  {
-    id: "demo-user-owner",
-    email: "dono@giromesa.demo",
-    name: "Dono Operador",
-    isActive: true,
-    mfaEnabled: false,
-    lastLoginAt: null,
-    createdAt: new Date().toISOString(),
-    roles: [
-      {
-        id: "demo-owner-role",
-        code: "owner",
-        name: "Dono / administrador",
-        branchId: null,
-      },
-    ],
-  },
-  {
-    id: "demo-user-salon",
-    email: "salao@giromesa.demo",
-    name: "Equipe Salao",
-    isActive: true,
-    mfaEnabled: false,
-    lastLoginAt: null,
-    createdAt: new Date().toISOString(),
-    roles: [
-      {
-        id: "demo-operator-role",
-        code: "operator",
-        name: "Operacao de salao",
-        branchId: null,
-      },
-    ],
-  },
-];
-
-const demoInvitations: Invitation[] = [
-  {
-    id: "demo-invite",
-    email: "gerente@bar.demo",
-    roleId: "demo-owner-role",
-    roleCode: "owner",
-    roleName: "Dono / administrador",
-    status: "pending",
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
-    createdAt: new Date().toISOString(),
-    delivery: "email_provider_mock",
-  },
-];
-
-const demoAuditEvents: AuditEvent[] = [
-  {
-    id: "demo-audit-payment",
-    branchId: null,
-    userId: "demo-user-owner",
-    userName: "Dono Operador",
-    userEmail: "dono@giromesa.demo",
-    action: "payment.confirmed",
-    entityType: "order",
-    entityId: "demo-order",
-    metadata: { amountCents: 7400, method: "pix_manual", orderStatus: "paid" },
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-audit-role",
-    branchId: null,
-    userId: "demo-user-owner",
-    userName: "Dono Operador",
-    userEmail: "dono@giromesa.demo",
-    action: "role.updated",
-    entityType: "role",
-    entityId: "demo-owner-role",
-    metadata: { code: "owner" },
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const permissionGroups = [
-  {
-    title: "Administracao",
-    items: [
-      ["tenant:manage", "Gerenciar tenant, cargos e integracoes"],
-      ["reports:read", "Acessar relatorios"],
-    ],
-  },
-  {
-    title: "Operacao",
-    items: [
-      ["pos:operate", "Operar PDV e mesas"],
-      ["pos:kds_send", "Enviar pedidos ao KDS"],
-      ["pos:qr_review", "Conferir pedidos QR"],
-      ["pos:payment_manage", "Receber pagamentos"],
-      ["pos:close_order", "Fechar contas"],
-    ],
-  },
-  {
-    title: "Retaguarda",
-    items: [
-      ["catalog:manage", "Gerenciar cardapio e produtos"],
-      ["inventory:manage", "Gerenciar estoque"],
-      ["fiscal:manage", "Gerenciar fiscal"],
-      ["printing:manage", "Gerenciar impressao"],
-    ],
-  },
-] as const;
-
-const defaultPrinterForm = {
-  name: "Termica Cozinha",
-  role: "kitchen",
-  connectionType: "network",
-  address: "192.168.15.41",
-  port: "9100",
-  paperWidth: "80",
-  charactersPerLine: "48",
-  codepage: "cp850",
-  cutMode: "partial",
-  boldHeader: true,
-  beep: false,
-  openDrawer: false,
-};
-
-const defaultPrintRouteForm = {
-  name: "Rota Cozinha",
-  targetType: "kitchen_ticket",
-  stationId: "",
-  printerDeviceId: "",
-  copies: "1",
-};
-
-const defaultCategoryForm = {
-  name: "Drinks autorais",
-  sortOrder: "6",
-};
-
-const defaultProductForm = {
-  name: "Old Fashioned da casa",
-  description: "Whisky, bitter aromatico e finalizacao citrica.",
-  categoryId: "",
-  price: "42,00",
-  cost: "16,00",
-  channels: ["pos", "qr"],
-  isClubEligible: false,
-  bottleVolumeMl: "1000",
-  defaultDoseMl: "50",
-  spiritType: "whisky",
-  fiscalNcm: "22083020",
-  fiscalCfop: "5102",
-  fiscalOrigin: "0",
-  fiscalCsosn: "102",
-};
-
-const defaultInventoryForm = {
-  name: "Whisky base",
-  unit: "ml",
-  averageCost: "0,18",
-  minQuantity: "1500",
-  allowNegative: false,
-};
-
-const defaultStockAdjustmentForm = {
-  inventoryItemId: "",
-  quantity: "1000",
-  reason: "Entrada manual conferida",
-};
-
-const defaultInvitationForm = {
-  email: "gerente@bar.demo",
-  roleId: "",
-};
-
-const defaultUserRoleForm = {
-  userId: "",
-  roleId: "",
-};
-
-const defaultAuditFilters = {
-  action: "",
-  userId: "",
-  entityType: "",
-  dateFrom: "",
-  dateTo: "",
-};
-
-const paymentMethodOptions = [
-  ["pix_manual", "Pix manual"],
-  ["cash", "Dinheiro"],
-  ["credit_card", "Credito"],
-  ["debit_card", "Debito"],
-] as const;
 
 export default function AppDashboardPage() {
   const [isPosWorkspace, setIsPosWorkspace] = useState(false);
@@ -644,6 +227,8 @@ export default function AppDashboardPage() {
   const [inventorySummary, setInventorySummary] = useState<InventorySummaryItem[]>([]);
   const [inventoryAlerts, setInventoryAlerts] = useState<InventoryAlert[]>([]);
   const [cashSummary, setCashSummary] = useState<CashSessionSummary | null>(null);
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
+  const [currentShift, setCurrentShift] = useState<CurrentShiftResponse | null>(null);
   const [tables, setTables] = useState<DiningTable[]>(demoTables);
   const [tickets, setTickets] = useState<KdsTicket[]>(demoTickets);
   const [selectedTableId, setSelectedTableId] = useState(demoTables[2]?.id ?? "");
@@ -667,7 +252,7 @@ export default function AppDashboardPage() {
   const [customPaymentAmount, setCustomPaymentAmount] = useState("");
   const [countedCashAmount, setCountedCashAmount] = useState("");
   const [orderStatus, setOrderStatus] = useState("sem pedido aberto");
-  const [actionStatus, setActionStatus] = useState("Entre no demo para acionar o PDV real.");
+  const [actionStatus, setActionStatus] = useState("Entre na demo para acionar o PDV real.");
   const [branding, setBranding] = useState<TenantBranding>(demoBranding);
   const [clubConfig, setClubConfig] = useState<ClubWhiskyIntegrationConfig | null>(null);
   const [generatedClubKey, setGeneratedClubKey] = useState<string | null>(null);
@@ -685,7 +270,7 @@ export default function AppDashboardPage() {
   const [qrItemDrafts, setQrItemDrafts] = useState<
     Record<string, { quantity: string; notes: string }>
   >({});
-  const [qrRejectReason, setQrRejectReason] = useState("Solicitacao recusada pela operacao.");
+  const [qrRejectReason, setQrRejectReason] = useState("Solicitação recusada pela operação.");
   const [qrAlert, setQrAlert] = useState<string | null>(null);
   const [lastQrOrderCount, setLastQrOrderCount] = useState(0);
   const [tableHistory, setTableHistory] = useState<TableHistoryEvent[]>([]);
@@ -719,21 +304,15 @@ export default function AppDashboardPage() {
   const selectedQrOrder =
     qrPendingOrders.find((order) => order.id === selectedQrOrderId) ?? qrPendingOrders[0] ?? null;
   const selectedRole = roles.find((role) => role.id === selectedRoleId) ?? roles[0] ?? null;
-  const visibleNav = useMemo(() => {
-    if (!session || session.permissions.length === 0) {
-      return nav;
-    }
-
-    return nav.filter(
-      (item) =>
-        item.permissions.length === 0 ||
-        item.permissions.some((permission) => session.permissions.includes(permission)),
-    );
-  }, [session]);
+  const visibleNav = useMemo(
+    () => filterNavigationByPermissions(session?.permissions ?? []),
+    [session],
+  );
   const operatorProfile = useMemo(() => readOperatorProfile(session?.permissions ?? []), [session]);
   const isApiReady = status === "ready" && Boolean(branchId);
   const activeBranding = branding ?? demoBranding;
   const brandingInitial = activeBranding.displayName.slice(0, 1).toUpperCase() || "G";
+  const currentPath = isPosWorkspace ? "/app?view=pos" : "/app";
   const orderTotalCents = ticketItems.reduce((sum, item) => sum + item.totalCents, 0);
   const paidOrderTotalCents = orderPayments
     .filter((payment) => payment.status === "confirmed")
@@ -765,8 +344,8 @@ export default function AppDashboardPage() {
     if (!cashSummary?.session) {
       return {
         tone: "warn" as const,
-        title: "Caixa ainda sem sessao carregada",
-        detail: "Carregue uma sessao real para conferir esperado, recebido e diferenca.",
+        title: "Caixa ainda sem sessão carregada",
+        detail: "Carregue uma sessão real para conferir esperado, recebido e diferença.",
       };
     }
     if (cashDifferenceCents !== null && cashDifferenceCents !== 0) {
@@ -942,6 +521,18 @@ export default function AppDashboardPage() {
     setCashSummary(await getCashSessionSummary(context.branchId));
   }, []);
 
+  const refreshOperationalReadiness = useCallback(async (context: TenantSession) => {
+    if (!context.branchId) {
+      return;
+    }
+    const [onboarding, shift] = await Promise.all([
+      getOnboardingStatus(context.branchId),
+      getCurrentShift(context.branchId),
+    ]);
+    setOnboardingStatus(onboarding);
+    setCurrentShift(shift);
+  }, []);
+
   const refreshOrderPayments = useCallback(async (orderId: string) => {
     const rows = await listOrderPayments(orderId);
     setOrderPayments(rows);
@@ -1025,6 +616,7 @@ export default function AppDashboardPage() {
         await refreshFiscalDocuments(context);
         await refreshInventory(context);
         await refreshCashSummary(context);
+        await refreshOperationalReadiness(context);
         await refreshPrinting(context);
         await refreshPrinterConnector();
         await refreshRoles();
@@ -1033,7 +625,7 @@ export default function AppDashboardPage() {
         await refreshAuditEvents();
         if (!ignore) {
           setStatus("ready");
-          setActionStatus("Sessao ativa. O PDV ja pode operar com dados reais.");
+          setActionStatus("Sessão ativa. O PDV já pode operar com dados reais.");
         }
       } catch (error) {
         if (ignore) {
@@ -1044,8 +636,8 @@ export default function AppDashboardPage() {
         setStatus(maybeApiError.status === 401 ? "unauthenticated" : "offline");
         setActionStatus(
           maybeApiError.status === 401
-            ? "Sessao ausente. Acesse o login demo para ativar as acoes reais."
-            : "API local indisponivel. Mantendo dados visuais de demonstracao.",
+            ? "Entre com uma conta demo para ativar operações reais, permissões e dados do Bar Aurora."
+            : "Não foi possível carregar a operação agora. Tente novamente em instantes.",
         );
       }
     }
@@ -1060,6 +652,7 @@ export default function AppDashboardPage() {
     refreshFiscalDocuments,
     refreshInventory,
     refreshCashSummary,
+    refreshOperationalReadiness,
     refreshAuditEvents,
     refreshOutbox,
     refreshPrinterConnector,
@@ -1183,7 +776,7 @@ export default function AppDashboardPage() {
         "pedido atual",
       ],
       ["Pedidos ativos", String(Math.max(activeOrderCount, 1)), "QR + KDS"],
-      ["Mesas ocupadas", `${occupiedCount}/${Math.max(tables.length, 1)}`, "salao agora"],
+      ["Mesas ocupadas", `${occupiedCount}/${Math.max(tables.length, 1)}`, "salão agora"],
       ["Caixa atual", "R$ 2.184", orderStatus],
     ] as const;
   }, [orderStatus, orderTotalCents, qrPendingOrders.length, tables, ticketItems.length, tickets]);
@@ -1194,7 +787,7 @@ export default function AppDashboardPage() {
 
   async function ensureOrder() {
     if (!branchId || !selectedTable) {
-      throw new Error("Selecione uma mesa com sessao ativa.");
+      throw new Error("Selecione uma mesa com sessão ativa.");
     }
 
     if (currentOrder) {
@@ -1219,7 +812,7 @@ export default function AppDashboardPage() {
 
   async function runAction(action: () => Promise<void>) {
     if (!isApiReady) {
-      setActionStatus("Faca login para usar as acoes reais do PDV.");
+      setActionStatus("Faça login para usar as ações reais do PDV.");
       return;
     }
 
@@ -1227,7 +820,7 @@ export default function AppDashboardPage() {
     try {
       await action();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao executar acao.";
+      const message = error instanceof Error ? error.message : "Falha ao executar ação.";
       setActionStatus(message);
     } finally {
       setIsBusy(false);
@@ -1237,7 +830,7 @@ export default function AppDashboardPage() {
   function openPrintDocument(html: string, title: string) {
     const popup = window.open("", "_blank", "width=1120,height=820");
     if (!popup) {
-      throw new Error(`Nao foi possivel abrir a janela de ${title}.`);
+      throw new Error(`Não foi possível abrir a janela de ${title}.`);
     }
 
     popup.document.write(html);
@@ -1656,7 +1249,7 @@ export default function AppDashboardPage() {
   function handleCloseCashSession() {
     void runAction(async () => {
       if (!cashSummary?.session?.id) {
-        throw new Error("Nao ha sessao de caixa carregada para encerrar.");
+        throw new Error("Não há sessão de caixa carregada para encerrar.");
       }
       const countedAmountCents = parseMoneyToCents(countedCashAmount);
       if (countedAmountCents < 0) {
@@ -2027,2697 +1620,1301 @@ export default function AppDashboardPage() {
     setActionStatus("Token do conector copiado para a area de transferencia.");
   }
 
+  function handlePosCustomerSearchChange(value: string) {
+    setCustomerSearch(value);
+    const customer = posCustomers.find(
+      (item) => `${item.name} · ${item.phone ?? item.email ?? ""}` === value,
+    );
+    if (!customer) {
+      return;
+    }
+
+    setSelectedCustomerId(customer.id);
+    void getCustomerHistory(customer.id)
+      .then(setCustomerHistory)
+      .catch(() => setCustomerHistory([]));
+    if (currentOrder) {
+      void runAction(async () => {
+        await assignOrderCustomer(currentOrder.id, customer.id);
+        setActionStatus("Cliente vinculado à comanda.");
+      });
+    }
+  }
+
   return (
-    <main
-      className="app-layout"
-      data-testid="demo-dashboard"
-      data-theme={activeBranding.themeMode}
-      data-accent={activeBranding.accentPreset}
-      data-view={isPosWorkspace ? "pos" : "dashboard"}
+    <AppShell
+      branding={activeBranding}
+      status={status}
+      statusTitle={readStatusTitle(status)}
+      statusMessage={actionStatus}
+      currentPath={currentPath}
+      navigationItems={visibleNav}
+      isPosWorkspace={isPosWorkspace}
     >
-      <aside className="sidebar">
-        <a className="brand" href="/" aria-label="GiroMesa">
-          <span className="brand-mark">G</span>
-          <span>GiroMesa</span>
-        </a>
-        <div className="tenant-chip">
-          {activeBranding.logoUrl ? (
-            <span
-              className="tenant-logo"
-              style={{ backgroundImage: `url(${activeBranding.logoUrl})` }}
-              aria-hidden="true"
-            />
-          ) : (
-            <Store size={16} />
-          )}
-          <span>{activeBranding.displayName}</span>
-        </div>
-        <nav aria-label="Modulos">
-          {visibleNav.map(({ icon: Icon, label, href }, index) => (
-            <a
-              className={(isPosWorkspace ? href.includes("view=pos") : index === 0) ? "active" : ""}
-              href={href}
-              key={label}
+      {!isPosWorkspace ? <ProfileActionStrip profile={operatorProfile} /> : null}
+
+      <OperationalSummaryCards metrics={metrics} compact={isPosWorkspace} />
+
+      {!isPosWorkspace ? (
+        <ShiftPriorities
+          activeOrderCount={activeOrderCount}
+          ticketCount={tickets.length}
+          inventoryAlertCount={inventoryAlerts.length}
+        />
+      ) : null}
+
+      {!isPosWorkspace ? (
+        <section className="panel operational-readiness-panel">
+          <div className="panel-title">
+            <div>
+              <span className="section-kicker">Prontidão operacional</span>
+              <h2>
+                {onboardingStatus?.readiness === "ready"
+                  ? "Casa pronta para operar"
+                  : "Ajustes antes do turno"}
+              </h2>
+            </div>
+            <Badge
+              tone={
+                onboardingStatus?.readiness === "ready"
+                  ? "good"
+                  : onboardingStatus?.readiness === "blocked"
+                    ? "warn"
+                    : "info"
+              }
             >
-              <Icon size={18} />
-              {label}
-            </a>
-          ))}
-        </nav>
-      </aside>
+              {onboardingStatus?.progressPercent ?? 0}%
+            </Badge>
+          </div>
+          <div className="cash-grid">
+            <div>
+              <span>Onboarding</span>
+              <strong>
+                {onboardingStatus?.readiness === "ready" ? "completo" : "em implantação"}
+              </strong>
+            </div>
+            <div>
+              <span>Turno</span>
+              <strong>{currentShift?.shift ? "aberto" : "fechado"}</strong>
+            </div>
+            <div>
+              <span>Caixa</span>
+              <strong>{cashSummary?.session?.status === "open" ? "aberto" : "fechado"}</strong>
+            </div>
+            <div>
+              <span>Próxima ação</span>
+              <strong>
+                {onboardingStatus?.readiness !== "ready"
+                  ? "concluir onboarding"
+                  : !currentShift?.shift
+                    ? "abrir turno"
+                    : cashSummary?.session?.status !== "open"
+                      ? "abrir caixa"
+                      : "operar PDV"}
+              </strong>
+            </div>
+          </div>
+          <div className="ticket-actions">
+            {onboardingStatus?.readiness !== "ready" ? (
+              <a className="button secondary compact" href="/app/onboarding">
+                Abrir onboarding
+              </a>
+            ) : null}
+            {!currentShift?.shift || cashSummary?.session?.status !== "open" ? (
+              <a className="button primary compact" href="/app/cash">
+                Turno e caixa
+              </a>
+            ) : (
+              <button
+                className="button primary compact"
+                type="button"
+                onClick={() => setIsPosWorkspace(true)}
+              >
+                Abrir PDV
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
 
-      <section className="workspace">
-        <header className="workspace-header">
-          <div className="workspace-title">
-            <span className="tenant-avatar">
-              {activeBranding.logoUrl ? (
-                <span
-                  className="tenant-logo cover"
-                  style={{ backgroundImage: `url(${activeBranding.logoUrl})` }}
-                  aria-hidden="true"
+      {isPosWorkspace ? (
+        <section className="ops-grid">
+          <article className="panel pos-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">PDV rapido</span>
+                <h2>{selectedTable ? `Mesa ${selectedTable.code}` : "Balcao"}</h2>
+              </div>
+              <Badge tone={currentOrder ? "good" : "warn"}>{orderStatus}</Badge>
+            </div>
+            <div className="pos-surface">
+              <PosProductGrid
+                products={products}
+                selectedProductId={selectedProductId}
+                disabled={isBusy}
+                onAddProduct={handleAddItem}
+                readCategoryLabel={readCategoryLabel}
+                readPrepTime={readPrepTime}
+              />
+              <PosTicketPreview
+                table={selectedTable}
+                customerSearch={customerSearch}
+                customers={posCustomers}
+                selectedCustomerId={selectedCustomerId}
+                customerHistory={customerHistory}
+                ticketItems={ticketItems}
+                orderTotalCents={orderTotalCents}
+                paidOrderTotalCents={paidOrderTotalCents}
+                remainingOrderTotalCents={remainingOrderTotalCents}
+                suggestedPaymentAmountCents={suggestedPaymentAmountCents}
+                paymentMethod={paymentMethod}
+                paymentAmountMode={paymentAmountMode}
+                customPaymentAmount={customPaymentAmount}
+                orderStatus={orderStatus}
+                orderPayments={orderPayments}
+                isBusy={isBusy}
+                currentOrder={currentOrder}
+                hasLastPaymentReceipt={Boolean(lastPaymentReceipt)}
+                onCustomerSearchChange={handlePosCustomerSearchChange}
+                onPaymentMethodChange={setPaymentMethod}
+                onPaymentAmountModeChange={setPaymentAmountMode}
+                onCustomPaymentAmountChange={setCustomPaymentAmount}
+                onSendToKitchen={handleSendToKitchen}
+                onPayment={handlePayment}
+                onExportPaymentReceipt={handleExportPaymentReceipt}
+                onPrintPaymentReceipt={handlePrintPaymentReceipt}
+              />
+            </div>
+          </article>
+
+          <CatalogManagementPanel
+            categories={categories}
+            products={products}
+            categoryForm={categoryForm}
+            productForm={productForm}
+            isBusy={isBusy}
+            onCategoryFormChange={setCategoryForm}
+            onProductFormChange={setProductForm}
+            onCreateCategory={handleCreateCategory}
+            onCreateProduct={handleCreateProduct}
+          />
+
+          <FloorMapPanel
+            tables={tables}
+            selectedTableId={selectedTableId}
+            onSelectTable={(table) => {
+              setSelectedTableId(table.id);
+              setActionStatus(`${table.code} selecionada para o próximo pedido.`);
+            }}
+          />
+
+          <QrOperationsPanel
+            realtimeStatus={realtimeStatus}
+            qrAlert={qrAlert}
+            orders={qrPendingOrders}
+            selectedOrder={selectedQrOrder}
+            drafts={qrItemDrafts}
+            rejectReason={qrRejectReason}
+            isApiReady={isApiReady}
+            isBusy={isBusy}
+            onDismissAlert={() => setQrAlert(null)}
+            onSelectOrder={setSelectedQrOrderId}
+            onDraftsChange={setQrItemDrafts}
+            onRejectReasonChange={setQrRejectReason}
+            onUpdateItem={handleUpdateQrItem}
+            onCancelItem={handleCancelQrItem}
+            onRejectOrder={handleRejectQrOrder}
+            onSendToKitchen={handleSendQrOrderToKitchen}
+            formatMoney={formatMoney}
+            readRealtimeStatus={readRealtimeStatus}
+            readQrOrderLabel={readQrOrderLabel}
+            readQrOrderSummary={readQrOrderSummary}
+            readRelativeTime={readRelativeTime}
+          />
+
+          <article className="panel table-history-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Historico da mesa</span>
+                <h2>{selectedTable ? selectedTable.code : "Mesa"}</h2>
+              </div>
+              <Badge tone={filteredTableHistory.length > 0 ? "info" : "neutral"}>
+                {filteredTableHistory.length > 0
+                  ? `${filteredTableHistory.length} evento(s)`
+                  : "sem eventos"}
+              </Badge>
+            </div>
+            <div className="history-tools">
+              <label className="history-search">
+                <Search size={16} />
+                <input
+                  value={historyQuery}
+                  onChange={(event) => setHistoryQuery(event.target.value)}
+                  placeholder="Buscar historico"
                 />
-              ) : (
-                brandingInitial
-              )}
-            </span>
-            <div>
-              <span className="section-kicker">Unidade Centro</span>
-              <h1>{isPosWorkspace ? "PDV do turno" : "Visão do turno"}</h1>
-              <p>
-                {isPosWorkspace
-                  ? "Atendimento rápido, pedido, produção e recebimento em uma única superfície."
-                  : `${activeBranding.displayName} · gestão em tempo real, sem misturar a operação de caixa.`}
-              </p>
+              </label>
+              <select
+                value={historyFilter}
+                onChange={(event) => setHistoryFilter(event.target.value as HistoryFilter)}
+              >
+                <option value="all">Todos</option>
+                <option value="qr">QR</option>
+                <option value="kds">KDS</option>
+                <option value="payments">Pagamentos</option>
+                <option value="ops">Operacao</option>
+              </select>
             </div>
-          </div>
-          <div className="toolbar">
-            <a className="button secondary" href="/login">
-              <Bell size={18} /> {status === "ready" ? "Sessao ativa" : "Entrar demo"}
-            </a>
-            <a className="button primary" href="/app?view=pos" data-testid="open-pos">
-              <BadgeDollarSign size={18} /> Abrir PDV
-            </a>
-          </div>
-        </header>
-
-        <section className={`live-banner live-banner-${status}`}>
-          <strong>{readStatusTitle(status)}</strong>
-          <span>{actionStatus}</span>
-        </section>
-
-        {!isPosWorkspace ? (
-          <section className="profile-action-strip" aria-label="Atalhos por perfil">
-            <div>
-              <span className="section-kicker">{operatorProfile.kicker}</span>
-              <strong>{operatorProfile.title}</strong>
-              <p>{operatorProfile.description}</p>
-            </div>
-            <div className="profile-action-buttons">
-              {operatorProfile.actions.map((action) => (
-                <a className="button secondary" href={action.href} key={action.href}>
-                  {action.label}
-                </a>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section
-          className={isPosWorkspace ? "metrics compact" : "metrics compact dashboard-metrics"}
-        >
-          {metrics.map(([label, value, hint], index) => (
-            <article className="metric" key={label}>
-              <span>{label}</span>
-              <strong>{value}</strong>
-              <Badge tone={index === 1 ? "info" : index === 3 ? "good" : "neutral"}>{hint}</Badge>
-            </article>
-          ))}
-        </section>
-
-        {!isPosWorkspace ? (
-          <section className="dashboard-command-center" aria-label="Prioridades do turno">
-            <article className="dashboard-focus-card">
-              <span className="section-kicker">Atendimento</span>
-              <strong>{activeOrderCount} pedido(s) em andamento</strong>
-              <p>Abra o PDV para atender mesas, balcão e pagamentos sem distrair a gestão.</p>
-              <a className="button primary compact" href="/app?view=pos">
-                Ir para o PDV <BadgeDollarSign size={15} />
-              </a>
-            </article>
-            <article className="dashboard-focus-card">
-              <span className="section-kicker">Produção</span>
-              <strong>{tickets.length} ticket(s) em acompanhamento</strong>
-              <p>
-                {tickets.length
-                  ? "Acompanhe cozinha e bar antes de criar novo gargalo."
-                  : "Nenhuma fila crítica no KDS agora."}
-              </p>
-              <a className="button secondary compact" href="/app/waiter">
-                Acompanhar salão
-              </a>
-            </article>
-            <article className="dashboard-focus-card">
-              <span className="section-kicker">Gestão</span>
-              <strong>{inventoryAlerts.length} alerta(s) de estoque</strong>
-              <p>
-                Relatórios, caixa e pendências administrativas ficam disponíveis sem poluir o turno.
-              </p>
-              <a className="button secondary compact" href="/app/reports">
-                Ver relatórios
-              </a>
-            </article>
-          </section>
-        ) : null}
-
-        {isPosWorkspace ? (
-          <section className="ops-grid">
-            <article className="panel pos-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">PDV rapido</span>
-                  <h2>{selectedTable ? `Mesa ${selectedTable.code}` : "Balcao"}</h2>
-                </div>
-                <Badge tone={currentOrder ? "good" : "warn"}>{orderStatus}</Badge>
-              </div>
-              <div className="pos-surface">
-                <div className="product-grid">
-                  {products.slice(0, 4).map((product, index) => (
-                    <button
-                      className={
-                        product.id === selectedProductId ? "product-tile selected" : "product-tile"
-                      }
-                      type="button"
-                      key={product.id}
-                      data-testid={index === 0 ? "pos-add-item" : undefined}
-                      onClick={() => handleAddItem(product)}
-                      disabled={isBusy}
-                    >
-                      <span>{readCategoryLabel(product)}</span>
-                      <strong>{product.name}</strong>
-                      <small>
-                        {formatMoney(product.priceCents)} - {readPrepTime(product.name)}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-                <div className="ticket-preview">
-                  <div className="ticket-head">
-                    <ReceiptText size={18} />
-                    <strong>Comanda #{selectedTable?.code ?? "Balcao"}</strong>
-                  </div>
-                  <label className="pos-customer-select">
-                    Cliente
-                    <input
-                      list="pos-customers"
-                      value={customerSearch}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setCustomerSearch(value);
-                        const customer = posCustomers.find(
-                          (item) => `${item.name} · ${item.phone ?? item.email ?? ""}` === value,
-                        );
-                        if (!customer) return;
-                        setSelectedCustomerId(customer.id);
-                        void getCustomerHistory(customer.id)
-                          .then(setCustomerHistory)
-                          .catch(() => setCustomerHistory([]));
-                        if (currentOrder)
-                          void runAction(async () => {
-                            await assignOrderCustomer(currentOrder.id, customer.id);
-                            setActionStatus("Cliente vinculado à comanda.");
-                          });
-                      }}
-                      placeholder="Buscar nome ou telefone"
-                    />
-                    <datalist id="pos-customers">
-                      {posCustomers.map((customer) => (
-                        <option
-                          key={customer.id}
-                          value={`${customer.name} · ${customer.phone ?? customer.email ?? ""}`}
-                        />
-                      ))}
-                    </datalist>
-                  </label>
-                  {selectedCustomerId ? (
-                    <div className="pos-customer-history">
-                      <strong>
-                        {customerHistory.length
-                          ? `Últimas ${Math.min(customerHistory.length, 3)} visitas`
-                          : "Sem consumo anterior"}
-                      </strong>
-                      {customerHistory.slice(0, 3).map((order) => (
-                        <span key={order.id}>
-                          {order.closedAt
-                            ? new Date(order.closedAt).toLocaleDateString("pt-BR")
-                            : "Em aberto"}{" "}
-                          · {formatMoney(order.totalCents)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="ticket-lines">
-                    {(ticketItems.length > 0 ? ticketItems : demoTicketLines()).map((item) => (
-                      <div className="ticket-line" key={item.id}>
-                        <strong>{readQuantity(item.quantity)}</strong>
-                        <span>{item.nameSnapshot}</span>
-                        <small>
-                          {ticketItems.length > 0
-                            ? "Lancado no pedido real"
-                            : "Item ilustrativo demo"}
-                        </small>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="ticket-total">
-                    <span>Total parcial</span>
-                    <strong>{formatMoney(ticketItems.length > 0 ? orderTotalCents : 10000)}</strong>
-                  </div>
-                  <div className="payment-setup-grid">
-                    <label>
-                      Metodo
-                      <select
-                        value={paymentMethod}
-                        onChange={(event) =>
-                          setPaymentMethod(
-                            event.target.value as (typeof paymentMethodOptions)[number][0],
-                          )
-                        }
-                      >
-                        {paymentMethodOptions.map(([value, label]) => (
-                          <option value={value} key={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Tipo
-                      <select
-                        value={paymentAmountMode}
-                        onChange={(event) =>
-                          setPaymentAmountMode(
-                            event.target.value as "remaining" | "half" | "custom",
-                          )
-                        }
-                      >
-                        <option value="remaining">Quitar saldo</option>
-                        <option value="half">Metade do saldo</option>
-                        <option value="custom">Valor customizado</option>
-                      </select>
-                    </label>
-                    <label>
-                      Valor
-                      <input
-                        inputMode="decimal"
-                        value={
-                          paymentAmountMode === "custom"
-                            ? customPaymentAmount
-                            : (suggestedPaymentAmountCents / 100).toFixed(2).replace(".", ",")
-                        }
-                        onChange={(event) => setCustomPaymentAmount(event.target.value)}
-                        disabled={paymentAmountMode !== "custom"}
-                      />
-                    </label>
-                  </div>
-                  <div className="payment-breakdown">
+            <div className="timeline-list">
+              {filteredTableHistory.length > 0 ? (
+                filteredTableHistory.slice(0, 8).map((event) => (
+                  <div className="timeline-row" key={event.id}>
+                    <span className="timeline-dot" />
                     <div>
-                      <span>Pago</span>
-                      <strong>{formatMoney(paidOrderTotalCents)}</strong>
+                      <strong>{readHistoryActionLabel(event.action)}</strong>
+                      <span>{readHistoryDetail(event)}</span>
                     </div>
-                    <div>
-                      <span>Restante</span>
-                      <strong>{formatMoney(remainingOrderTotalCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Status</span>
-                      <strong>{orderStatus}</strong>
-                    </div>
-                  </div>
-                  <div className="ticket-actions">
-                    <button
-                      className="button secondary"
-                      type="button"
-                      data-testid="send-kds"
-                      onClick={handleSendToKitchen}
-                      disabled={isBusy}
-                    >
-                      <ChefHat size={17} /> Enviar
-                    </button>
-                    <button
-                      className="button primary"
-                      type="button"
-                      data-testid="payment-complete"
-                      onClick={handlePayment}
-                      disabled={isBusy || !currentOrder || remainingOrderTotalCents <= 0}
-                    >
-                      <Banknote size={17} /> Receber
-                    </button>
-                    <button
-                      className="button secondary"
-                      type="button"
-                      onClick={handleExportPaymentReceipt}
-                      disabled={isBusy || !lastPaymentReceipt || !currentOrder}
-                    >
-                      <FileText size={17} /> Comprovante
-                    </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={handlePrintPaymentReceipt}
-                      disabled={isBusy || !lastPaymentReceipt || !currentOrder}
-                    >
-                      <Printer size={17} /> Comprovante fisico
-                    </button>
-                  </div>
-                  {orderPayments.length > 0 ? (
-                    <div className="payment-ledger">
-                      {orderPayments.slice(0, 4).map((payment) => (
-                        <div className="status-row rich" key={payment.id}>
-                          <div>
-                            <strong>{payment.method}</strong>
-                            <span>
-                              {payment.confirmedAt
-                                ? new Date(payment.confirmedAt).toLocaleString("pt-BR")
-                                : "sem confirmacao"}
-                            </span>
-                          </div>
-                          <small>{formatMoney(payment.amountCents)}</small>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </article>
-
-            <article className="panel catalog-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Catalogo</span>
-                  <h2>Produtos e categorias</h2>
-                </div>
-                <Badge tone="info">{products.length} itens</Badge>
-              </div>
-              <div className="hardware-forms">
-                <form
-                  className="hardware-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreateCategory();
-                  }}
-                >
-                  <strong>Nova categoria</strong>
-                  <label>
-                    Nome
-                    <input
-                      value={categoryForm.name}
-                      onChange={(event) =>
-                        setCategoryForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Ordem
-                    <input
-                      inputMode="numeric"
-                      value={categoryForm.sortOrder}
-                      onChange={(event) =>
-                        setCategoryForm((current) => ({
-                          ...current,
-                          sortOrder: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <button className="button secondary full" type="submit" disabled={isBusy}>
-                    <ClipboardList size={17} /> Cadastrar categoria
-                  </button>
-                </form>
-
-                <form
-                  className="hardware-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreateProduct();
-                  }}
-                >
-                  <strong>Novo produto</strong>
-                  <div className="form-grid-compact">
-                    <label>
-                      Nome
-                      <input
-                        value={productForm.name}
-                        onChange={(event) =>
-                          setProductForm((current) => ({ ...current, name: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Categoria
-                      <select
-                        value={productForm.categoryId}
-                        onChange={(event) =>
-                          setProductForm((current) => ({
-                            ...current,
-                            categoryId: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">Sem categoria</option>
-                        {categories.map((category) => (
-                          <option value={category.id} key={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <label>
-                    Descricao
-                    <input
-                      value={productForm.description}
-                      onChange={(event) =>
-                        setProductForm((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <div className="form-grid-compact">
-                    <label>
-                      Preco
-                      <input
-                        inputMode="decimal"
-                        value={productForm.price}
-                        onChange={(event) =>
-                          setProductForm((current) => ({ ...current, price: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Custo
-                      <input
-                        inputMode="decimal"
-                        value={productForm.cost}
-                        onChange={(event) =>
-                          setProductForm((current) => ({ ...current, cost: event.target.value }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div className="check-row">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={productForm.channels.includes("pos")}
-                        onChange={(event) =>
-                          setProductForm((current) => ({
-                            ...current,
-                            channels: toggleValue(current.channels, "pos", event.target.checked),
-                          }))
-                        }
-                      />
-                      PDV
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={productForm.channels.includes("qr")}
-                        onChange={(event) =>
-                          setProductForm((current) => ({
-                            ...current,
-                            channels: toggleValue(current.channels, "qr", event.target.checked),
-                          }))
-                        }
-                      />
-                      QR
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={productForm.isClubEligible}
-                        onChange={(event) =>
-                          setProductForm((current) => ({
-                            ...current,
-                            isClubEligible: event.target.checked,
-                          }))
-                        }
-                      />
-                      Dose Club
-                    </label>
-                  </div>
-                  {productForm.isClubEligible ? (
-                    <div className="form-grid-compact">
-                      <label>
-                        Garrafa ml
-                        <input
-                          inputMode="numeric"
-                          value={productForm.bottleVolumeMl}
-                          onChange={(event) =>
-                            setProductForm((current) => ({
-                              ...current,
-                              bottleVolumeMl: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Dose ml
-                        <input
-                          inputMode="numeric"
-                          value={productForm.defaultDoseMl}
-                          onChange={(event) =>
-                            setProductForm((current) => ({
-                              ...current,
-                              defaultDoseMl: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                  ) : null}
-                  <button className="button primary full" type="submit" disabled={isBusy}>
-                    <PackageOpen size={17} /> Cadastrar produto
-                  </button>
-                </form>
-              </div>
-            </article>
-
-            <article className="panel floor-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Salao</span>
-                  <h2>Mapa de mesas</h2>
-                </div>
-                <Badge tone="info">{tables.length} mesas</Badge>
-              </div>
-              <div className="floor-grid">
-                {tables.slice(0, 8).map((table, index) => (
-                  <button
-                    className={`table-tile table-${table.status} ${table.id === selectedTableId ? "selected-table" : ""}`}
-                    type="button"
-                    key={table.id}
-                    data-testid={index === 1 ? "pos-open-table" : undefined}
-                    onClick={() => {
-                      setSelectedTableId(table.id);
-                      setActionStatus(`${table.code} selecionada para o proximo pedido.`);
-                    }}
-                  >
-                    <strong>{table.code}</strong>
-                    <span>{table.seats} lugares</span>
-                    <small>{readTableDetail(table)}</small>
-                  </button>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel qr-ops-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Cardapio QR</span>
-                  <h2>Pedidos recebidos</h2>
-                </div>
-                <div className="qr-panel-badges">
-                  <span className={`realtime-pill realtime-pill-${realtimeStatus}`}>
-                    {readRealtimeStatus(realtimeStatus)}
-                  </span>
-                  <Badge tone={qrPendingOrders.length > 0 ? "warn" : "good"}>
-                    {qrPendingOrders.length > 0
-                      ? `${qrPendingOrders.length} pendente(s)`
-                      : "sem fila"}
-                  </Badge>
-                </div>
-              </div>
-              {qrAlert ? (
-                <div className="qr-alert" role="status">
-                  <Bell size={16} />
-                  <span>{qrAlert}</span>
-                  <button className="icon-button" type="button" onClick={() => setQrAlert(null)}>
-                    <X size={16} />
-                  </button>
-                </div>
-              ) : null}
-              <div className="qr-review-layout">
-                {qrPendingOrders.length > 0 ? (
-                  <>
-                    <div className="qr-order-list">
-                      {qrPendingOrders.slice(0, 6).map((order) => (
-                        <button
-                          className={`qr-order-chip ${
-                            order.id === selectedQrOrder?.id ? "selected" : ""
-                          }`}
-                          type="button"
-                          key={order.id}
-                          onClick={() => setSelectedQrOrderId(order.id)}
-                        >
-                          <strong>{readQrOrderLabel(order)}</strong>
-                          <span>{readQrOrderSummary(order)}</span>
-                          <small>{formatMoney(order.totalCents)}</small>
-                        </button>
-                      ))}
-                    </div>
-                    {selectedQrOrder ? (
-                      <div className="qr-review-card">
-                        <div className="qr-review-head">
-                          <div>
-                            <strong>{readQrOrderLabel(selectedQrOrder)}</strong>
-                            <span>{readRelativeTime(selectedQrOrder.createdAt)}</span>
-                          </div>
-                          <Badge tone="info">{formatMoney(selectedQrOrder.totalCents)}</Badge>
-                        </div>
-                        <div className="qr-review-items">
-                          {selectedQrOrder.items.map((item) => {
-                            const draft = qrItemDrafts[item.id] ?? {
-                              quantity: String(Number(item.quantity)),
-                              notes: item.notes ?? "",
-                            };
-                            return (
-                              <div className="qr-review-item" key={item.id}>
-                                <div>
-                                  <strong>{item.nameSnapshot}</strong>
-                                  <span>{formatMoney(item.totalCents)}</span>
-                                </div>
-                                <label>
-                                  Qtd.
-                                  <input
-                                    inputMode="decimal"
-                                    value={draft.quantity}
-                                    onChange={(event) =>
-                                      setQrItemDrafts((current) => ({
-                                        ...current,
-                                        [item.id]: { ...draft, quantity: event.target.value },
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="qr-note-field">
-                                  Observacao
-                                  <input
-                                    value={draft.notes}
-                                    onChange={(event) =>
-                                      setQrItemDrafts((current) => ({
-                                        ...current,
-                                        [item.id]: { ...draft, notes: event.target.value },
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <div className="qr-item-actions">
-                                  <button
-                                    className="button secondary compact"
-                                    type="button"
-                                    disabled={!isApiReady || isBusy}
-                                    onClick={() => handleUpdateQrItem(selectedQrOrder, item.id)}
-                                  >
-                                    Salvar
-                                  </button>
-                                  <button
-                                    className="button ghost compact"
-                                    type="button"
-                                    disabled={!isApiReady || isBusy}
-                                    onClick={() => handleCancelQrItem(selectedQrOrder, item.id)}
-                                  >
-                                    Cancelar item
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <label className="qr-reject-field">
-                          Motivo da recusa
-                          <input
-                            value={qrRejectReason}
-                            onChange={(event) => setQrRejectReason(event.target.value)}
-                          />
-                        </label>
-                        <div className="ticket-actions">
-                          <button
-                            className="button secondary"
-                            type="button"
-                            disabled={!isApiReady || isBusy}
-                            onClick={() => handleRejectQrOrder(selectedQrOrder)}
-                          >
-                            Recusar
-                          </button>
-                          <button
-                            className="button primary"
-                            type="button"
-                            disabled={!isApiReady || isBusy}
-                            onClick={() => handleSendQrOrderToKitchen(selectedQrOrder)}
-                          >
-                            <ChefHat size={16} />
-                            Enviar KDS
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="empty-state">
-                    <strong>Nenhum pedido QR aguardando</strong>
-                    <span>Quando o cliente enviar pelo QR, ele aparece aqui para conferencia.</span>
-                  </div>
-                )}
-              </div>
-            </article>
-
-            <article className="panel table-history-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Historico da mesa</span>
-                  <h2>{selectedTable ? selectedTable.code : "Mesa"}</h2>
-                </div>
-                <Badge tone={filteredTableHistory.length > 0 ? "info" : "neutral"}>
-                  {filteredTableHistory.length > 0
-                    ? `${filteredTableHistory.length} evento(s)`
-                    : "sem eventos"}
-                </Badge>
-              </div>
-              <div className="history-tools">
-                <label className="history-search">
-                  <Search size={16} />
-                  <input
-                    value={historyQuery}
-                    onChange={(event) => setHistoryQuery(event.target.value)}
-                    placeholder="Buscar historico"
-                  />
-                </label>
-                <select
-                  value={historyFilter}
-                  onChange={(event) => setHistoryFilter(event.target.value as HistoryFilter)}
-                >
-                  <option value="all">Todos</option>
-                  <option value="qr">QR</option>
-                  <option value="kds">KDS</option>
-                  <option value="payments">Pagamentos</option>
-                  <option value="ops">Operacao</option>
-                </select>
-              </div>
-              <div className="timeline-list">
-                {filteredTableHistory.length > 0 ? (
-                  filteredTableHistory.slice(0, 8).map((event) => (
-                    <div className="timeline-row" key={event.id}>
-                      <span className="timeline-dot" />
-                      <div>
-                        <strong>{readHistoryActionLabel(event.action)}</strong>
-                        <span>{readHistoryDetail(event)}</span>
-                      </div>
-                      <small>
-                        {readHistoryOperator(event)} - {readRelativeTime(event.createdAt)}
-                      </small>
-                    </div>
-                  ))
-                ) : (
-                  <div className="empty-state">
-                    <strong>Nenhum evento encontrado</strong>
-                    <span>Ajuste a busca ou o filtro para ver outros registros da mesa.</span>
-                  </div>
-                )}
-              </div>
-            </article>
-
-            <article className="panel permissions-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Permissoes</span>
-                  <h2>Cargos e acessos</h2>
-                </div>
-                <ShieldCheck size={20} />
-              </div>
-              <div className="role-shell">
-                <div className="role-list">
-                  {roles.map((role) => (
-                    <button
-                      className={`role-chip ${role.id === selectedRole?.id ? "selected" : ""}`}
-                      key={role.id}
-                      type="button"
-                      onClick={() => setSelectedRoleId(role.id)}
-                    >
-                      <strong>{role.name}</strong>
-                      <span>{role.permissions.length} permissoes</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="permission-card">
-                  {selectedRole ? (
-                    <>
-                      <div className="permission-head">
-                        <div>
-                          <strong>{selectedRole.name}</strong>
-                          <span>{selectedRole.code}</span>
-                        </div>
-                        <Badge tone="info">{selectedRole.permissions.length} ativas</Badge>
-                      </div>
-                      <div className="permission-groups">
-                        {permissionGroups.map((group) => (
-                          <div className="permission-group" key={group.title}>
-                            <span>{group.title}</span>
-                            {group.items.map(([permission, label]) => (
-                              <label className="permission-toggle" key={permission}>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedRole.permissions.includes(permission)}
-                                  onChange={() => handleTogglePermission(selectedRole, permission)}
-                                  disabled={isBusy}
-                                />
-                                <span>{label}</span>
-                                <code>{permission}</code>
-                              </label>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="empty-state">
-                      <strong>Nenhum cargo encontrado</strong>
-                      <span>Cadastre ou sincronize cargos para configurar o RBAC.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </article>
-
-            <article className="panel team-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Equipe</span>
-                  <h2>Usuarios e convites</h2>
-                </div>
-                <div className="team-row-actions">
-                  <a className="button ghost compact" href="/app/security">
-                    <ShieldCheck size={15} /> Seguranca
-                  </a>
-                  <a className="button ghost compact" href="/app/team">
-                    <Users size={15} /> Abrir
-                  </a>
-                </div>
-              </div>
-              <div className="team-forms">
-                <form
-                  className="team-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreateInvitation();
-                  }}
-                >
-                  <label>
-                    E-mail do convite
-                    <input
-                      type="email"
-                      value={invitationForm.email}
-                      onChange={(event) =>
-                        setInvitationForm((current) => ({
-                          ...current,
-                          email: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Cargo
-                    <select
-                      value={invitationForm.roleId}
-                      onChange={(event) =>
-                        setInvitationForm((current) => ({
-                          ...current,
-                          roleId: event.target.value,
-                        }))
-                      }
-                    >
-                      {roles.map((role) => (
-                        <option key={role.id} value={role.id}>
-                          {role.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button className="button secondary compact" type="submit" disabled={isBusy}>
-                    <KeyRound size={15} /> Convidar
-                  </button>
-                </form>
-                <form
-                  className="team-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleAssignUserRole();
-                  }}
-                >
-                  <label>
-                    Usuario
-                    <select
-                      value={userRoleForm.userId}
-                      onChange={(event) =>
-                        setUserRoleForm((current) => ({
-                          ...current,
-                          userId: event.target.value,
-                        }))
-                      }
-                    >
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Novo cargo
-                    <select
-                      value={userRoleForm.roleId}
-                      onChange={(event) =>
-                        setUserRoleForm((current) => ({
-                          ...current,
-                          roleId: event.target.value,
-                        }))
-                      }
-                    >
-                      {roles.map((role) => (
-                        <option key={role.id} value={role.id}>
-                          {role.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button className="button primary compact" type="submit" disabled={isBusy}>
-                    <ShieldCheck size={15} /> Aplicar
-                  </button>
-                </form>
-              </div>
-              <div className="team-list">
-                {users.slice(0, 4).map((user) => (
-                  <div className="team-row" key={user.id}>
-                    <div>
-                      <strong>{user.name}</strong>
-                      <span>{user.email}</span>
-                    </div>
-                    <Badge tone={user.isActive ? "good" : "danger"}>
-                      {user.roles[0]?.name ?? "sem cargo"}
-                    </Badge>
-                  </div>
-                ))}
-                {invitations.slice(0, 3).map((invitation) => (
-                  <div className="team-row" key={invitation.id}>
-                    <div>
-                      <strong>{invitation.email}</strong>
-                      <span>Convite para {invitation.roleName ?? "cargo pendente"}</span>
-                    </div>
-                    <Badge tone={invitation.status === "pending" ? "warn" : "neutral"}>
-                      {invitation.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel outbox-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Outbox</span>
-                  <h2>Eventos de integracao</h2>
-                </div>
-                <Gauge size={20} />
-              </div>
-              <div className="outbox-toolbar">
-                <select
-                  value={outboxStatusFilter}
-                  onChange={(event) =>
-                    handleOutboxStatusChange(event.target.value as OutboxStatusFilter)
-                  }
-                >
-                  <option value="all">Todos</option>
-                  <option value="pending">Pendentes</option>
-                  <option value="processed">Processados</option>
-                  <option value="failed">Com erro</option>
-                </select>
-                <button
-                  className="button secondary compact"
-                  type="button"
-                  onClick={() => handleOutboxStatusChange(outboxStatusFilter)}
-                  disabled={isBusy}
-                >
-                  <RotateCw size={15} /> Atualizar
-                </button>
-              </div>
-              <div className="outbox-list">
-                {(outboxEvents.length > 0 ? outboxEvents : demoOutboxEvents)
-                  .slice(0, 6)
-                  .map((event) => (
-                    <div className="outbox-row" key={event.id}>
-                      <div>
-                        <strong>{event.topic}</strong>
-                        <span>{readOutboxPayloadSummary(event)}</span>
-                      </div>
-                      <Badge tone={readOutboxTone(event.status)}>{readOutboxStatus(event)}</Badge>
-                      <small>{readRelativeTime(event.createdAt)}</small>
-                    </div>
-                  ))}
-              </div>
-            </article>
-
-            <article className="panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Cozinha e bar</span>
-                  <h2>Fila KDS</h2>
-                </div>
-                <Badge tone={tickets.length > 0 ? "danger" : "good"}>
-                  {tickets.length > 0 ? `${tickets.length} tickets` : "sem fila"}
-                </Badge>
-              </div>
-              <div className="status-list">
-                {tickets.slice(0, 4).map((ticket, index) => (
-                  <div className="status-row rich" key={ticket.id} data-testid="kds-ticket">
-                    <div>
-                      <strong>{readTicketCode(ticket)}</strong>
-                      <span>
-                        {ticket.stationName} - {readTicketSummary(ticket)}
-                      </span>
-                    </div>
-                    <Badge tone={readTicketTone(ticket.status)}>{ticket.status}</Badge>
-                    <small className={index === 0 ? "danger-text" : ""}>
-                      {index === 0 ? "agora" : `${index + 3} min`}
+                    <small>
+                      {readHistoryOperator(event)} - {readRelativeTime(event.createdAt)}
                     </small>
                   </div>
-                ))}
-              </div>
-            </article>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <strong>Nenhum evento encontrado</strong>
+                  <span>Ajuste a busca ou o filtro para ver outros registros da mesa.</span>
+                </div>
+              )}
+            </div>
+          </article>
 
-            <article className="panel print-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Impressao</span>
-                  <h2>Comandas termicas</h2>
-                </div>
-                <Badge tone={readPrintBadgeTone(printJobs)}>{readPrintSummary(printJobs)}</Badge>
-              </div>
-              <div className="integration-list">
-                <div>
-                  <span>Impressoras ativas</span>
-                  <strong>{printerDevices.filter((device) => device.isActive).length}</strong>
-                </div>
-                <div>
-                  <span>Rotas configuradas</span>
-                  <strong>{printRoutes.filter((route) => route.isActive).length}</strong>
-                </div>
-                <div>
-                  <span>Conector local</span>
-                  <strong>
-                    {printerConnectorConfig.hasApiKey
-                      ? `${printerConnectorConfig.online ? "online" : "offline"} ${
-                          printerConnectorConfig.apiKeyLastFour
-                        }`
-                      : "sem token"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Ultima conexao</span>
-                  <strong>{readConnectorLastSeen(printerConnectorConfig.lastSyncAt)}</strong>
-                </div>
-                <div>
-                  <span>Versao</span>
-                  <strong>{readConnectorHeartbeatValue(printerConnectorConfig, "version")}</strong>
-                </div>
-                <div>
-                  <span>Host</span>
-                  <strong>{readConnectorHeartbeatValue(printerConnectorConfig, "hostname")}</strong>
-                </div>
-              </div>
-              {generatedPrinterConnectorKey ? (
-                <div className="secret-box">
-                  <span>Token exibido uma unica vez</span>
-                  <code>{generatedPrinterConnectorKey}</code>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={handleCopyPrinterConnectorKey}
-                  >
-                    <Copy size={16} />
-                  </button>
-                </div>
-              ) : null}
-              <div className="hardware-forms">
-                <form
-                  className="hardware-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreatePrinterDevice();
-                  }}
-                >
-                  <strong>Nova impressora</strong>
-                  <label>
-                    Nome
-                    <input
-                      value={printerForm.name}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <div className="form-grid-compact">
-                    <label>
-                      Funcao
-                      <select
-                        value={printerForm.role}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({ ...current, role: event.target.value }))
-                        }
-                      >
-                        <option value="kitchen">Cozinha</option>
-                        <option value="bar">Bar</option>
-                        <option value="cashier">Caixa</option>
-                        <option value="conference">Conferencia</option>
-                        <option value="fiscal">Fiscal</option>
-                      </select>
-                    </label>
-                    <label>
-                      Papel
-                      <select
-                        value={printerForm.paperWidth}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({
-                            ...current,
-                            paperWidth: event.target.value,
-                            charactersPerLine: event.target.value === "58" ? "32" : "48",
-                          }))
-                        }
-                      >
-                        <option value="80">80mm</option>
-                        <option value="58">58mm</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="form-grid-compact">
-                    <label>
-                      IP/host
-                      <input
-                        value={printerForm.address}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({ ...current, address: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Porta
-                      <input
-                        inputMode="numeric"
-                        value={printerForm.port}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({ ...current, port: event.target.value }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div className="form-grid-compact">
-                    <label>
-                      Codepage
-                      <select
-                        value={printerForm.codepage}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({
-                            ...current,
-                            codepage: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="cp850">CP850</option>
-                        <option value="cp860">CP860</option>
-                        <option value="cp1252">Windows-1252</option>
-                      </select>
-                    </label>
-                    <label>
-                      Corte
-                      <select
-                        value={printerForm.cutMode}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({ ...current, cutMode: event.target.value }))
-                        }
-                      >
-                        <option value="partial">Parcial</option>
-                        <option value="full">Total</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="check-row">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={printerForm.boldHeader}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({
-                            ...current,
-                            boldHeader: event.target.checked,
-                          }))
-                        }
-                      />
-                      Cabecalho em negrito
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={printerForm.beep}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({ ...current, beep: event.target.checked }))
-                        }
-                      />
-                      Beep
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={printerForm.openDrawer}
-                        onChange={(event) =>
-                          setPrinterForm((current) => ({
-                            ...current,
-                            openDrawer: event.target.checked,
-                          }))
-                        }
-                      />
-                      Gaveta
-                    </label>
-                  </div>
-                  <button className="button secondary full" type="submit" disabled={isBusy}>
-                    <Printer size={17} /> Cadastrar impressora
-                  </button>
-                </form>
+          <TeamAccessPanel
+            roles={roles}
+            users={users}
+            invitations={invitations}
+            selectedRole={selectedRole}
+            permissionGroups={permissionGroups}
+            selectedRoleId={selectedRoleId}
+            invitationForm={invitationForm}
+            userRoleForm={userRoleForm}
+            isBusy={isBusy}
+            onSelectedRoleChange={setSelectedRoleId}
+            onInvitationFormChange={setInvitationForm}
+            onUserRoleFormChange={setUserRoleForm}
+            onTogglePermission={handleTogglePermission}
+            onCreateInvitation={handleCreateInvitation}
+            onAssignUserRole={handleAssignUserRole}
+          />
 
-                <form
-                  className="hardware-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreatePrintRoute();
-                  }}
-                >
-                  <strong>Nova rota</strong>
-                  <label>
-                    Nome
-                    <input
-                      value={printRouteForm.name}
-                      onChange={(event) =>
-                        setPrintRouteForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Estacao KDS
-                    <select
-                      value={printRouteForm.stationId}
-                      onChange={(event) =>
-                        setPrintRouteForm((current) => ({
-                          ...current,
-                          stationId: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Todas</option>
-                      {kdsStations.map((station) => (
-                        <option value={station.id} key={station.id}>
-                          {station.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Impressora
-                    <select
-                      value={printRouteForm.printerDeviceId}
-                      onChange={(event) =>
-                        setPrintRouteForm((current) => ({
-                          ...current,
-                          printerDeviceId: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Selecione</option>
-                      {printerDevices.map((device) => (
-                        <option value={device.id} key={device.id}>
-                          {device.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="form-grid-compact">
-                    <label>
-                      Tipo
-                      <select
-                        value={printRouteForm.targetType}
-                        onChange={(event) =>
-                          setPrintRouteForm((current) => ({
-                            ...current,
-                            targetType: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="kitchen_ticket">Cozinha</option>
-                        <option value="bar_ticket">Bar</option>
-                        <option value="bill_preview">Conferencia</option>
-                        <option value="cash_summary">Caixa</option>
-                        <option value="payment_receipt">Comprovante</option>
-                      </select>
-                    </label>
-                    <label>
-                      Vias
-                      <input
-                        inputMode="numeric"
-                        value={printRouteForm.copies}
-                        onChange={(event) =>
-                          setPrintRouteForm((current) => ({
-                            ...current,
-                            copies: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <button className="button secondary full" type="submit" disabled={isBusy}>
-                    <ClipboardList size={17} /> Cadastrar rota
-                  </button>
-                </form>
+          <article className="panel outbox-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Outbox</span>
+                <h2>Eventos de integracao</h2>
               </div>
-              <div className="status-list">
-                {printJobs.slice(0, 3).map((job) => (
-                  <div className="status-row rich" key={job.id}>
-                    <div>
-                      <strong>{job.printerName ?? "Sem impressora"}</strong>
-                      <span>
-                        {readPrintKind(job.kind)} - {job.orderId?.slice(0, 8) ?? "sem pedido"}
-                      </span>
-                    </div>
-                    <Badge tone={readPrintTone(job.status)}>{readPrintStatus(job.status)}</Badge>
-                    <small>{job.copies} via(s)</small>
-                  </div>
-                ))}
-              </div>
-              <div className="ticket-actions">
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => handleConfigurePrinterConnector(false)}
-                  disabled={isBusy || !branchId}
-                >
-                  <KeyRound size={17} /> Token
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => handleConfigurePrinterConnector(true)}
-                  disabled={isBusy || !branchId}
-                >
-                  <RotateCw size={17} /> Rotacionar
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={handleRevokePrinterConnector}
-                  disabled={isBusy || !printerConnectorConfig.hasApiKey}
-                >
-                  <ShieldCheck size={17} /> Revogar
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={handlePrintBillPreview}
-                  disabled={isBusy || !currentOrder}
-                >
-                  <ReceiptText size={17} /> Pre-conta
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={handleExportBillDocument}
-                  disabled={isBusy || !currentOrder}
-                >
-                  <FileText size={17} /> Pre-conta PDF
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => printJobs[0] && handleRetryPrint(printJobs[0].id)}
-                  disabled={
-                    isBusy || !printJobs[0] || !["failed", "canceled"].includes(printJobs[0].status)
-                  }
-                >
-                  <RotateCw size={17} /> Retry
-                </button>
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={() => printJobs[0] && handleReprint(printJobs[0].id)}
-                  disabled={isBusy || !printJobs[0]}
-                >
-                  <Printer size={17} /> Reimprimir
-                </button>
-              </div>
-            </article>
-
-            <article className="panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Estoque</span>
-                  <h2>Ficha tecnica e saldos</h2>
-                </div>
-                <Badge tone={inventoryAlerts.length > 0 ? "danger" : "warn"}>
-                  {inventoryAlerts.length > 0
-                    ? `${inventoryAlerts.length} alerta(s)`
-                    : `${inventorySummary.length} insumos`}
-                </Badge>
-              </div>
-              <div className="hardware-forms">
-                <form
-                  className="hardware-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleCreateInventoryItem();
-                  }}
-                >
-                  <strong>Novo insumo</strong>
-                  <div className="form-grid-compact">
-                    <label>
-                      Nome
-                      <input
-                        value={inventoryForm.name}
-                        onChange={(event) =>
-                          setInventoryForm((current) => ({ ...current, name: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Unidade
-                      <input
-                        value={inventoryForm.unit}
-                        onChange={(event) =>
-                          setInventoryForm((current) => ({ ...current, unit: event.target.value }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div className="form-grid-compact">
-                    <label>
-                      Custo medio
-                      <input
-                        inputMode="decimal"
-                        value={inventoryForm.averageCost}
-                        onChange={(event) =>
-                          setInventoryForm((current) => ({
-                            ...current,
-                            averageCost: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Minimo
-                      <input
-                        inputMode="decimal"
-                        value={inventoryForm.minQuantity}
-                        onChange={(event) =>
-                          setInventoryForm((current) => ({
-                            ...current,
-                            minQuantity: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <button className="button secondary full" type="submit" disabled={isBusy}>
-                    <PackageOpen size={17} /> Cadastrar insumo
-                  </button>
-                </form>
-                <form
-                  className="hardware-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleAdjustStock();
-                  }}
-                >
-                  <strong>Ajuste auditado</strong>
-                  <label>
-                    Insumo
-                    <select
-                      value={stockAdjustmentForm.inventoryItemId}
-                      onChange={(event) =>
-                        setStockAdjustmentForm((current) => ({
-                          ...current,
-                          inventoryItemId: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Selecione</option>
-                      {inventorySummary.map((item) => (
-                        <option value={item.id} key={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="form-grid-compact">
-                    <label>
-                      Quantidade
-                      <input
-                        inputMode="decimal"
-                        value={stockAdjustmentForm.quantity}
-                        onChange={(event) =>
-                          setStockAdjustmentForm((current) => ({
-                            ...current,
-                            quantity: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Motivo
-                      <input
-                        value={stockAdjustmentForm.reason}
-                        onChange={(event) =>
-                          setStockAdjustmentForm((current) => ({
-                            ...current,
-                            reason: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <button className="button secondary full" type="submit" disabled={isBusy}>
-                    <ShieldCheck size={17} /> Registrar movimento
-                  </button>
-                </form>
-              </div>
-              {inventoryAlerts.length > 0 ? (
-                <div className="inventory-alerts">
-                  {inventoryAlerts.slice(0, 3).map((alert) => (
-                    <div className="inventory-row" key={alert.id}>
-                      <div>
-                        <strong>{alert.name}</strong>
-                        <span>
-                          {alert.status === "negative" ? "Saldo negativo" : "Abaixo do minimo"} -
-                          falta {alert.shortage.toFixed(3)} {alert.unit}
-                        </span>
-                      </div>
-                      <Badge tone="danger">
-                        {alert.quantity} / {alert.minQuantity}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <div className="inventory-list">
-                {(inventorySummary.length > 0 ? inventorySummary : demoInventoryRows()).map(
-                  (item) => {
-                    const current = Number(item.quantity);
-                    const minimum = Number(item.minQuantity);
-                    return (
-                      <div className="inventory-row" key={item.id}>
-                        <div>
-                          <strong>{item.name}</strong>
-                          <span>
-                            Minimo {item.minQuantity} {item.unit}
-                          </span>
-                        </div>
-                        <Badge tone={current < minimum ? "danger" : "good"}>
-                          {item.quantity} {item.unit}
-                        </Badge>
-                      </div>
-                    );
-                  },
-                )}
-              </div>
-            </article>
-
-            <article className="panel cash-panel" id="caixa">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Caixa</span>
-                  <h2>Conferencia do turno</h2>
-                </div>
-                <Badge tone={cashReadiness.tone}>{cashSummary?.session?.status ?? "demo"}</Badge>
-              </div>
-              <div className="cash-readiness-card">
-                <div>
-                  <strong>{cashReadiness.title}</strong>
-                  <span>{cashReadiness.detail}</span>
-                </div>
-                <Badge tone={cashReadiness.tone}>fechamento</Badge>
-              </div>
-              <div className="cash-grid">
-                <span>Esperado</span>
-                <strong>{formatMoney(cashExpectedCents)}</strong>
-                <span>Recebido no turno</span>
-                <strong>{formatMoney(cashReceivedCents)}</strong>
-                <span>Pedidos abertos</span>
-                <strong>
-                  {cashSummary
-                    ? `${cashOpenOrdersCount} - ${formatMoney(cashOpenOrdersCents)}`
-                    : orderStatus}
-                </strong>
-                <span>Diferença</span>
-                <strong>
-                  {cashDifferenceCents === null ? "-" : formatMoney(cashDifferenceCents)}
-                </strong>
-              </div>
-              <div className="cash-kpi-grid">
-                {cashActionItems.map((item) => (
-                  <div className="cash-kpi-card" key={item.label}>
-                    <span>{item.label}</span>
-                    <strong>{item.value}</strong>
-                    <small>{item.hint}</small>
-                  </div>
-                ))}
-              </div>
-              <div className="payment-setup-grid">
-                <label>
-                  Valor contado
-                  <input
-                    inputMode="decimal"
-                    value={countedCashAmount}
-                    onChange={(event) => setCountedCashAmount(event.target.value)}
-                    placeholder="0,00"
-                  />
-                </label>
-                <label>
-                  Status atual
-                  <input value={cashSummary?.session?.status ?? "sem sessao"} disabled />
-                </label>
-                <label>
-                  Resultado estimado
-                  <input
-                    value={
-                      countedCashAmount
-                        ? formatMoney(
-                            parseMoneyToCents(countedCashAmount) -
-                              (cashSummary?.session?.expectedAmountCents ?? 0),
-                          )
-                        : "-"
-                    }
-                    disabled
-                  />
-                </label>
-              </div>
-              <div className="status-list compact">
-                {cashChecklist.map((item) => (
-                  <div className="status-row rich" key={item.label}>
-                    <div>
-                      <strong>{item.label}</strong>
-                      <span>{item.detail}</span>
-                    </div>
-                    <Badge tone={item.done ? "good" : "warn"}>
-                      {item.done ? "ok" : "pendente"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-              <button
-                className="button secondary full"
-                type="button"
-                onClick={handlePrintCashSummary}
-                disabled={isBusy || !cashSummary?.session?.id}
-              >
-                <Printer size={17} /> Imprimir resumo do caixa
-              </button>
-              <button
-                className="button secondary full"
-                type="button"
-                onClick={handleExportCashSummaryDocument}
-                disabled={isBusy || !cashSummary?.session?.id}
-              >
-                <FileText size={17} /> Resumo executivo PDF
-              </button>
-              <button
-                className="button primary full"
-                type="button"
-                data-testid="cash-close"
-                onClick={handleCloseOrder}
-                disabled={isBusy || Boolean(cashCloseBlockedReason)}
-                title={cashCloseBlockedReason || "Fechar conta com auditoria"}
-              >
-                <ShieldCheck size={17} /> Fechar com auditoria
-              </button>
-              {cashCloseBlockedReason ? (
-                <p className="cash-helper-copy">{cashCloseBlockedReason}</p>
-              ) : null}
-              <button
-                className="button secondary full"
-                type="button"
-                onClick={handleCloseCashSession}
-                disabled={
-                  isBusy ||
-                  !cashSummary?.session?.id ||
-                  cashSummary.session.status !== "open" ||
-                  cashOpenOrdersCount > 0
+              <Gauge size={20} />
+            </div>
+            <div className="outbox-toolbar">
+              <select
+                value={outboxStatusFilter}
+                onChange={(event) =>
+                  handleOutboxStatusChange(event.target.value as OutboxStatusFilter)
                 }
               >
-                <BadgeDollarSign size={17} /> Encerrar caixa
-              </button>
-            </article>
-
-            <article className="panel fiscal-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Fiscal</span>
-                  <h2>Notas e cupons</h2>
-                </div>
-                <Badge tone={readFiscalBadgeTone(fiscalDocuments)}>
-                  {readFiscalSummary(fiscalDocuments)}
-                </Badge>
-              </div>
-              <div className="fiscal-list">
-                {(fiscalDocuments.length > 0 ? fiscalDocuments.slice(0, 4) : demoFiscalRows()).map(
-                  (document) => (
-                    <div className="fiscal-row" key={document.id}>
-                      <FileCheck2 size={18} />
-                      <div>
-                        <strong>
-                          {document.model.toUpperCase()}{" "}
-                          {document.number
-                            ? `${document.series ?? "1"}-${document.number}`
-                            : "pendente"}
-                        </strong>
-                        <span>
-                          {document.orderId
-                            ? `Pedido ${document.orderId.slice(0, 8)}`
-                            : "Sem pedido"}
-                        </span>
-                      </div>
-                      <Badge tone={readFiscalTone(document.status)}>
-                        {readFiscalStatus(document.status)}
-                      </Badge>
-                      {["pending", "rejected", "error", "contingency"].includes(document.status) &&
-                      fiscalDocuments.length > 0 ? (
-                        <button
-                          className="icon-button"
-                          type="button"
-                          onClick={() => handleRetryFiscal(document.id)}
-                          aria-label="Reenfileirar documento fiscal"
-                        >
-                          <RotateCw size={15} />
-                        </button>
-                      ) : null}
-                      <button
-                        className="icon-button"
-                        type="button"
-                        onClick={() => handleExportFiscalAuxiliary(document)}
-                        aria-label={`Gerar anexo auxiliar ${document.id}`}
-                      >
-                        <FileText size={15} />
-                      </button>
-                      {document.status === "authorized" && fiscalDocuments.length > 0 ? (
-                        <button
-                          className="icon-button"
-                          type="button"
-                          onClick={() => handleCancelFiscal(document.id)}
-                          aria-label="Cancelar documento fiscal"
-                        >
-                          <ShieldCheck size={15} />
-                        </button>
-                      ) : null}
-                    </div>
-                  ),
-                )}
-              </div>
+                <option value="all">Todos</option>
+                <option value="pending">Pendentes</option>
+                <option value="processed">Processados</option>
+                <option value="failed">Com erro</option>
+              </select>
               <button
-                className="button secondary full"
+                className="button secondary compact"
                 type="button"
-                onClick={handleIssueFiscal}
-                disabled={isBusy || !currentOrder}
+                onClick={() => handleOutboxStatusChange(outboxStatusFilter)}
+                disabled={isBusy}
               >
-                <ReceiptText size={17} /> Emitir NFC-e do pedido atual
+                <RotateCw size={15} /> Atualizar
               </button>
-            </article>
+            </div>
+            <div className="outbox-list">
+              {(outboxEvents.length > 0 ? outboxEvents : demoOutboxEvents)
+                .slice(0, 6)
+                .map((event) => (
+                  <div className="outbox-row" key={event.id}>
+                    <div>
+                      <strong>{event.topic}</strong>
+                      <span>{readOutboxPayloadSummary(event)}</span>
+                    </div>
+                    <Badge tone={readOutboxTone(event.status)}>{readOutboxStatus(event)}</Badge>
+                    <small>{readRelativeTime(event.createdAt)}</small>
+                  </div>
+                ))}
+            </div>
+          </article>
 
-            <article className="panel branding-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Identidade</span>
-                  <h2>Ambiente do estabelecimento</h2>
-                </div>
-                <Palette size={20} />
+          <article className="panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Cozinha e bar</span>
+                <h2>Fila KDS</h2>
               </div>
-              <div className="brand-preview">
-                <span className="tenant-avatar large">
-                  {activeBranding.logoUrl ? (
-                    <span
-                      className="tenant-logo cover"
-                      style={{ backgroundImage: `url(${activeBranding.logoUrl})` }}
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    brandingInitial
-                  )}
-                </span>
-                <div>
-                  <strong>{activeBranding.displayName}</strong>
-                  <span>Personalização aplicada ao painel, QR e comunicações.</span>
+              <Badge tone={tickets.length > 0 ? "danger" : "good"}>
+                {tickets.length > 0 ? `${tickets.length} tickets` : "sem fila"}
+              </Badge>
+            </div>
+            <div className="status-list">
+              {tickets.slice(0, 4).map((ticket, index) => (
+                <div className="status-row rich" key={ticket.id} data-testid="kds-ticket">
+                  <div>
+                    <strong>{readTicketCode(ticket)}</strong>
+                    <span>
+                      {ticket.stationName} - {readTicketSummary(ticket)}
+                    </span>
+                  </div>
+                  <Badge tone={readTicketTone(ticket.status)}>{ticket.status}</Badge>
+                  <small className={index === 0 ? "danger-text" : ""}>
+                    {index === 0 ? "agora" : `${index + 3} min`}
+                  </small>
                 </div>
-              </div>
-              <a className="button primary full" href="/app/settings/branding">
-                <Palette size={17} /> Configurar identidade
-              </a>
-            </article>
-            <article className="panel integration-panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Integracao</span>
-                  <h2>Dose Club</h2>
-                </div>
-                <Badge tone={clubConfig?.status === "active" ? "good" : "warn"}>
-                  {clubConfig?.status ?? "nao configurado"}
-                </Badge>
-              </div>
-              <div className="integration-list">
-                <div>
-                  <span>API key</span>
-                  <strong>
-                    {clubConfig?.hasApiKey
-                      ? `termina em ${clubConfig.apiKeyLastFour}`
-                      : "nao provisionada"}
-                  </strong>
-                </div>
-                <div>
-                  <span>Filial vinculada</span>
-                  <strong>{clubConfig?.branchId ? "Unidade atual" : "todas autorizadas"}</strong>
-                </div>
-                <div>
-                  <span>Scopes</span>
-                  <strong>{clubConfig?.scopes?.length ?? 0} permissoes</strong>
-                </div>
-              </div>
-              {generatedClubKey ? (
-                <div className="secret-box">
-                  <span>Exibida uma unica vez</span>
-                  <code>{generatedClubKey}</code>
-                  <button className="icon-button" type="button" onClick={handleCopyClubKey}>
-                    <Copy size={16} />
-                  </button>
-                </div>
-              ) : null}
-              <div className="ticket-actions">
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => handleConfigureClub(false)}
-                  disabled={isBusy}
-                >
-                  <KeyRound size={17} /> Provisionar
-                </button>
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={() => handleConfigureClub(true)}
-                  disabled={isBusy}
-                >
-                  <RotateCw size={17} /> Rotacionar
-                </button>
-              </div>
-            </article>
+              ))}
+            </div>
+          </article>
 
-            <article className="panel">
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Auditoria</span>
-                  <h2>Eventos sensiveis</h2>
-                </div>
-                <Gauge size={20} />
+          <article className="panel print-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Impressao</span>
+                <h2>Comandas termicas</h2>
               </div>
-              <div className="audit-filters">
+              <Badge tone={readPrintBadgeTone(printJobs)}>{readPrintSummary(printJobs)}</Badge>
+            </div>
+            <div className="integration-list">
+              <div>
+                <span>Impressoras ativas</span>
+                <strong>{printerDevices.filter((device) => device.isActive).length}</strong>
+              </div>
+              <div>
+                <span>Rotas configuradas</span>
+                <strong>{printRoutes.filter((route) => route.isActive).length}</strong>
+              </div>
+              <div>
+                <span>Conector local</span>
+                <strong>
+                  {printerConnectorConfig.hasApiKey
+                    ? `${printerConnectorConfig.online ? "online" : "offline"} ${
+                        printerConnectorConfig.apiKeyLastFour
+                      }`
+                    : "sem token"}
+                </strong>
+              </div>
+              <div>
+                <span>Ultima conexao</span>
+                <strong>{readConnectorLastSeen(printerConnectorConfig.lastSyncAt)}</strong>
+              </div>
+              <div>
+                <span>Versao</span>
+                <strong>{readConnectorHeartbeatValue(printerConnectorConfig, "version")}</strong>
+              </div>
+              <div>
+                <span>Host</span>
+                <strong>{readConnectorHeartbeatValue(printerConnectorConfig, "hostname")}</strong>
+              </div>
+            </div>
+            {generatedPrinterConnectorKey ? (
+              <div className="secret-box">
+                <span>Token exibido uma unica vez</span>
+                <code>{generatedPrinterConnectorKey}</code>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={handleCopyPrinterConnectorKey}
+                >
+                  <Copy size={16} />
+                </button>
+              </div>
+            ) : null}
+            <div className="hardware-forms">
+              <form
+                className="hardware-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleCreatePrinterDevice();
+                }}
+              >
+                <strong>Nova impressora</strong>
                 <label>
-                  Acao
+                  Nome
                   <input
-                    value={auditFilters.action}
+                    value={printerForm.name}
                     onChange={(event) =>
-                      setAuditFilters((current) => ({ ...current, action: event.target.value }))
+                      setPrinterForm((current) => ({ ...current, name: event.target.value }))
                     }
-                    placeholder="payment.confirmed"
+                  />
+                </label>
+                <div className="form-grid-compact">
+                  <label>
+                    Funcao
+                    <select
+                      value={printerForm.role}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({ ...current, role: event.target.value }))
+                      }
+                    >
+                      <option value="kitchen">Cozinha</option>
+                      <option value="bar">Bar</option>
+                      <option value="cashier">Caixa</option>
+                      <option value="conference">Conferencia</option>
+                      <option value="fiscal">Fiscal</option>
+                    </select>
+                  </label>
+                  <label>
+                    Papel
+                    <select
+                      value={printerForm.paperWidth}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({
+                          ...current,
+                          paperWidth: event.target.value,
+                          charactersPerLine: event.target.value === "58" ? "32" : "48",
+                        }))
+                      }
+                    >
+                      <option value="80">80mm</option>
+                      <option value="58">58mm</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="form-grid-compact">
+                  <label>
+                    IP/host
+                    <input
+                      value={printerForm.address}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({ ...current, address: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Porta
+                    <input
+                      inputMode="numeric"
+                      value={printerForm.port}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({ ...current, port: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="form-grid-compact">
+                  <label>
+                    Codepage
+                    <select
+                      value={printerForm.codepage}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({
+                          ...current,
+                          codepage: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="cp850">CP850</option>
+                      <option value="cp860">CP860</option>
+                      <option value="cp1252">Windows-1252</option>
+                    </select>
+                  </label>
+                  <label>
+                    Corte
+                    <select
+                      value={printerForm.cutMode}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({ ...current, cutMode: event.target.value }))
+                      }
+                    >
+                      <option value="partial">Parcial</option>
+                      <option value="full">Total</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="check-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={printerForm.boldHeader}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({
+                          ...current,
+                          boldHeader: event.target.checked,
+                        }))
+                      }
+                    />
+                    Cabecalho em negrito
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={printerForm.beep}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({ ...current, beep: event.target.checked }))
+                      }
+                    />
+                    Beep
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={printerForm.openDrawer}
+                      onChange={(event) =>
+                        setPrinterForm((current) => ({
+                          ...current,
+                          openDrawer: event.target.checked,
+                        }))
+                      }
+                    />
+                    Gaveta
+                  </label>
+                </div>
+                <button className="button secondary full" type="submit" disabled={isBusy}>
+                  <Printer size={17} /> Cadastrar impressora
+                </button>
+              </form>
+
+              <form
+                className="hardware-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleCreatePrintRoute();
+                }}
+              >
+                <strong>Nova rota</strong>
+                <label>
+                  Nome
+                  <input
+                    value={printRouteForm.name}
+                    onChange={(event) =>
+                      setPrintRouteForm((current) => ({ ...current, name: event.target.value }))
+                    }
                   />
                 </label>
                 <label>
-                  Usuario
+                  Estacao KDS
                   <select
-                    value={auditFilters.userId}
+                    value={printRouteForm.stationId}
                     onChange={(event) =>
-                      setAuditFilters((current) => ({ ...current, userId: event.target.value }))
+                      setPrintRouteForm((current) => ({
+                        ...current,
+                        stationId: event.target.value,
+                      }))
                     }
                   >
-                    <option value="">Todos</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
+                    <option value="">Todas</option>
+                    {kdsStations.map((station) => (
+                      <option value={station.id} key={station.id}>
+                        {station.name}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label>
-                  Entidade
-                  <input
-                    value={auditFilters.entityType}
+                  Impressora
+                  <select
+                    value={printRouteForm.printerDeviceId}
                     onChange={(event) =>
-                      setAuditFilters((current) => ({ ...current, entityType: event.target.value }))
+                      setPrintRouteForm((current) => ({
+                        ...current,
+                        printerDeviceId: event.target.value,
+                      }))
                     }
-                    placeholder="order"
-                  />
+                  >
+                    <option value="">Selecione</option>
+                    {printerDevices.map((device) => (
+                      <option value={device.id} key={device.id}>
+                        {device.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <label>
-                  De
-                  <input
-                    type="date"
-                    value={auditFilters.dateFrom}
-                    onChange={(event) =>
-                      setAuditFilters((current) => ({ ...current, dateFrom: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Ate
-                  <input
-                    type="date"
-                    value={auditFilters.dateTo}
-                    onChange={(event) =>
-                      setAuditFilters((current) => ({ ...current, dateTo: event.target.value }))
-                    }
-                  />
-                </label>
-                <button
-                  className="button secondary compact"
-                  type="button"
-                  onClick={handleApplyAuditFilters}
-                  disabled={isBusy}
-                >
-                  <Search size={15} /> Filtrar
+                <div className="form-grid-compact">
+                  <label>
+                    Tipo
+                    <select
+                      value={printRouteForm.targetType}
+                      onChange={(event) =>
+                        setPrintRouteForm((current) => ({
+                          ...current,
+                          targetType: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="kitchen_ticket">Cozinha</option>
+                      <option value="bar_ticket">Bar</option>
+                      <option value="bill_preview">Conferencia</option>
+                      <option value="cash_summary">Caixa</option>
+                      <option value="payment_receipt">Comprovante</option>
+                    </select>
+                  </label>
+                  <label>
+                    Vias
+                    <input
+                      inputMode="numeric"
+                      value={printRouteForm.copies}
+                      onChange={(event) =>
+                        setPrintRouteForm((current) => ({
+                          ...current,
+                          copies: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <button className="button secondary full" type="submit" disabled={isBusy}>
+                  <ClipboardList size={17} /> Cadastrar rota
                 </button>
-                <button
-                  className="button ghost compact"
-                  type="button"
-                  onClick={handleClearAuditFilters}
-                  disabled={isBusy}
-                >
-                  <X size={15} /> Limpar
-                </button>
+              </form>
+            </div>
+            <div className="status-list">
+              {printJobs.slice(0, 3).map((job) => (
+                <div className="status-row rich" key={job.id}>
+                  <div>
+                    <strong>{job.printerName ?? "Sem impressora"}</strong>
+                    <span>
+                      {readPrintKind(job.kind)} - {job.orderId?.slice(0, 8) ?? "sem pedido"}
+                    </span>
+                  </div>
+                  <Badge tone={readPrintTone(job.status)}>{readPrintStatus(job.status)}</Badge>
+                  <small>{job.copies} via(s)</small>
+                </div>
+              ))}
+            </div>
+            <div className="ticket-actions">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => handleConfigurePrinterConnector(false)}
+                disabled={isBusy || !branchId}
+              >
+                <KeyRound size={17} /> Token
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => handleConfigurePrinterConnector(true)}
+                disabled={isBusy || !branchId}
+              >
+                <RotateCw size={17} /> Rotacionar
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={handleRevokePrinterConnector}
+                disabled={isBusy || !printerConnectorConfig.hasApiKey}
+              >
+                <ShieldCheck size={17} /> Revogar
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={handlePrintBillPreview}
+                disabled={isBusy || !currentOrder}
+              >
+                <ReceiptText size={17} /> Pre-conta
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={handleExportBillDocument}
+                disabled={isBusy || !currentOrder}
+              >
+                <FileText size={17} /> Pre-conta PDF
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => printJobs[0] && handleRetryPrint(printJobs[0].id)}
+                disabled={
+                  isBusy || !printJobs[0] || !["failed", "canceled"].includes(printJobs[0].status)
+                }
+              >
+                <RotateCw size={17} /> Retry
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => printJobs[0] && handleReprint(printJobs[0].id)}
+                disabled={isBusy || !printJobs[0]}
+              >
+                <Printer size={17} /> Reimprimir
+              </button>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Estoque</span>
+                <h2>Ficha tecnica e saldos</h2>
               </div>
-              <div className="audit-list">
-                {auditEvents.slice(0, 6).map((event) => (
-                  <div className="audit-row" key={event.id}>
-                    <strong>{readRelativeTime(event.createdAt)}</strong>
-                    <span>{readAuditSummary(event)}</span>
-                    <small>
-                      {event.action} por {readAuditOperator(event)}
-                    </small>
+              <Badge tone={inventoryAlerts.length > 0 ? "danger" : "warn"}>
+                {inventoryAlerts.length > 0
+                  ? `${inventoryAlerts.length} alerta(s)`
+                  : `${inventorySummary.length} insumos`}
+              </Badge>
+            </div>
+            <div className="hardware-forms">
+              <form
+                className="hardware-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleCreateInventoryItem();
+                }}
+              >
+                <strong>Novo insumo</strong>
+                <div className="form-grid-compact">
+                  <label>
+                    Nome
+                    <input
+                      value={inventoryForm.name}
+                      onChange={(event) =>
+                        setInventoryForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Unidade
+                    <input
+                      value={inventoryForm.unit}
+                      onChange={(event) =>
+                        setInventoryForm((current) => ({ ...current, unit: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="form-grid-compact">
+                  <label>
+                    Custo medio
+                    <input
+                      inputMode="decimal"
+                      value={inventoryForm.averageCost}
+                      onChange={(event) =>
+                        setInventoryForm((current) => ({
+                          ...current,
+                          averageCost: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Minimo
+                    <input
+                      inputMode="decimal"
+                      value={inventoryForm.minQuantity}
+                      onChange={(event) =>
+                        setInventoryForm((current) => ({
+                          ...current,
+                          minQuantity: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <button className="button secondary full" type="submit" disabled={isBusy}>
+                  <PackageOpen size={17} /> Cadastrar insumo
+                </button>
+              </form>
+              <form
+                className="hardware-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleAdjustStock();
+                }}
+              >
+                <strong>Ajuste auditado</strong>
+                <label>
+                  Insumo
+                  <select
+                    value={stockAdjustmentForm.inventoryItemId}
+                    onChange={(event) =>
+                      setStockAdjustmentForm((current) => ({
+                        ...current,
+                        inventoryItemId: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    {inventorySummary.map((item) => (
+                      <option value={item.id} key={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="form-grid-compact">
+                  <label>
+                    Quantidade
+                    <input
+                      inputMode="decimal"
+                      value={stockAdjustmentForm.quantity}
+                      onChange={(event) =>
+                        setStockAdjustmentForm((current) => ({
+                          ...current,
+                          quantity: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Motivo
+                    <input
+                      value={stockAdjustmentForm.reason}
+                      onChange={(event) =>
+                        setStockAdjustmentForm((current) => ({
+                          ...current,
+                          reason: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <button className="button secondary full" type="submit" disabled={isBusy}>
+                  <ShieldCheck size={17} /> Registrar movimento
+                </button>
+              </form>
+            </div>
+            {inventoryAlerts.length > 0 ? (
+              <div className="inventory-alerts">
+                {inventoryAlerts.slice(0, 3).map((alert) => (
+                  <div className="inventory-row" key={alert.id}>
+                    <div>
+                      <strong>{alert.name}</strong>
+                      <span>
+                        {alert.status === "negative" ? "Saldo negativo" : "Abaixo do minimo"} -
+                        falta {alert.shortage.toFixed(3)} {alert.unit}
+                      </span>
+                    </div>
+                    <Badge tone="danger">
+                      {alert.quantity} / {alert.minQuantity}
+                    </Badge>
                   </div>
                 ))}
               </div>
-            </article>
-          </section>
-        ) : null}
+            ) : null}
+            <div className="inventory-list">
+              {(inventorySummary.length > 0 ? inventorySummary : demoInventoryRows()).map(
+                (item) => {
+                  const current = Number(item.quantity);
+                  const minimum = Number(item.minQuantity);
+                  return (
+                    <div className="inventory-row" key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>
+                          Minimo {item.minQuantity} {item.unit}
+                        </span>
+                      </div>
+                      <Badge tone={current < minimum ? "danger" : "good"}>
+                        {item.quantity} {item.unit}
+                      </Badge>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          </article>
 
-        <a className="floating-qr" href={`/q/${selectedTable?.code ?? "M03"}`}>
-          <QrCode size={18} />
-          QR Mesa {selectedTable?.code ?? "M03"}
-        </a>
-        {modifierProduct ? (
-          <div className="modifier-modal-backdrop" role="presentation">
-            <section
-              className="modifier-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-label={`Opções de ${modifierProduct.name}`}
-            >
-              <div className="panel-title">
-                <div>
-                  <span className="section-kicker">Personalize o item</span>
-                  <h2>{modifierProduct.name}</h2>
+          <article className="panel cash-panel" id="caixa">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Caixa</span>
+                <h2>Conferencia do turno</h2>
+              </div>
+              <Badge tone={cashReadiness.tone}>{cashSummary?.session?.status ?? "demo"}</Badge>
+            </div>
+            <div className="cash-readiness-card">
+              <div>
+                <strong>{cashReadiness.title}</strong>
+                <span>{cashReadiness.detail}</span>
+              </div>
+              <Badge tone={cashReadiness.tone}>fechamento</Badge>
+            </div>
+            <div className="cash-grid">
+              <span>Esperado</span>
+              <strong>{formatMoney(cashExpectedCents)}</strong>
+              <span>Recebido no turno</span>
+              <strong>{formatMoney(cashReceivedCents)}</strong>
+              <span>Pedidos abertos</span>
+              <strong>
+                {cashSummary
+                  ? `${cashOpenOrdersCount} - ${formatMoney(cashOpenOrdersCents)}`
+                  : orderStatus}
+              </strong>
+              <span>Diferença</span>
+              <strong>
+                {cashDifferenceCents === null ? "-" : formatMoney(cashDifferenceCents)}
+              </strong>
+            </div>
+            <div className="cash-kpi-grid">
+              {cashActionItems.map((item) => (
+                <div className="cash-kpi-card" key={item.label}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <small>{item.hint}</small>
                 </div>
-                <button
-                  className="icon-button"
-                  onClick={() => setModifierProduct(null)}
-                  type="button"
-                  title="Fechar"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              {modifierGroups.map((group) => (
-                <fieldset className="modifier-choice-group" key={group.id}>
-                  <legend>
-                    {group.name} {group.isRequired ? "(obrigatório)" : ""}
-                  </legend>
-                  {group.options.map((option) => (
-                    <label key={option.id}>
-                      <input
-                        checked={selectedModifierIds.includes(option.id)}
-                        onChange={(event) =>
-                          setSelectedModifierIds((current) =>
-                            event.target.checked
-                              ? [
-                                  ...current.filter(
-                                    (id) => !group.options.some((item) => item.id === id),
-                                  ),
-                                  option.id,
-                                ]
-                              : current.filter((id) => id !== option.id),
-                          )
-                        }
-                        type="checkbox"
-                      />{" "}
-                      <span>{option.name}</span>
-                      <strong>
-                        {option.priceDeltaCents
-                          ? `+ ${formatMoney(option.priceDeltaCents)}`
-                          : "Incluído"}
-                      </strong>
-                    </label>
-                  ))}
-                </fieldset>
               ))}
-              <div className="modifier-modal-actions">
-                <button
-                  className="button secondary"
-                  onClick={() => setModifierProduct(null)}
-                  type="button"
-                >
-                  Cancelar
-                </button>
-                <button
-                  className="button primary"
-                  onClick={() => {
-                    const product = modifierProduct;
-                    setModifierProduct(null);
-                    void runAction(() => addProductToOrder(product, selectedModifierIds));
-                  }}
-                  type="button"
-                >
-                  Adicionar ao pedido
+            </div>
+            <div className="payment-setup-grid">
+              <label>
+                Valor contado
+                <input
+                  inputMode="decimal"
+                  value={countedCashAmount}
+                  onChange={(event) => setCountedCashAmount(event.target.value)}
+                  placeholder="0,00"
+                />
+              </label>
+              <label>
+                Status atual
+                <input value={cashSummary?.session?.status ?? "sem sessão"} disabled />
+              </label>
+              <label>
+                Resultado estimado
+                <input
+                  value={
+                    countedCashAmount
+                      ? formatMoney(
+                          parseMoneyToCents(countedCashAmount) -
+                            (cashSummary?.session?.expectedAmountCents ?? 0),
+                        )
+                      : "-"
+                  }
+                  disabled
+                />
+              </label>
+            </div>
+            <div className="status-list compact">
+              {cashChecklist.map((item) => (
+                <div className="status-row rich" key={item.label}>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <span>{item.detail}</span>
+                  </div>
+                  <Badge tone={item.done ? "good" : "warn"}>{item.done ? "ok" : "pendente"}</Badge>
+                </div>
+              ))}
+            </div>
+            <button
+              className="button secondary full"
+              type="button"
+              onClick={handlePrintCashSummary}
+              disabled={isBusy || !cashSummary?.session?.id}
+            >
+              <Printer size={17} /> Imprimir resumo do caixa
+            </button>
+            <button
+              className="button secondary full"
+              type="button"
+              onClick={handleExportCashSummaryDocument}
+              disabled={isBusy || !cashSummary?.session?.id}
+            >
+              <FileText size={17} /> Resumo executivo PDF
+            </button>
+            <button
+              className="button primary full"
+              type="button"
+              data-testid="cash-close"
+              onClick={handleCloseOrder}
+              disabled={isBusy || Boolean(cashCloseBlockedReason)}
+              title={cashCloseBlockedReason || "Fechar conta com auditoria"}
+            >
+              <ShieldCheck size={17} /> Fechar com auditoria
+            </button>
+            {cashCloseBlockedReason ? (
+              <p className="cash-helper-copy">{cashCloseBlockedReason}</p>
+            ) : null}
+            <button
+              className="button secondary full"
+              type="button"
+              onClick={handleCloseCashSession}
+              disabled={
+                isBusy ||
+                !cashSummary?.session?.id ||
+                cashSummary.session.status !== "open" ||
+                cashOpenOrdersCount > 0
+              }
+            >
+              <BadgeDollarSign size={17} /> Encerrar caixa
+            </button>
+          </article>
+
+          <article className="panel fiscal-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Fiscal</span>
+                <h2>Notas e cupons</h2>
+              </div>
+              <Badge tone={readFiscalBadgeTone(fiscalDocuments)}>
+                {readFiscalSummary(fiscalDocuments)}
+              </Badge>
+            </div>
+            <div className="fiscal-list">
+              {(fiscalDocuments.length > 0 ? fiscalDocuments.slice(0, 4) : demoFiscalRows()).map(
+                (document) => (
+                  <div className="fiscal-row" key={document.id}>
+                    <FileCheck2 size={18} />
+                    <div>
+                      <strong>
+                        {document.model.toUpperCase()}{" "}
+                        {document.number
+                          ? `${document.series ?? "1"}-${document.number}`
+                          : "pendente"}
+                      </strong>
+                      <span>
+                        {document.orderId ? `Pedido ${document.orderId.slice(0, 8)}` : "Sem pedido"}
+                      </span>
+                    </div>
+                    <Badge tone={readFiscalTone(document.status)}>
+                      {readFiscalStatus(document.status)}
+                    </Badge>
+                    {["pending", "rejected", "error", "contingency"].includes(document.status) &&
+                    fiscalDocuments.length > 0 ? (
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={() => handleRetryFiscal(document.id)}
+                        aria-label="Reenfileirar documento fiscal"
+                      >
+                        <RotateCw size={15} />
+                      </button>
+                    ) : null}
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => handleExportFiscalAuxiliary(document)}
+                      aria-label={`Gerar anexo auxiliar ${document.id}`}
+                    >
+                      <FileText size={15} />
+                    </button>
+                    {document.status === "authorized" && fiscalDocuments.length > 0 ? (
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={() => handleCancelFiscal(document.id)}
+                        aria-label="Cancelar documento fiscal"
+                      >
+                        <ShieldCheck size={15} />
+                      </button>
+                    ) : null}
+                  </div>
+                ),
+              )}
+            </div>
+            <button
+              className="button secondary full"
+              type="button"
+              onClick={handleIssueFiscal}
+              disabled={isBusy || !currentOrder}
+            >
+              <ReceiptText size={17} /> Emitir NFC-e do pedido atual
+            </button>
+          </article>
+
+          <article className="panel branding-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Identidade</span>
+                <h2>Ambiente do estabelecimento</h2>
+              </div>
+              <Palette size={20} />
+            </div>
+            <div className="brand-preview">
+              <span className="tenant-avatar large">
+                {activeBranding.logoUrl ? (
+                  <span
+                    className="tenant-logo cover"
+                    style={{ backgroundImage: `url(${activeBranding.logoUrl})` }}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  brandingInitial
+                )}
+              </span>
+              <div>
+                <strong>{activeBranding.displayName}</strong>
+                <span>Personalização aplicada ao painel, QR e comunicações.</span>
+              </div>
+            </div>
+            <a className="button primary full" href="/app/settings/branding">
+              <Palette size={17} /> Configurar identidade
+            </a>
+          </article>
+          <article className="panel integration-panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Integracao</span>
+                <h2>Dose Club</h2>
+              </div>
+              <Badge tone={clubConfig?.status === "active" ? "good" : "warn"}>
+                {clubConfig?.status ?? "nao configurado"}
+              </Badge>
+            </div>
+            <div className="integration-list">
+              <div>
+                <span>API key</span>
+                <strong>
+                  {clubConfig?.hasApiKey
+                    ? `termina em ${clubConfig.apiKeyLastFour}`
+                    : "nao provisionada"}
+                </strong>
+              </div>
+              <div>
+                <span>Filial vinculada</span>
+                <strong>{clubConfig?.branchId ? "Unidade atual" : "todas autorizadas"}</strong>
+              </div>
+              <div>
+                <span>Scopes</span>
+                <strong>{clubConfig?.scopes?.length ?? 0} permissoes</strong>
+              </div>
+            </div>
+            {generatedClubKey ? (
+              <div className="secret-box">
+                <span>Exibida uma unica vez</span>
+                <code>{generatedClubKey}</code>
+                <button className="icon-button" type="button" onClick={handleCopyClubKey}>
+                  <Copy size={16} />
                 </button>
               </div>
-            </section>
-          </div>
-        ) : null}
-      </section>
-    </main>
+            ) : null}
+            <div className="ticket-actions">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => handleConfigureClub(false)}
+                disabled={isBusy}
+              >
+                <KeyRound size={17} /> Provisionar
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => handleConfigureClub(true)}
+                disabled={isBusy}
+              >
+                <RotateCw size={17} /> Rotacionar
+              </button>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-title">
+              <div>
+                <span className="section-kicker">Auditoria</span>
+                <h2>Eventos sensiveis</h2>
+              </div>
+              <Gauge size={20} />
+            </div>
+            <div className="audit-filters">
+              <label>
+                Acao
+                <input
+                  value={auditFilters.action}
+                  onChange={(event) =>
+                    setAuditFilters((current) => ({ ...current, action: event.target.value }))
+                  }
+                  placeholder="payment.confirmed"
+                />
+              </label>
+              <label>
+                Usuario
+                <select
+                  value={auditFilters.userId}
+                  onChange={(event) =>
+                    setAuditFilters((current) => ({ ...current, userId: event.target.value }))
+                  }
+                >
+                  <option value="">Todos</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Entidade
+                <input
+                  value={auditFilters.entityType}
+                  onChange={(event) =>
+                    setAuditFilters((current) => ({ ...current, entityType: event.target.value }))
+                  }
+                  placeholder="order"
+                />
+              </label>
+              <label>
+                De
+                <input
+                  type="date"
+                  value={auditFilters.dateFrom}
+                  onChange={(event) =>
+                    setAuditFilters((current) => ({ ...current, dateFrom: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Ate
+                <input
+                  type="date"
+                  value={auditFilters.dateTo}
+                  onChange={(event) =>
+                    setAuditFilters((current) => ({ ...current, dateTo: event.target.value }))
+                  }
+                />
+              </label>
+              <button
+                className="button secondary compact"
+                type="button"
+                onClick={handleApplyAuditFilters}
+                disabled={isBusy}
+              >
+                <Search size={15} /> Filtrar
+              </button>
+              <button
+                className="button ghost compact"
+                type="button"
+                onClick={handleClearAuditFilters}
+                disabled={isBusy}
+              >
+                <X size={15} /> Limpar
+              </button>
+            </div>
+            <div className="audit-list">
+              {auditEvents.slice(0, 6).map((event) => (
+                <div className="audit-row" key={event.id}>
+                  <strong>{readRelativeTime(event.createdAt)}</strong>
+                  <span>{readAuditSummary(event)}</span>
+                  <small>
+                    {event.action} por {readAuditOperator(event)}
+                  </small>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+      ) : null}
+
+      <a className="floating-qr" href={`/q/${selectedTable?.code ?? "M03"}`}>
+        <QrCode size={18} />
+        QR Mesa {selectedTable?.code ?? "M03"}
+      </a>
+      {modifierProduct ? (
+        <ModifierSelectorDialog
+          product={modifierProduct}
+          groups={modifierGroups}
+          selectedModifierIds={selectedModifierIds}
+          onSelectedModifierIdsChange={setSelectedModifierIds}
+          onClose={() => setModifierProduct(null)}
+          onConfirm={() => {
+            const product = modifierProduct;
+            setModifierProduct(null);
+            void runAction(() => addProductToOrder(product, selectedModifierIds));
+          }}
+        />
+      ) : null}
+    </AppShell>
   );
-}
-
-function readStatusTitle(status: AppStatus) {
-  if (status === "ready") {
-    return "API conectada";
-  }
-  if (status === "loading") {
-    return "Carregando sessao";
-  }
-  if (status === "unauthenticated") {
-    return "Aguardando login";
-  }
-  return "Modo demonstracao";
-}
-
-function readOperatorProfile(permissions: string[]) {
-  const canManageTenant = permissions.includes("tenant:manage");
-  const canReadReports = permissions.includes("reports:read");
-  const canManageCash = permissions.includes("cash:manage");
-  const canOperatePos = permissions.includes("pos:operate");
-  const canManageInventory = permissions.includes("inventory:manage");
-
-  if (canManageTenant || canReadReports) {
-    return {
-      kicker: "Perfil recomendado",
-      title: "Dono ou gerente",
-      description: "Priorize relatórios, equipe, configurações e indicadores do turno.",
-      actions: [
-        { label: "Ver relatórios", href: "/app/reports" },
-        { label: "Equipe", href: "/app/team" },
-        { label: "Personalizar", href: "/app/settings/branding" },
-      ],
-    };
-  }
-
-  if (canManageCash) {
-    return {
-      kicker: "Perfil recomendado",
-      title: "Caixa",
-      description: "Acompanhe pagamentos, pré-contas, fechamento e pendências fiscais.",
-      actions: [
-        { label: "Fechar turno", href: "/app#caixa" },
-        { label: "Relatórios", href: "/app/reports" },
-      ],
-    };
-  }
-
-  if (canOperatePos) {
-    return {
-      kicker: "Perfil recomendado",
-      title: "Garçom",
-      description: "Use a tela mobile para abrir mesa, lançar itens e enviar para a cozinha.",
-      actions: [
-        { label: "Modo garçom", href: "/app/waiter" },
-        { label: "QR mesa M03", href: "/q/M03" },
-      ],
-    };
-  }
-
-  if (canManageInventory) {
-    return {
-      kicker: "Perfil recomendado",
-      title: "Estoque",
-      description: "Revise alertas, ficha tecnica e movimentos auditados.",
-      actions: [{ label: "Ver estoque", href: "/app#estoque" }],
-    };
-  }
-
-  return {
-    kicker: "Perfil recomendado",
-    title: "Operação",
-    description: "Entre com uma conta do estabelecimento para carregar atalhos por permissão.",
-    actions: [{ label: "Entrar", href: "/login" }],
-  };
-}
-
-function readCategoryLabel(product: Product) {
-  if (product.name.toLowerCase().includes("chopp") || product.name.toLowerCase().includes("soda")) {
-    return "Bebidas";
-  }
-  if (product.name.toLowerCase().includes("pizza")) {
-    return "Pizzas";
-  }
-  if (product.name.toLowerCase().includes("brownie")) {
-    return "Sobremesas";
-  }
-  return "Hamburgueres";
-}
-
-function readPrepTime(name: string) {
-  if (name.toLowerCase().includes("chopp") || name.toLowerCase().includes("soda")) {
-    return "2 min";
-  }
-  if (name.toLowerCase().includes("pizza")) {
-    return "18 min";
-  }
-  if (name.toLowerCase().includes("brownie")) {
-    return "7 min";
-  }
-  return "12 min";
-}
-
-function readQuantity(quantity: string) {
-  return `${Number(quantity).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}x`;
-}
-
-function readTableDetail(table: DiningTable) {
-  const labels: Record<string, string> = {
-    free: "Livre",
-    occupied: "Ocupada",
-    preparing: "Em preparo",
-    waiting_payment: "Pagamento",
-    reserved: "Reserva",
-    served: "Servida",
-    order_sent: "Cozinha",
-    waiting_order: "Aguardando",
-    blocked: "Bloqueada",
-  };
-  return labels[table.status] ?? table.status;
-}
-
-function readQrOrderLabel(order: QrPendingOrder) {
-  if (order.tableCode) {
-    return `Mesa ${order.tableCode}`;
-  }
-  if (order.tableName) {
-    return order.tableName;
-  }
-  return `Pedido ${order.id.slice(0, 8)}`;
-}
-
-function readQrOrderSummary(order: QrPendingOrder) {
-  if (order.items.length === 0) {
-    return "Sem itens carregados";
-  }
-
-  return order.items
-    .slice(0, 3)
-    .map((item) => `${Number(item.quantity).toLocaleString("pt-BR")}x ${item.nameSnapshot}`)
-    .join(", ");
-}
-
-function readRelativeTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "agora";
-  }
-
-  const diffMinutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
-  if (diffMinutes < 1) {
-    return "agora";
-  }
-  if (diffMinutes < 60) {
-    return `${diffMinutes} min`;
-  }
-  return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
-
-function readHistoryActionLabel(action: string) {
-  const labels: Record<string, string> = {
-    "qr.order_created": "Pedido QR recebido",
-    "qr.call-waiter": "Garcom chamado",
-    "qr.pre-bill": "Pre-conta solicitada",
-    "qr_order.item_updated": "Pedido QR revisado",
-    "qr_order.item_canceled": "Item QR cancelado",
-    "qr_order.rejected": "Pedido QR recusado",
-    "order.sent_to_kitchen": "Enviado ao KDS",
-    "payment.confirmed": "Pagamento confirmado",
-    "order.closed": "Conta fechada",
-  };
-  return labels[action] ?? action;
-}
-
-function readHistoryDetail(event: TableHistoryEvent) {
-  const metadata = event.metadata ?? {};
-  if (event.action === "qr.order_created") {
-    return `${readMetadataValue(metadata, "itemCount", "Pedido")} item(ns) enviados pelo cliente.`;
-  }
-  if (event.action === "qr_order.item_updated") {
-    return `${readMetadataValue(metadata, "name", "Item")} ajustado para ${readMetadataValue(
-      metadata,
-      "quantity",
-      "nova quantidade",
-    )}.`;
-  }
-  if (event.action === "qr_order.item_canceled") {
-    return `${readMetadataValue(metadata, "name", "Item")} cancelado. ${readMetadataValue(
-      metadata,
-      "reason",
-      "Motivo operacional registrado.",
-    )}`;
-  }
-  if (event.action === "qr_order.rejected") {
-    return String(metadata.reason ?? "Motivo operacional registrado.");
-  }
-  if (event.action === "order.sent_to_kitchen") {
-    return `${readMetadataValue(metadata, "ticketsCreated", "0")} ticket(s) gerados.`;
-  }
-  if (event.action === "payment.confirmed") {
-    const amountCents = readMetadataNumber(metadata, "amountCents");
-    const method = readMetadataValue(metadata, "method", "pagamento manual");
-    const orderStatus = readMetadataValue(metadata, "orderStatus", "status atualizado");
-    return `${formatMoney(amountCents)} confirmado via ${method}. Pedido ficou como ${orderStatus}.`;
-  }
-  if (event.action === "order.closed") {
-    const totalCents = readMetadataNumber(metadata, "totalCents");
-    const movements = readMetadataValue(metadata, "stockMovementsCreated", "0");
-    return `Conta fechada em ${formatMoney(totalCents)} com ${movements} baixa(s) de estoque.`;
-  }
-  if (typeof metadata.message === "string" && metadata.message.length > 0) {
-    return metadata.message;
-  }
-  return "Evento registrado na auditoria.";
-}
-
-function readOutboxStatus(event: OutboxEvent) {
-  if (event.status === "failed" && event.attempts > 0) {
-    return `erro ${event.attempts}x`;
-  }
-  return event.status;
-}
-
-function readOutboxTone(status: string): "neutral" | "good" | "warn" | "danger" | "info" {
-  if (status === "processed") {
-    return "good";
-  }
-  if (status === "failed" || status === "error") {
-    return "danger";
-  }
-  if (status === "pending") {
-    return "warn";
-  }
-  return "neutral";
-}
-
-function readOutboxPayloadSummary(event: OutboxEvent) {
-  if (event.errorMessage) {
-    return event.errorMessage;
-  }
-
-  const payload = event.payload ?? {};
-  const orderId =
-    typeof payload.orderId === "string" ? `Pedido ${payload.orderId.slice(0, 8)}` : "";
-  const amount =
-    typeof payload.amountCents === "number" ? formatMoney(payload.amountCents) : undefined;
-  const branchId =
-    typeof payload.branchId === "string" ? `Filial ${payload.branchId.slice(0, 8)}` : "";
-  return [orderId, amount, branchId].filter(Boolean).join(" - ") || "Evento operacional.";
-}
-
-function readAuditOperator(event: AuditEvent) {
-  if (event.userName) {
-    return event.userName;
-  }
-  if (event.userEmail) {
-    return event.userEmail;
-  }
-  return "sistema";
-}
-
-function readAuditSummary(event: AuditEvent) {
-  const metadata = event.metadata ?? {};
-  if (event.action === "role.updated") {
-    return `Cargo ${readMetadataValue(metadata, "code", event.entityId ?? "selecionado")} atualizado.`;
-  }
-  if (event.action === "invitation.created") {
-    return `Convite enviado para ${readMetadataValue(metadata, "email", "novo usuario")}.`;
-  }
-  if (event.action === "user.role_assigned") {
-    return `Cargo aplicado ao usuario ${readMetadataValue(metadata, "email", "selecionado")}.`;
-  }
-  if (event.action === "payment.confirmed") {
-    return `Pagamento auditado em ${formatMoney(readMetadataNumber(metadata, "amountCents"))}.`;
-  }
-  if (event.action === "order.closed") {
-    return `Conta fechada em ${formatMoney(readMetadataNumber(metadata, "totalCents"))}.`;
-  }
-  return `${event.entityType} atualizado.`;
-}
-
-function readHistoryOperator(event: TableHistoryEvent) {
-  if (event.userName) {
-    return event.userName;
-  }
-  if (event.userEmail) {
-    return event.userEmail;
-  }
-  return "Cliente/QR";
-}
-
-function isHistoryEventInFilter(event: TableHistoryEvent, filter: HistoryFilter): boolean {
-  const isQrEvent = event.action.startsWith("qr") || event.action.startsWith("qr_order");
-  const isKdsEvent = event.action.includes("kds") || event.action === "order.sent_to_kitchen";
-  const isPaymentEvent = event.action.includes("payment") || event.action.includes("cash");
-
-  if (filter === "all") {
-    return true;
-  }
-  if (filter === "qr") {
-    return isQrEvent;
-  }
-  if (filter === "kds") {
-    return isKdsEvent;
-  }
-  if (filter === "payments") {
-    return isPaymentEvent;
-  }
-  return !isQrEvent && !isPaymentEvent;
-}
-
-function isHistoryEventMatchingQuery(event: TableHistoryEvent, query: string) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const haystack = [
-    readHistoryActionLabel(event.action),
-    readHistoryDetail(event),
-    readHistoryOperator(event),
-    event.action,
-    event.entityType,
-    event.entityId ?? "",
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(normalizedQuery);
-}
-
-function readRealtimeStatus(status: RealtimeStatus) {
-  const labels: Record<RealtimeStatus, string> = {
-    offline: "tempo real offline",
-    connecting: "tempo real conectando",
-    live: "tempo real ativo",
-  };
-  return labels[status];
-}
-
-function readMetadataValue(metadata: Record<string, unknown>, key: string, fallback: string) {
-  const value = metadata[key];
-  return value === undefined || value === null || value === "" ? fallback : String(value);
-}
-
-function readMetadataNumber(metadata: Record<string, unknown>, key: string) {
-  const value = metadata[key];
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-}
-
-function playQrNotification() {
-  try {
-    const audioWindow = window as typeof window & {
-      webkitAudioContext?: typeof AudioContext;
-    };
-    const AudioContextClass = audioWindow.AudioContext || audioWindow.webkitAudioContext;
-    if (!AudioContextClass) {
-      return;
-    }
-    const context = new AudioContextClass();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    gain.gain.value = 0.035;
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.16);
-  } catch {
-    // Browsers may block audio until user interaction; the visual alert remains available.
-  }
-}
-
-function readTicketCode(ticket: KdsTicket) {
-  const tableId = ticket.payload.tableId;
-  return typeof tableId === "string" && tableId.length > 0 ? tableId : ticket.orderId.slice(0, 8);
-}
-
-function readTicketSummary(ticket: KdsTicket) {
-  const summary = ticket.payload.summary;
-  if (typeof summary === "string") {
-    return summary;
-  }
-  const source = ticket.payload.source;
-  return typeof source === "string" ? source : ticket.orderChannel;
-}
-
-function readTicketTone(status: string) {
-  if (status === "ready") {
-    return "good";
-  }
-  if (status === "waiting_payment") {
-    return "warn";
-  }
-  return "neutral";
-}
-
-function readFiscalTone(status: string) {
-  if (status === "authorized") {
-    return "good";
-  }
-  if (status === "pending" || status === "contingency") {
-    return "warn";
-  }
-  if (status === "rejected" || status === "error") {
-    return "danger";
-  }
-  return "neutral";
-}
-
-function readFiscalBadgeTone(documents: FiscalDocument[]) {
-  if (documents.some((document) => document.status === "rejected" || document.status === "error")) {
-    return "danger";
-  }
-  if (documents.some((document) => document.status === "pending")) {
-    return "warn";
-  }
-  if (documents.some((document) => document.status === "authorized")) {
-    return "good";
-  }
-  return "neutral";
-}
-
-function readFiscalSummary(documents: FiscalDocument[]) {
-  if (documents.length === 0) {
-    return "mock pronto";
-  }
-  const pending = documents.filter((document) => document.status === "pending").length;
-  if (pending > 0) {
-    return `${pending} pendente(s)`;
-  }
-  return `${documents.length} documento(s)`;
-}
-
-function readFiscalStatus(status: string) {
-  const labels: Record<string, string> = {
-    not_required: "nao exigido",
-    pending: "pendente",
-    authorized: "autorizado",
-    rejected: "rejeitado",
-    canceled: "cancelado",
-    contingency: "contingencia",
-    error: "erro",
-  };
-  return labels[status] ?? status;
-}
-
-function readPrintBadgeTone(jobs: PrintJob[]) {
-  if (jobs.some((job) => job.status === "failed")) {
-    return "danger";
-  }
-  if (jobs.some((job) => job.status === "pending" || job.status === "printing")) {
-    return "warn";
-  }
-  if (jobs.some((job) => job.status === "printed")) {
-    return "good";
-  }
-  return "neutral";
-}
-
-function readPrintSummary(jobs: PrintJob[]) {
-  const pending = jobs.filter((job) => job.status === "pending").length;
-  if (pending > 0) {
-    return `${pending} na fila`;
-  }
-  return jobs.length > 0 ? `${jobs.length} job(s)` : "sem fila";
-}
-
-function readPrintTone(status: string) {
-  if (status === "printed") {
-    return "good";
-  }
-  if (status === "failed") {
-    return "danger";
-  }
-  if (status === "pending" || status === "printing") {
-    return "warn";
-  }
-  return "neutral";
-}
-
-function readPrintStatus(status: string) {
-  const labels: Record<string, string> = {
-    pending: "pendente",
-    printing: "imprimindo",
-    printed: "impresso",
-    failed: "falhou",
-    canceled: "cancelado",
-  };
-  return labels[status] ?? status;
-}
-
-function readPrintKind(kind: string) {
-  const labels: Record<string, string> = {
-    kitchen_ticket: "Comanda cozinha",
-    bar_ticket: "Comanda bar",
-    bill_preview: "Conferencia",
-    cash_summary: "Resumo caixa",
-    payment_receipt: "Comprovante",
-    fiscal_danfe: "DANFE",
-  };
-  return labels[kind] ?? kind;
-}
-
-function readConnectorLastSeen(value?: string | null) {
-  if (!value) {
-    return "sem heartbeat";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "data invalida";
-  }
-
-  return date.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function readConnectorHeartbeatValue(config: PrinterConnectorConfig, key: string) {
-  const value = config.heartbeat?.[key];
-  return typeof value === "string" && value.length > 0 ? value : "-";
-}
-
-function parseMoneyToCents(value: string) {
-  const normalized = value.replace(/\./g, "").replace(",", ".");
-  const amount = Number(normalized);
-  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
-}
-
-function toggleValue(values: string[], value: string, checked: boolean) {
-  if (checked) {
-    return values.includes(value) ? values : [...values, value];
-  }
-  return values.filter((entry) => entry !== value);
-}
-
-function demoInventoryRows(): InventorySummaryItem[] {
-  return [
-    {
-      id: "demo-stock-meat",
-      name: "Blend bovino",
-      unit: "kg",
-      averageCostCents: 3800,
-      minQuantity: "3.000",
-      allowNegative: false,
-      quantity: "2.800",
-    },
-    {
-      id: "demo-stock-whisky",
-      name: "Single Malt Dose Club",
-      unit: "ml",
-      averageCostCents: 18,
-      minQuantity: "1500.000",
-      allowNegative: false,
-      quantity: "4200.000",
-    },
-  ];
-}
-
-function demoFiscalRows(): FiscalDocument[] {
-  return [
-    {
-      id: "demo-fiscal-1",
-      branchId: null,
-      orderId: "demo-order",
-      provider: "mock",
-      model: "nfce",
-      environment: "homologation",
-      series: "1",
-      number: null,
-      status: "pending",
-      accessKey: null,
-      xmlUrl: null,
-      danfeUrl: null,
-      errorMessage: null,
-      issuedAt: null,
-      canceledAt: null,
-      createdAt: new Date().toISOString(),
-      orderTotalCents: 10000,
-    },
-  ];
-}
-
-function demoTicketLines(): OrderItemResponse[] {
-  return [
-    {
-      id: "demo-line-1",
-      orderId: "demo",
-      productId: "demo-burger",
-      nameSnapshot: "Burger Classico",
-      quantity: "2",
-      unitPriceCents: 3200,
-      totalCents: 6400,
-      audit: "demo",
-    },
-    {
-      id: "demo-line-2",
-      orderId: "demo",
-      productId: "demo-chopp",
-      nameSnapshot: "Chopp Pilsen 400ml",
-      quantity: "1",
-      unitPriceCents: 1400,
-      totalCents: 1400,
-      audit: "demo",
-    },
-    {
-      id: "demo-line-3",
-      orderId: "demo",
-      productId: "demo-brownie",
-      nameSnapshot: "Brownie da casa",
-      quantity: "1",
-      unitPriceCents: 2200,
-      totalCents: 2200,
-      audit: "demo",
-    },
-  ];
 }

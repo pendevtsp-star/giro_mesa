@@ -4,6 +4,8 @@ import { Logger, RequestMethod } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { AppModule } from "./app.module";
+import { verifyCsrfToken } from "./common/csrf";
+import { firstHeader, parseCookies } from "./common/http";
 
 const env = loadEnv();
 
@@ -15,6 +17,26 @@ async function bootstrap() {
   );
 
   const fastify = app.getHttpAdapter().getInstance();
+  fastify.addHook("preHandler", async (request, reply) => {
+    if (!requiresCsrfProtection(request.method, request.url)) {
+      return;
+    }
+
+    const cookieHeader = firstHeader(request.headers.cookie);
+    const sessionToken = parseCookies(cookieHeader).get("gm_session");
+    if (!sessionToken) {
+      return;
+    }
+
+    const token = firstHeader(request.headers["x-csrf-token"]);
+    if (!verifyCsrfToken({ token, sessionToken, secret: env.SESSION_SECRET })) {
+      return reply.code(403).send({
+        error: "csrf_invalid",
+        message: "Sessao protegida contra requisicoes invalidas.",
+      });
+    }
+  });
+
   fastify.addHook(
     "onSend",
     async (
@@ -56,3 +78,21 @@ async function bootstrap() {
 }
 
 void bootstrap();
+
+function requiresCsrfProtection(method: string, url: string) {
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+    return false;
+  }
+
+  const pathname = url.split("?")[0] ?? url;
+  if (
+    pathname === "/api/v1/auth/login" ||
+    pathname === "/api/v1/auth/csrf" ||
+    pathname.startsWith("/api/v1/catalog/public/") ||
+    pathname.startsWith("/webhooks/")
+  ) {
+    return false;
+  }
+
+  return pathname.startsWith("/api/v1/");
+}

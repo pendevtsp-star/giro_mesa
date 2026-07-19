@@ -13,7 +13,7 @@ import type { FastifyRequest } from "fastify";
 import type { HeaderRecord } from "../../common/http";
 import { firstHeader } from "../../common/http";
 import { RateLimitService } from "../../common/rate-limit";
-import { verifyWebhookSignature } from "../../common/webhook-signature";
+import { verifyRawBodyHmacSignature, verifyWebhookSignature } from "../../common/webhook-signature";
 import { WebhooksService } from "./webhooks.service";
 
 function bodyRecord(body: unknown): Record<string, unknown> {
@@ -44,16 +44,24 @@ export class WebhooksController {
   ) {}
 
   @Post("asaas")
-  receiveAsaas(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+  async receiveAsaas(@Body() body: unknown, @Headers() headers: HeaderRecord) {
     const env = loadEnv();
-    if (env.ASAAS_WEBHOOK_SECRET) {
-      const receivedSecret =
-        firstHeader(headers["asaas-access-token"]) ??
-        firstHeader(headers["x-asaas-webhook-secret"]) ??
-        firstHeader(headers["asaas-webhook-secret"]);
-      if (receivedSecret !== env.ASAAS_WEBHOOK_SECRET) {
-        throw new UnauthorizedException("Invalid Asaas webhook secret");
-      }
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "asaas_webhook",
+      limit: 300,
+      windowMs: 60_000,
+    });
+
+    if (env.NODE_ENV === "production" && !env.ASAAS_WEBHOOK_SECRET) {
+      throw new UnauthorizedException("Webhook authentication is not configured");
+    }
+
+    const receivedSecret =
+      firstHeader(headers["asaas-access-token"]) ??
+      firstHeader(headers["x-asaas-webhook-secret"]) ??
+      firstHeader(headers["asaas-webhook-secret"]);
+    if (env.ASAAS_WEBHOOK_SECRET && receivedSecret !== env.ASAAS_WEBHOOK_SECRET) {
+      throw new UnauthorizedException("Invalid webhook authentication");
     }
 
     return this.webhooksService.accept({
@@ -64,7 +72,33 @@ export class WebhooksController {
   }
 
   @Post("meta")
-  receiveMeta(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+  async receiveMeta(
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+    @Req() request: RawBodyRequest<FastifyRequest>,
+  ) {
+    const env = loadEnv();
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "meta_webhook",
+      limit: 300,
+      windowMs: 60_000,
+    });
+
+    if (env.NODE_ENV === "production" && !env.META_APP_SECRET) {
+      throw new UnauthorizedException("Webhook authentication is not configured");
+    }
+
+    if (
+      env.META_APP_SECRET &&
+      !verifyRawBodyHmacSignature({
+        secret: env.META_APP_SECRET,
+        signature: firstHeader(headers["x-hub-signature-256"]),
+        rawBody: request.rawBody,
+      })
+    ) {
+      throw new UnauthorizedException("Invalid webhook authentication");
+    }
+
     return this.webhooksService.accept({
       provider: "meta_whatsapp",
       externalEventId: eventId(headers, "meta", body),
@@ -73,7 +107,18 @@ export class WebhooksController {
   }
 
   @Post("ifood")
-  receiveIfood(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+  async receiveIfood(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    const env = loadEnv();
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "ifood_webhook",
+      limit: 300,
+      windowMs: 60_000,
+    });
+
+    if (env.NODE_ENV === "production" && env.IFOOD_WEBHOOK_MODE !== "sandbox") {
+      throw new UnauthorizedException("iFood webhook is not enabled for production traffic");
+    }
+
     return this.webhooksService.accept({
       provider: "ifood",
       externalEventId: eventId(headers, "ifood", body),

@@ -2,11 +2,24 @@
 
 ## Fechamento de turno
 
-1. Conferir pedidos abertos em `GET /api/v1/pos/cash-sessions/summary`.
-2. Conferir pagamentos por metodo e valor esperado do caixa.
-3. Contar o caixa fisico/manual.
-4. Fechar com `POST /api/v1/pos/cash-sessions/:id/close`.
-5. Se houver diferenca, o caixa fica `disputed` e deve gerar revisao operacional.
+1. Abrir turno em `/app/cash` ou `POST /api/v1/pos/shift/open`.
+2. Abrir caixa em `/app/cash` ou `POST /api/v1/pos/cash/open`.
+3. Registrar suprimento/sangria quando houver entrada ou retirada manual.
+4. Conferir pedidos abertos em `GET /api/v1/pos/cash-sessions/summary`.
+5. Conferir pagamentos por metodo e valor esperado do caixa.
+6. Contar o caixa fisico/manual.
+7. Fechar com `POST /api/v1/pos/cash-sessions/:id/close`.
+8. Fechar turno com `POST /api/v1/pos/shift/close`.
+9. Se houver diferenca, o caixa fica `disputed` e deve gerar revisao operacional.
+
+## Onboarding operacional
+
+1. Entrar como dono/gerente do tenant.
+2. Abrir `/app/onboarding`.
+3. Recalcular readiness.
+4. Iniciar/concluir etapas conforme cada modulo estiver configurado.
+5. Resolver bloqueios: filial, mesa, produto, equipe/perfil e caixa.
+6. Antes do primeiro go-live, executar pedido de teste e conferir auditoria.
 
 ### Antes de encerrar o caixa
 

@@ -18,14 +18,28 @@
 
 - Validacao por schema.
 - CORS restrito.
-- CSRF se cookies forem usados.
+- CSRF obrigatório para mutações autenticadas por cookie. O frontend obtém token em
+  `GET /api/v1/auth/csrf` e envia `x-csrf-token`.
 - Headers de seguranca e CSP.
 - Logs sanitizados.
 - Upload com limite, tipo MIME e storage isolado.
 
+## Ambiente production-safe
+
+- Em `NODE_ENV=production`, a aplicação rejeita boot com configs críticas ausentes, placeholders
+  `replace-with-*`, defaults `local-development-*`, valores `ci-*change-in-production` ou secrets
+  curtos.
+- Configs críticas: `SESSION_SECRET`, `PASSWORD_PEPPER`, `MFA_SECRET_ENCRYPTION_KEY`,
+  `DATABASE_URL`, `REDIS_URL`, `APP_URL`, `PUBLIC_APP_URL` e `API_URL`.
+
 ## Integracoes
 
-- Webhooks com validacao de origem/assinatura quando o provedor permitir.
+- Webhooks com rate limit, validação de segredo/assinatura quando o provedor permitir e mensagens
+  de erro sem detalhes internos.
+- Asaas em produção exige `ASAAS_WEBHOOK_SECRET`.
+- Meta WhatsApp valida `x-hub-signature-256` com `META_APP_SECRET`.
+- iFood permanece bloqueado para tráfego real até contrato/assinatura de produção; use
+  `IFOOD_WEBHOOK_MODE=sandbox` apenas para homologação explícita.
 - Idempotencia por evento externo.
 - Sandbox antes de producao.
 - Segredos fora do repositorio.

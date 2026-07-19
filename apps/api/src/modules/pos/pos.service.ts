@@ -1,6 +1,7 @@
 import {
   auditLogs,
   branches,
+  cashMovements,
   cashSessions,
   customers,
   diningTables,
@@ -9,6 +10,7 @@ import {
   kdsTickets,
   modifierGroups,
   modifierOptions,
+  operationalShifts,
   orderItems,
   orders,
   outboxEvents,
@@ -87,8 +89,24 @@ type OpenCashSessionInput = {
   openingAmountCents: number;
 };
 
+type CashMovementInput = {
+  branchId: string;
+  amountCents: number;
+  reason: string;
+};
+
 type CloseCashSessionInput = {
   countedAmountCents: number;
+};
+
+type OpenShiftInput = {
+  branchId: string;
+  notes?: string | undefined;
+};
+
+type CloseShiftInput = {
+  branchId: string;
+  notes?: string | undefined;
 };
 
 export type CashSessionSummary = {
@@ -108,6 +126,13 @@ export type CashSessionSummary = {
     count: number;
     byMethod: Record<string, number>;
   };
+  movements: Array<{
+    id: string;
+    type: string;
+    amountCents: number;
+    reason: string;
+    createdAt: Date;
+  }>;
   openOrders: {
     count: number;
     totalCents: number;
@@ -1467,7 +1492,151 @@ export class PosService {
     }
   }
 
+  async getCurrentShift(context: TenantContext, branchId: string) {
+    await this.ensureBranchBelongsToTenant(context, branchId);
+    const [shift] = await this.database.db
+      .select()
+      .from(operationalShifts)
+      .where(
+        and(
+          eq(operationalShifts.tenantId, context.tenantId),
+          eq(operationalShifts.branchId, branchId),
+          eq(operationalShifts.status, "open"),
+        ),
+      )
+      .limit(1);
+    return { branchId, shift: shift ?? null };
+  }
+
+  async openShift(context: TenantContext, input: OpenShiftInput) {
+    await this.ensureBranchBelongsToTenant(context, input.branchId);
+    const [existing] = await this.database.db
+      .select({ id: operationalShifts.id })
+      .from(operationalShifts)
+      .where(
+        and(
+          eq(operationalShifts.tenantId, context.tenantId),
+          eq(operationalShifts.branchId, input.branchId),
+          eq(operationalShifts.status, "open"),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      throw new ConflictException("There is already an open shift for this branch");
+    }
+
+    const [shift] = await this.database.db
+      .insert(operationalShifts)
+      .values({
+        tenantId: context.tenantId,
+        branchId: input.branchId,
+        openedByUserId: context.userId ?? "",
+        notes: input.notes ?? null,
+        openingContext: { source: "pos" },
+      })
+      .returning();
+
+    if (!shift) {
+      throw new BadRequestException("Unable to open shift");
+    }
+
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "shift.opened",
+      entityType: "operational_shift",
+      entityId: shift.id,
+      metadata: { notes: input.notes ?? null },
+    });
+
+    return { ...shift, audit: "shift.opened" };
+  }
+
+  async closeShift(context: TenantContext, input: CloseShiftInput) {
+    await this.ensureBranchBelongsToTenant(context, input.branchId);
+    const [shift] = await this.database.db
+      .select()
+      .from(operationalShifts)
+      .where(
+        and(
+          eq(operationalShifts.tenantId, context.tenantId),
+          eq(operationalShifts.branchId, input.branchId),
+          eq(operationalShifts.status, "open"),
+        ),
+      )
+      .limit(1);
+    if (!shift) {
+      throw new NotFoundException("Open shift not found");
+    }
+
+    const [openCash] = await this.database.db
+      .select({ id: cashSessions.id })
+      .from(cashSessions)
+      .where(
+        and(
+          eq(cashSessions.tenantId, context.tenantId),
+          eq(cashSessions.branchId, input.branchId),
+          eq(cashSessions.status, "open"),
+        ),
+      )
+      .limit(1);
+    if (openCash) {
+      throw new BadRequestException("Close the cash session before closing the shift");
+    }
+
+    const [closed] = await this.database.db
+      .update(operationalShifts)
+      .set({
+        status: "closed",
+        closedByUserId: context.userId,
+        closedAt: new Date(),
+        notes: input.notes ?? shift.notes,
+        closingSummary: { source: "pos", closedAt: new Date().toISOString() },
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(operationalShifts.tenantId, context.tenantId), eq(operationalShifts.id, shift.id)),
+      )
+      .returning();
+
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "shift.closed",
+      entityType: "operational_shift",
+      entityId: shift.id,
+      metadata: { notes: input.notes ?? null },
+    });
+
+    return { ...closed, audit: "shift.closed" };
+  }
+
+  async getCurrentCashSession(context: TenantContext, branchId: string) {
+    const summary = await this.getCashSessionSummary(context, branchId);
+    return { branchId, session: summary.session, movements: summary.movements };
+  }
+
   async openCashSession(context: TenantContext, input: OpenCashSessionInput) {
+    await this.ensureBranchBelongsToTenant(context, input.branchId);
+    const [existing] = await this.database.db
+      .select({ id: cashSessions.id })
+      .from(cashSessions)
+      .where(
+        and(
+          eq(cashSessions.tenantId, context.tenantId),
+          eq(cashSessions.branchId, input.branchId),
+          eq(cashSessions.status, "open"),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      throw new ConflictException("There is already an open cash session for this branch");
+    }
+
     const [session] = await this.database.db
       .insert(cashSessions)
       .values({
@@ -1479,19 +1648,125 @@ export class PosService {
       })
       .returning();
 
+    if (!session) {
+      throw new BadRequestException("Unable to open cash session");
+    }
+
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "cash_session.opened",
+      entityType: "cash_session",
+      entityId: session.id,
+      metadata: { openingAmountCents: input.openingAmountCents },
+    });
+
     return session;
+  }
+
+  async registerCashMovement(
+    context: TenantContext,
+    type: "supply" | "withdrawal",
+    input: CashMovementInput,
+  ) {
+    if (input.amountCents <= 0) {
+      throw new BadRequestException("Movement amount must be positive");
+    }
+    if (!input.reason.trim()) {
+      throw new BadRequestException("Movement reason is required");
+    }
+    await this.ensureBranchBelongsToTenant(context, input.branchId);
+    const [session] = await this.database.db
+      .select()
+      .from(cashSessions)
+      .where(
+        and(
+          eq(cashSessions.tenantId, context.tenantId),
+          eq(cashSessions.branchId, input.branchId),
+          eq(cashSessions.status, "open"),
+        ),
+      )
+      .limit(1);
+    if (!session) {
+      throw new BadRequestException("Open cash session is required");
+    }
+
+    const signedAmount = type === "supply" ? input.amountCents : -input.amountCents;
+    const [movement] = await this.database.db
+      .insert(cashMovements)
+      .values({
+        tenantId: context.tenantId,
+        branchId: input.branchId,
+        cashSessionId: session.id,
+        type,
+        amountCents: input.amountCents,
+        reason: input.reason.trim(),
+        createdByUserId: context.userId ?? "",
+      })
+      .returning();
+
+    await this.database.db
+      .update(cashSessions)
+      .set({
+        expectedAmountCents: session.expectedAmountCents + signedAmount,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, session.id)));
+
+    if (!movement) {
+      throw new BadRequestException("Unable to register cash movement");
+    }
+
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "cash_movement.created",
+      entityType: "cash_movement",
+      entityId: movement.id,
+      metadata: {
+        cashSessionId: session.id,
+        type,
+        amountCents: input.amountCents,
+        reason: input.reason.trim(),
+      },
+    });
+
+    return { ...movement, audit: "cash_movement.created" };
   }
 
   async getCashSessionSummary(
     context: TenantContext,
     branchId: string,
   ): Promise<CashSessionSummary> {
+    await this.ensureBranchBelongsToTenant(context, branchId);
     const [session] = await this.database.db
       .select()
       .from(cashSessions)
       .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.branchId, branchId)))
       .orderBy(desc(cashSessions.openedAt))
       .limit(1);
+
+    const movements = session
+      ? await this.database.db
+          .select({
+            id: cashMovements.id,
+            type: cashMovements.type,
+            amountCents: cashMovements.amountCents,
+            reason: cashMovements.reason,
+            createdAt: cashMovements.createdAt,
+          })
+          .from(cashMovements)
+          .where(
+            and(
+              eq(cashMovements.tenantId, context.tenantId),
+              eq(cashMovements.cashSessionId, session.id),
+            ),
+          )
+      : [];
 
     const [paymentsTotal] = await this.database.db
       .select({
@@ -1574,6 +1849,7 @@ export class PosService {
           paymentRows.map((row) => [row.method, Number(row.totalCents ?? 0)]),
         ),
       },
+      movements,
       openOrders: {
         count: Number(openOrders?.count ?? 0),
         totalCents: Number(openOrders?.totalCents ?? 0),
@@ -1595,6 +1871,7 @@ export class PosService {
     if (!session) {
       throw new NotFoundException("Cash session not found");
     }
+    await this.ensureBranchBelongsToTenant(context, session.branchId);
 
     if (session.status !== "open") {
       throw new BadRequestException("Cash session is no longer open");
@@ -1677,6 +1954,20 @@ export class PosService {
       differenceCents,
       audit: nextStatus === "disputed" ? "cash_session.disputed" : "cash_session.closed",
     };
+  }
+
+  private async ensureBranchBelongsToTenant(context: TenantContext, branchId: string) {
+    if (!branchId) {
+      throw new BadRequestException("branchId is required");
+    }
+    const [branch] = await this.database.db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, branchId)))
+      .limit(1);
+    if (!branch) {
+      throw new NotFoundException("Branch not found");
+    }
   }
 
   async printBillPreview(context: TenantContext, orderId: string) {

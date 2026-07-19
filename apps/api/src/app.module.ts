@@ -9,6 +9,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { IntegrationsModule } from "./modules/integrations/integrations.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { KdsModule } from "./modules/kds/kds.module";
+import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { PosModule } from "./modules/pos/pos.module";
 import { PrintingModule } from "./modules/printing/printing.module";
@@ -27,6 +28,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     FiscalModule,
     InventoryModule,
     KdsModule,
+    OnboardingModule,
     PrintingModule,
     ReportsModule,
     PlatformModule,

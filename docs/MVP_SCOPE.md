@@ -11,6 +11,8 @@
 - Mesas, comandas e PDV balcao/mesa.
 - Divisao de conta basica e pagamento manual.
 - Caixa e fechamento.
+- Onboarding operacional persistente, readiness e primeiro turno.
+- Turno operacional por filial, suprimento, sangria e fechamento com diferenca.
 - KDS simples por estacao.
 - Cardapio digital QR.
 - Estoque e ficha tecnica basicos.

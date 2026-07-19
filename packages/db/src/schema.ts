@@ -57,6 +57,23 @@ export const cashSessionStatus = pgEnum("cash_session_status", [
   "reconciled",
   "disputed",
 ]);
+export const onboardingStepStatus = pgEnum("onboarding_step_status", [
+  "pending",
+  "in_progress",
+  "completed",
+  "skipped",
+  "blocked",
+]);
+export const operationalShiftStatus = pgEnum("operational_shift_status", [
+  "open",
+  "closed",
+  "canceled",
+]);
+export const cashMovementType = pgEnum("cash_movement_type", [
+  "supply",
+  "withdrawal",
+  "adjustment",
+]);
 export const fiscalStatus = pgEnum("fiscal_status", [
   "not_required",
   "pending",
@@ -669,6 +686,64 @@ export const payments = pgTable(
   ],
 );
 
+export const onboardingSteps = pgTable(
+  "onboarding_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id").references(() => branches.id),
+    stepKey: varchar("step_key", { length: 80 }).notNull(),
+    status: onboardingStepStatus("status").notNull().default("pending"),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    skippedAt: timestamp("skipped_at", { withTimezone: true }),
+    blockedReason: text("blocked_reason"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("onboarding_steps_tenant_branch_key_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.stepKey,
+    ),
+    index("onboarding_steps_tenant_status_idx").on(table.tenantId, table.status),
+  ],
+);
+
+export const operationalShifts = pgTable(
+  "operational_shifts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    openedByUserId: uuid("opened_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    closedByUserId: uuid("closed_by_user_id").references(() => users.id),
+    status: operationalShiftStatus("status").notNull().default("open"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    notes: text("notes"),
+    openingContext: jsonb("opening_context").$type<Record<string, unknown>>().notNull().default({}),
+    closingSummary: jsonb("closing_summary").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    index("operational_shifts_tenant_branch_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.status,
+    ),
+  ],
+);
+
 export const cashSessions = pgTable(
   "cash_sessions",
   {
@@ -691,6 +766,33 @@ export const cashSessions = pgTable(
     ...timestamps,
   },
   (table) => [index("cash_sessions_tenant_branch_idx").on(table.tenantId, table.branchId)],
+);
+
+export const cashMovements = pgTable(
+  "cash_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    cashSessionId: uuid("cash_session_id")
+      .notNull()
+      .references(() => cashSessions.id),
+    type: cashMovementType("type").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    reason: text("reason").notNull(),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    index("cash_movements_tenant_session_idx").on(table.tenantId, table.cashSessionId),
+    index("cash_movements_tenant_branch_idx").on(table.tenantId, table.branchId),
+  ],
 );
 
 export const kdsStations = pgTable(

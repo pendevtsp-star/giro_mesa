@@ -187,7 +187,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
       const popup = window.open("", "_blank", "width=1080,height=820");
       if (!popup) {
-        throw new Error("Nao foi possivel abrir a janela de resumo.");
+        throw new Error("Não foi possível abrir a janela de resumo.");
       }
 
       const html = renderBrandedPrintDocument({
@@ -275,7 +275,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         <article className="qr-card">
           <div className="panel-title">
             <div>
-              <span className="section-kicker">Cardapio</span>
+              <span className="section-kicker">Cardápio</span>
               <h2>Pedido da mesa</h2>
             </div>
             <a className="button secondary" href={`/m/${qr.tenant.slug}`}>

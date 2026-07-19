@@ -58,16 +58,44 @@ Use `localhost` para web e API durante o desenvolvimento local. Misturar `localh
 
 Credenciais seed:
 
-- E-mail: `admin@bar-aurora-demo.local`
-- Senha: `Demo@12345`
+- Restaurante: `admin@bar-aurora-demo.local` / `Demo@12345`
+- Backoffice SaaS: `owner@giromesa.local` / `Platform@12345`
+
+O seed demo é idempotente e limitado ao tenant `bar-aurora-demo`. Ele pode ser executado várias
+vezes para recompor dados previsíveis de QA sem apagar tenants reais. Em produção real, use tenants
+próprios e segredos fortes; a demo pública existe para avaliação guiada e não substitui onboarding
+comercial, fiscal, pagamentos e LGPD revisados.
+
+### Demo, desenvolvimento e produção
+
+- Desenvolvimento: aceita defaults locais para facilitar setup em máquina nova.
+- Demo pública: usa backend real, sessão cookie `HttpOnly`, RBAC e dados seedados do Bar Aurora.
+- Produção real: falha no boot quando secrets críticos estão ausentes, fracos ou iguais a
+  placeholders de desenvolvimento/CI.
+
+Consulte também `docs/QA_TEST_ACCESS.md` para perfis adicionais de garçom, caixa, cozinha, bar,
+financeiro e gerente.
+
+## Fluxo operacional base
+
+- `/app/onboarding`: checklist persistente, readiness, bloqueios e próximos passos.
+- `/app/cash`: abertura/fechamento de turno, abertura/fechamento de caixa, suprimento, sangria e resumo.
+- `/app`: painel de prontidão com estado de onboarding, turno e caixa.
+
+As ações sensíveis resolvem tenant/filial no backend, exigem RBAC e geram auditoria append-only.
 
 ## Arquitetura
 
 O MVP usa modular monolith: uma API modular, um worker assíncrono e uma web PWA. O banco e compartilhado entre tenants, com `tenant_id` obrigatorio, filtros centralizados e RLS planejado como defesa adicional.
 
+A UI interna está organizada em shell, features, fixtures, formatters, hooks e estilos por camada. Veja `docs/FRONTEND_ARCHITECTURE.md` antes de adicionar novos módulos ou expandir o dashboard.
+
 ## Seguranca
 
 Nao comitar segredos. Use `.env`, GitHub Secrets ou secret manager. Para pagamentos, fiscal e WhatsApp, comece com providers mock/sandbox e habilite producao por feature flag.
+
+Mutações autenticadas usam proteção CSRF via `GET /api/v1/auth/csrf` e header `x-csrf-token`.
+Webhooks públicos não usam CSRF porque devem validar segredo/assinatura própria e idempotência.
 
 ## Documentacao
 

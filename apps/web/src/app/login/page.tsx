@@ -16,7 +16,7 @@ const accessModes = {
     label: "Restaurante",
     eyebrow: "Bar Aurora Demo",
     title: "Entre no painel da operação.",
-    description: "Use o ambiente demo para navegar por salao, PDV, cozinha, estoque e caixa.",
+    description: "Use o ambiente demo para navegar por salão, PDV, cozinha, estoque e caixa.",
     email: "admin@bar-aurora-demo.local",
     password: "Demo@12345",
   },
@@ -90,7 +90,7 @@ function LoginPageContent() {
     }
 
     if (oauthStatus === "google_sign_in_failed") {
-      setError("Nao foi possivel concluir o login com Google.");
+      setError("Não foi possível concluir o login com Google.");
     }
   }, [searchParams]);
 
@@ -124,7 +124,7 @@ function LoginPageContent() {
       const result = await login(email, password, mfaCode);
       if (result.session.mfaRequired) {
         setMfaRequired(true);
-        setError("Informe o codigo do autenticador para concluir o acesso.");
+        setError("Informe o código do autenticador para concluir o acesso.");
         setStatus("idle");
         return;
       }
@@ -136,7 +136,7 @@ function LoginPageContent() {
       const message =
         loginError instanceof ApiError && loginError.status === 401
           ? "Credenciais invalidas para o ambiente demo."
-          : "Nao foi possivel conectar na API local agora.";
+          : "Não foi possível acessar o GiroMesa agora. Tente novamente em instantes.";
       setError(message);
       setStatus("idle");
     }
@@ -148,11 +148,11 @@ function LoginPageContent() {
       const reset = await requestPasswordReset(email);
       setError(
         reset.resetUrl
-          ? `Reset mock criado: ${reset.resetUrl}`
-          : "Solicitacao de reset registrada. Envio mock anotado na auditoria.",
+          ? `Link de reset preparado: ${reset.resetUrl}`
+          : "Solicitação de reset registrada. Quando o e-mail estiver configurado, o usuário receberá as instruções.",
       );
     } catch {
-      setError("Nao foi possivel solicitar reset agora.");
+      setError("Não foi possível solicitar o reset agora. Tente novamente em instantes.");
     }
   }
 
@@ -256,7 +256,7 @@ function LoginPageContent() {
               accessMode === "platform" ? "/platform" : "/app",
             )}`}
           >
-            <span>{oauthChallenge ? "Retomar Google apos MFA" : "Entrar com Google"}</span>
+            <span>{oauthChallenge ? "Retomar Google após MFA" : "Entrar com Google"}</span>
           </a>
           <a className="button secondary full" href="mailto:suporte@example.com">
             <LifeBuoy size={18} /> Suporte

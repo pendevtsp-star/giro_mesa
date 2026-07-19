@@ -27,6 +27,15 @@ describe("security guardrails", () => {
     );
   });
 
+  it("rejects tenant overrides nested inside request payloads", () => {
+    expect(() =>
+      rejectTenantOverride({
+        customer: { name: "Cliente", tenantId: "tenant-b" },
+        items: [{ productId: "product-a", tenant_id: "tenant-b" }],
+      }),
+    ).toThrow(BadRequestException);
+  });
+
   it("allows ordinary request bodies without tenant hints", () => {
     expect(() => rejectTenantOverride({ name: "Produto", priceCents: 3200 })).not.toThrow();
   });

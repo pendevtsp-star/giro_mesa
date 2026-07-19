@@ -1,0 +1,168 @@
+.gm-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.gm-page-header,
+.gm-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.gm-page-header h1,
+.gm-section-header h2 {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.gm-page-header p,
+.gm-section-header p {
+  max-width: 72ch;
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.gm-kicker {
+  display: inline-flex;
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.gm-page-actions,
+.gm-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.gm-metric-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.gm-metric-card span,
+.gm-metric-card small {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.gm-metric-card strong {
+  color: var(--ink);
+  font-size: 1.28rem;
+}
+
+.gm-empty-state,
+.gm-alert {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.gm-empty-state p,
+.gm-alert p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.gm-alert-warning {
+  border-color: rgba(245, 166, 35, 0.38);
+  background: #fff8e8;
+}
+
+.gm-alert-danger {
+  border-color: rgba(189, 63, 74, 0.3);
+  background: #fff1f2;
+}
+
+.gm-alert-success {
+  border-color: rgba(46, 125, 50, 0.28);
+  background: #eef8ef;
+}
+
+.gm-input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.gm-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.gm-simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.gm-simple-table th,
+.gm-simple-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.gm-simple-table th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.gm-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eef3f1;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.gm-status-pill-good {
+  background: #eaf6ec;
+  color: var(--green);
+}
+
+.gm-status-pill-warn {
+  background: #fff5df;
+  color: #a46400;
+}
+
+.gm-status-pill-danger {
+  background: #fff0f2;
+  color: var(--red);
+}
+
+.gm-status-pill-info {
+  background: #edf4ff;
+  color: #1b5ea8;
+}

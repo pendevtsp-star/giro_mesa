@@ -65,3 +65,25 @@ export function verifyWebhookSignature(input: {
 
   return timingSafeEqual(actualBuffer, expectedBuffer);
 }
+
+export function verifyRawBodyHmacSignature(input: {
+  secret: string;
+  signature: string | undefined;
+  rawBody: Buffer | string | undefined;
+}) {
+  if (!input.signature || !input.rawBody) {
+    return false;
+  }
+
+  const expected = `sha256=${createHmac("sha256", input.secret)
+    .update(input.rawBody)
+    .digest("hex")}`;
+
+  const actualBuffer = Buffer.from(input.signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(actualBuffer, expectedBuffer);
+}

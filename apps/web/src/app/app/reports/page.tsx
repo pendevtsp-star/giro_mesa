@@ -48,6 +48,7 @@ const demoSummary: CashSessionSummary = {
     count: 38,
     byMethod: { pix: 82400, credit_card: 71380, debit_card: 28700, cash: 12000 },
   },
+  movements: [],
   openOrders: { count: 6, totalCents: 48600 },
 };
 

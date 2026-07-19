@@ -17,6 +17,7 @@ const env: AppEnv = {
   ASAAS_ENV: "sandbox",
   ASAAS_SANDBOX_URL: "https://api-sandbox.asaas.com/v3",
   ASAAS_PRODUCTION_URL: "https://api.asaas.com/v3",
+  IFOOD_WEBHOOK_MODE: "disabled",
   FISCAL_PROVIDER: "focus_nfe",
   NUVEM_FISCAL_CLIENT_ID: "client-id",
   NUVEM_FISCAL_CLIENT_SECRET: "client-secret",

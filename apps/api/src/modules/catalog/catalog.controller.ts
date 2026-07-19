@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { z } from "zod";
-import type { HeaderRecord } from "../../common/http";
+import { firstHeader, type HeaderRecord } from "../../common/http";
+import { RateLimitService } from "../../common/rate-limit";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
 import { CatalogService } from "./catalog.service";
@@ -80,6 +81,8 @@ export class CatalogController {
     private readonly catalogService: CatalogService,
     @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(RateLimitService)
+    private readonly rateLimitService: RateLimitService,
   ) {}
 
   @Get("products")
@@ -160,29 +163,54 @@ export class CatalogController {
   }
 
   @Post("public/qr/:tableCode/orders")
-  async createPublicQrOrder(@Param("tableCode") tableCode: string, @Body() body: unknown) {
+  async createPublicQrOrder(
+    @Param("tableCode") tableCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
     rejectTenantOverride(body);
-    return this.catalogService.createPublicQrOrder(tableCode, publicQrOrderSchema.parse(body));
+    const input = publicQrOrderSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "public_qr_order",
+      limit: 20,
+      windowMs: 60_000,
+      identifier: publicQrIdentifier(headers, input.tenantSlug, tableCode),
+    });
+    return this.catalogService.createPublicQrOrder(tableCode, input);
   }
 
   @Post("public/qr/:tableCode/call-waiter")
-  async callWaiter(@Param("tableCode") tableCode: string, @Body() body: unknown) {
+  async callWaiter(
+    @Param("tableCode") tableCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
     rejectTenantOverride(body);
-    return this.catalogService.registerPublicQrAction(
-      tableCode,
-      "qr.waiter_requested",
-      publicQrActionSchema.parse(body),
-    );
+    const input = publicQrActionSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "public_qr_call_waiter",
+      limit: 8,
+      windowMs: 60_000,
+      identifier: publicQrIdentifier(headers, input.tenantSlug, tableCode),
+    });
+    return this.catalogService.registerPublicQrAction(tableCode, "qr.waiter_requested", input);
   }
 
   @Post("public/qr/:tableCode/pre-bill")
-  async requestPreBill(@Param("tableCode") tableCode: string, @Body() body: unknown) {
+  async requestPreBill(
+    @Param("tableCode") tableCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
     rejectTenantOverride(body);
-    return this.catalogService.registerPublicQrAction(
-      tableCode,
-      "qr.pre_bill_requested",
-      publicQrActionSchema.parse(body),
-    );
+    const input = publicQrActionSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "public_qr_pre_bill",
+      limit: 8,
+      windowMs: 60_000,
+      identifier: publicQrIdentifier(headers, input.tenantSlug, tableCode),
+    });
+    return this.catalogService.registerPublicQrAction(tableCode, "qr.pre_bill_requested", input);
   }
 
   @Get("products/:productId/modifiers")
@@ -216,4 +244,10 @@ export class CatalogController {
       modifierOptionSchema.parse(body),
     );
   }
+}
+
+function publicQrIdentifier(headers: HeaderRecord, tenantSlug: string, tableCode: string) {
+  const forwardedFor = firstHeader(headers["x-forwarded-for"]);
+  const ip = forwardedFor?.split(",")[0]?.trim() ?? firstHeader(headers["x-real-ip"]) ?? "unknown";
+  return `${ip}:${tenantSlug}:${tableCode}`;
 }

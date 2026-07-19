@@ -110,17 +110,17 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
           <span>{branding?.displayName ?? tenantSlug.replaceAll("-", " ")}</span>
         </a>
         <span className="eyebrow">
-          <Utensils size={18} /> Cardapio digital
+          <Utensils size={18} /> Cardápio digital
         </span>
         <h1>{branding?.displayName ?? menu.tenant.name}</h1>
-        <p>Pratos da casa, bebidas geladas e rotulos elegiveis ao Dose Club.</p>
+        <p>Pratos da casa, bebidas geladas e rótulos elegíveis ao Dose Club.</p>
       </header>
 
-      <section className="menu-toolbar" aria-label="Filtros do cardapio">
+      <section className="menu-toolbar" aria-label="Filtros do cardápio">
         <label className="search-box">
           <Search size={17} />
           <input
-            placeholder="Buscar no cardapio"
+            placeholder="Buscar no cardápio"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -154,7 +154,7 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
                   ? `Dose Club: ${product.bottleVolumeMl ?? 0}ml / ${
                       product.defaultDoseMl ?? 50
                     }ml por dose`
-                  : "Informacoes de alergeno disponiveis no atendimento"}
+                  : "Informações de alergênicos disponíveis no atendimento"}
               </span>
             </div>
             <div className="menu-price">

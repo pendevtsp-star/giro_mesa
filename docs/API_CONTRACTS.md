@@ -47,6 +47,19 @@
 - `GET /api/v1/pos/tables?branchId=:branchId`
 - `GET /api/v1/pos/tables/:tableId/history?limit=:limit`
 - `GET /api/v1/pos/events?branchId=:branchId` - SSE operacional baseado em mudancas de auditoria, KDS e outbox.
+- `GET /api/v1/onboarding/status?branchId=:branchId`
+- `POST /api/v1/onboarding/steps/start`
+- `POST /api/v1/onboarding/steps/complete`
+- `POST /api/v1/onboarding/steps/skip`
+- `PATCH /api/v1/onboarding/steps/block`
+- `POST /api/v1/onboarding/readiness/recalculate`
+- `GET /api/v1/pos/shift/current?branchId=:branchId`
+- `POST /api/v1/pos/shift/open`
+- `POST /api/v1/pos/shift/close`
+- `GET /api/v1/pos/cash/current?branchId=:branchId`
+- `POST /api/v1/pos/cash/open`
+- `POST /api/v1/pos/cash/supply`
+- `POST /api/v1/pos/cash/withdrawal`
 - `GET /api/v1/pos/orders/qr-pending?branchId=:branchId`
 - `POST /api/v1/pos/orders/open`
 - `POST /api/v1/pos/orders/:orderId/items`
