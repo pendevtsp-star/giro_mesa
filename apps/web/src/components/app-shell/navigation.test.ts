@@ -31,7 +31,7 @@ describe("app shell navigation", () => {
     expect(groups.map((group) => group.group)).toEqual(["Operação", "Configuração"]);
     expect(
       groups.find((group) => group.group === "Configuração")?.items.map((item) => item.label),
-    ).toEqual(["Implantação", "Personalização", "Segurança", "Equipe"]);
+    ).toEqual(["Implantação", "Assinatura", "Personalização", "Segurança", "Equipe"]);
   });
 
   it("marks dashboard, POS and nested routes without false positives", () => {

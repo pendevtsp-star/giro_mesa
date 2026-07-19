@@ -1,17 +1,28 @@
 import { loadEnv } from "@giromesa/config";
 import {
   auditLogs,
+  branches,
   invitations,
   mfaRecoveryCodes,
   oauthAccounts,
   passwordResetTokens,
+  plans,
   roles,
   sessions,
+  subscriptions,
   tenants,
   userRoles,
   users,
 } from "@giromesa/db";
-import { type DocumentBranding, renderBrandedEmail, type TenantContext } from "@giromesa/domain";
+import {
+  billingStatusForTenant,
+  createTrialWindow,
+  type DocumentBranding,
+  renderBrandedEmail,
+  type TenantContext,
+  TRIAL_DAYS,
+  trialDaysRemaining,
+} from "@giromesa/domain";
 import {
   BadRequestException,
   Inject,
@@ -51,11 +62,38 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const MFA_ISSUER = process.env.MFA_ISSUER ?? "GiroMesa";
 const PASSWORD_POLICY_MESSAGE =
   "Password must have at least 8 characters, uppercase, lowercase, number and symbol";
+const planCatalog: Record<
+  StartTrialInput["planCode"],
+  { name: string; priceCents: number; limits: Record<string, number> }
+> = {
+  starter: { name: "Starter", priceCents: 14900, limits: { branches: 1, users: 5, products: 150 } },
+  professional: {
+    name: "Professional",
+    priceCents: 29900,
+    limits: { branches: 2, users: 15, products: 600 },
+  },
+  premium: {
+    name: "Premium",
+    priceCents: 49900,
+    limits: { branches: 5, users: 40, products: 2000 },
+  },
+};
 
 export type LoginInput = {
   email: string;
   password: string;
   mfaCode?: string | undefined;
+};
+
+export type StartTrialInput = {
+  establishmentName: string;
+  ownerName: string;
+  ownerEmail: string;
+  password: string;
+  phone?: string | undefined;
+  document?: string | undefined;
+  branchName: string;
+  planCode: "starter" | "professional" | "premium";
 };
 
 export type SessionUser = {
@@ -522,6 +560,210 @@ export class AuthService {
     };
   }
 
+  async startTrial(input: StartTrialInput, headers: HeaderRecord) {
+    assertStrongPassword(input.password);
+    const normalizedEmail = input.ownerEmail.toLowerCase();
+    const slug = slugify(input.establishmentName);
+    if (!slug) {
+      throw new BadRequestException("Nome do estabelecimento inválido");
+    }
+
+    const requestId = requestIdFromHeaders(headers);
+    const trial = createTrialWindow();
+
+    const created = await this.database.db.transaction(async (tx) => {
+      const [existingTenant] = await tx
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(eq(tenants.slug, slug))
+        .limit(1);
+      if (existingTenant) {
+        throw new BadRequestException("Já existe um ambiente GiroMesa com esse nome");
+      }
+
+      const [existingUser] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, normalizedEmail))
+        .limit(1);
+      if (existingUser) {
+        throw new BadRequestException("Este e-mail já possui acesso ao GiroMesa");
+      }
+
+      const planDefinition = planCatalog[input.planCode];
+      const [plan] = await tx
+        .insert(plans)
+        .values({
+          code: input.planCode,
+          name: planDefinition.name,
+          priceCents: planDefinition.priceCents,
+          limits: planDefinition.limits,
+        })
+        .onConflictDoUpdate({
+          target: plans.code,
+          set: {
+            name: planDefinition.name,
+            priceCents: planDefinition.priceCents,
+            limits: planDefinition.limits,
+            isActive: true,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      if (!plan) {
+        throw new Error("Failed to resolve plan");
+      }
+
+      const [tenant] = await tx
+        .insert(tenants)
+        .values({
+          name: input.establishmentName.trim(),
+          slug,
+          document: input.document?.trim() || null,
+          status: "trial",
+          settings: {
+            onboardingStatus: "trial_started",
+            trial: {
+              source: "public_signup",
+              startedAt: trial.startsAt.toISOString(),
+              endsAt: trial.endsAt.toISOString(),
+              trialDays: TRIAL_DAYS,
+              cardRequired: false,
+            },
+            commercial: {
+              ownerPhone: input.phone?.trim() || null,
+              acquisitionChannel: "website",
+            },
+          },
+        })
+        .returning();
+      if (!tenant) {
+        throw new Error("Failed to create tenant");
+      }
+
+      const [branch] = await tx
+        .insert(branches)
+        .values({
+          tenantId: tenant.id,
+          name: input.branchName.trim() || "Matriz",
+          document: input.document?.trim() || null,
+        })
+        .returning();
+
+      const [ownerRole] = await tx
+        .insert(roles)
+        .values({
+          tenantId: tenant.id,
+          code: "owner",
+          name: "Proprietário",
+          permissions: [
+            "tenant:manage",
+            "catalog:manage",
+            "pos:operate",
+            "pos:qr_review",
+            "pos:kds_send",
+            "pos:payment_manage",
+            "pos:close_order",
+            "kds:operate",
+            "cash:manage",
+            "fiscal:read",
+            "fiscal:manage",
+            "hardware:manage",
+            "print:operate",
+            "inventory:manage",
+            "reports:read",
+          ],
+        })
+        .returning();
+
+      const [owner] = await tx
+        .insert(users)
+        .values({
+          tenantId: tenant.id,
+          email: normalizedEmail,
+          name: input.ownerName.trim(),
+          passwordHash: await hashPassword(input.password),
+        })
+        .returning();
+
+      if (!branch || !ownerRole || !owner) {
+        throw new Error("Failed to create trial bootstrap data");
+      }
+
+      const [subscription] = await tx
+        .insert(subscriptions)
+        .values({
+          tenantId: tenant.id,
+          planId: plan.id,
+          provider: "asaas",
+          status: "trial",
+          currentPeriodEndsAt: trial.endsAt,
+        })
+        .returning();
+      if (!subscription) {
+        throw new Error("Failed to create trial subscription");
+      }
+
+      await tx.insert(userRoles).values({
+        tenantId: tenant.id,
+        userId: owner.id,
+        roleId: ownerRole.id,
+        branchId: branch.id,
+      });
+
+      await tx.insert(auditLogs).values({
+        tenantId: tenant.id,
+        branchId: branch.id,
+        userId: owner.id,
+        requestId,
+        action: "auth.trial_started",
+        entityType: "tenant",
+        entityId: tenant.id,
+        metadata: {
+          ownerEmail: owner.email,
+          planCode: plan.code,
+          trialDays: TRIAL_DAYS,
+          cardRequired: false,
+          currentPeriodEndsAt: trial.endsAt.toISOString(),
+        },
+      });
+
+      return {
+        owner,
+        tenant,
+        subscription,
+      };
+    });
+
+    const session = await this.createSessionForUser(created.owner, headers);
+    const access = await this.accessForUser(created.owner.id);
+
+    return {
+      token: session.token,
+      maxAgeSeconds: SESSION_MAX_AGE_SECONDS,
+      user: {
+        id: created.owner.id,
+        tenantId: created.owner.tenantId,
+        email: created.owner.email,
+        name: created.owner.name,
+        isPlatformUser: created.owner.isPlatformUser,
+        permissions: access.permissions,
+      } satisfies SessionUser,
+      tenant: {
+        id: created.tenant.id,
+        name: created.tenant.name,
+        slug: created.tenant.slug,
+        status: created.tenant.status,
+      },
+      subscription: {
+        status: created.subscription.status,
+        trialDays: TRIAL_DAYS,
+        currentPeriodEndsAt: created.subscription.currentPeriodEndsAt,
+      },
+    };
+  }
+
   async resolveContext(headers: HeaderRecord): Promise<TenantContext> {
     const requestId = requestIdFromHeaders(headers);
     const cookieHeader = Array.isArray(headers.cookie) ? headers.cookie[0] : headers.cookie;
@@ -541,10 +783,12 @@ export class AuthService {
         isPlatformUser: users.isPlatformUser,
         mfaEnabled: users.mfaEnabled,
         tenantStatus: tenants.status,
+        currentPeriodEndsAt: subscriptions.currentPeriodEndsAt,
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
       .leftJoin(tenants, eq(tenants.id, sessions.tenantId))
+      .leftJoin(subscriptions, eq(subscriptions.tenantId, sessions.tenantId))
       .where(
         and(
           eq(sessions.tokenHash, hashOpaqueToken(token)),
@@ -571,6 +815,12 @@ export class AuthService {
       requestId,
       permissions: access.permissions,
       mfaRequired: this.isMfaRecommended(access.permissions, session.mfaEnabled),
+      billing: {
+        status: billingStatusForTenant(session.tenantStatus, session.currentPeriodEndsAt),
+        tenantStatus: session.tenantStatus,
+        currentPeriodEndsAt: session.currentPeriodEndsAt?.toISOString() ?? null,
+        trialDaysRemaining: trialDaysRemaining(session.currentPeriodEndsAt),
+      },
       ...(access.branchId ? { branchId: access.branchId } : {}),
     };
   }
@@ -1689,6 +1939,16 @@ function assertStrongPassword(password: string) {
   if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
     throw new BadRequestException(PASSWORD_POLICY_MESSAGE);
   }
+}
+
+function slugify(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 function readEmailBranding(settings: Record<string, unknown> | undefined, fallbackName: string) {

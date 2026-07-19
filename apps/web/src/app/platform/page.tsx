@@ -88,16 +88,16 @@ const initialTenants: PlatformTenant[] = [
     nextAction: "Converter em 5 dias",
   },
   {
-    name: "Pub Estacao",
-    slug: "pub-estacao",
+    name: "Pub Estação",
+    slug: "pub-estação",
     status: "past_due",
     plan: "Premium",
     mrr: "R$ 499",
     volume: "R$ 31.220",
     health: 61,
     owner: "Bianca Lopes",
-    email: "bianca@pubestacao.local",
-    nextAction: "Resolver cobranca",
+    email: "bianca@pubestação.local",
+    nextAction: "Resolver cobrança",
   },
 ];
 
@@ -141,7 +141,7 @@ export default function PlatformPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | TenantStatus>("all");
   const [form, setForm] = useState({
     name: "Novo Restaurante",
-    owner: "Responsavel",
+    owner: "Responsável",
     email: "responsavel@cliente.local",
     plan: "Professional" as PlatformTenant["plan"],
   });
@@ -405,7 +405,7 @@ export default function PlatformPage() {
               ...tenant,
               status,
               mrr: status === "active" ? planPrices[tenant.plan] : tenant.mrr,
-              nextAction: status === "suspended" ? "Regularizar acesso" : "Acompanhar saude",
+              nextAction: status === "suspended" ? "Regularizar acesso" : "Acompanhar saúde",
             }
           : tenant,
       ),
@@ -509,8 +509,8 @@ export default function PlatformPage() {
                 <th>Status</th>
                 <th>Plano</th>
                 <th>MRR</th>
-                <th>Responsavel</th>
-                <th>Proxima acao</th>
+                <th>Responsável</th>
+                <th>Proxima ação</th>
               </tr>
             </thead>
             <tbody>${rows || "<tr><td colspan='6'>Nenhum tenant nos filtros atuais.</td></tr>"}</tbody>
@@ -527,12 +527,12 @@ export default function PlatformPage() {
                 <th>Enviado em</th>
               </tr>
             </thead>
-            <tbody>${communicationRows || "<tr><td colspan='4'>Nenhuma comunicacao recente.</td></tr>"}</tbody>
+            <tbody>${communicationRows || "<tr><td colspan='4'>Nenhuma comunicação recente.</td></tr>"}</tbody>
           </table>
         </section>
       `,
       footerNote:
-        "Exportacao executiva do backoffice GiroMesa para acompanhamento comercial e operacional.",
+        "Exportação executiva do backoffice GiroMesa para acompanhamento comercial e operacional.",
     });
 
     popup.document.write(html);
@@ -575,7 +575,7 @@ export default function PlatformPage() {
             <ShieldCheck size={18} /> Auditoria
           </a>
           <a href="/app">
-            <Users size={18} /> Demo cliente
+            <Users size={18} /> Acesso cliente
           </a>
         </nav>
       </aside>
@@ -584,7 +584,7 @@ export default function PlatformPage() {
           <div>
             <span className="section-kicker">Controle do dono da plataforma</span>
             <h1>Backoffice SaaS</h1>
-            <p>Tenants, trials, planos, inadimplencia, saude operacional e suporte.</p>
+            <p>Tenants, trials, planos, inadimplencia, saúde operacional e suporte.</p>
           </div>
           <div className="toolbar">
             <button className="button secondary" type="button" onClick={handleExportPlatformCsv}>
@@ -657,7 +657,7 @@ export default function PlatformPage() {
                 />
               </label>
               <label>
-                Responsavel
+                Responsável
                 <input
                   value={form.owner}
                   onChange={(event) =>
@@ -765,7 +765,7 @@ export default function PlatformPage() {
                       {tenant.owner} - {tenant.email} - {tenant.plan}
                     </span>
                     <small>
-                      {tenant.billingStatus ? billingLabel(tenant.billingStatus) : "demo"} ·{" "}
+                      {tenant.billingStatus ? billingLabel(tenant.billingStatus) : "sem cobrança"} ·{" "}
                       {tenant.trialDaysRemaining !== null && tenant.trialDaysRemaining !== undefined
                         ? `${tenant.trialDaysRemaining} dia(s) de trial`
                         : tenant.nextAction}
@@ -781,7 +781,7 @@ export default function PlatformPage() {
                   <span>{tenant.mrr}</span>
                   <Badge tone={toneForStatus(tenant.status)}>{tenant.status}</Badge>
                   <Badge tone={tenant.asaas?.checkoutReady ? "warn" : "good"}>
-                    {tenant.asaas?.checkoutReady ? "checkout pendente" : "cobranca ok"}
+                    {tenant.asaas?.checkoutReady ? "checkout pendente" : "cobrança ok"}
                   </Badge>
                   <div className="platform-row-actions">
                     <button
@@ -832,7 +832,7 @@ export default function PlatformPage() {
                   <strong>Endpoint real</strong>
                   <span>Criar tenant, filial, admin e plano com permissao de plataforma.</span>
                 </div>
-                <Badge tone="warn">proximo</Badge>
+                <Badge tone="warn">próximo</Badge>
               </div>
               <div className="status-row rich">
                 <div>
@@ -867,7 +867,7 @@ export default function PlatformPage() {
                   <strong>Contas high-touch</strong>
                   <span>
                     {metrics.highTouchAccounts} tenant(s) com prioridade alta ou SLA elevado;{" "}
-                    {metrics.communicationsLast7Days} comunicacao(oes) nos ultimos 7 dias.
+                    {metrics.communicationsLast7Days} comunicação(oes) nos ultimos 7 dias.
                   </span>
                 </div>
                 <Badge tone={metrics.highTouchAccounts > 0 ? "warn" : "good"}>
@@ -884,7 +884,7 @@ export default function PlatformPage() {
               <CalendarClock size={20} />
               <div>
                 <h2>Pipeline comercial</h2>
-                <p>Leitura de conversao, onboarding e risco imediato da carteira.</p>
+                <p>Leitura de conversão, onboarding e risco imediato da carteira.</p>
               </div>
             </div>
             <div className="report-comparison-grid">
@@ -911,7 +911,7 @@ export default function PlatformPage() {
               <LifeBuoy size={20} />
               <div>
                 <h2>Fila de suporte</h2>
-                <p>Priorizacao rapida por SLA, follow-up e risco comercial.</p>
+                <p>Priorização rápida por SLA, follow-up e risco comercial.</p>
               </div>
             </div>
             <div className="status-list">
@@ -978,7 +978,7 @@ export default function PlatformPage() {
                   </a>
                 ))
               ) : (
-                <p className="muted-copy">Nenhuma comunicacao global registrada por enquanto.</p>
+                <p className="muted-copy">Nenhuma comunicação global registrada por enquanto.</p>
               )}
             </div>
           </article>
@@ -987,7 +987,7 @@ export default function PlatformPage() {
               <CalendarClock size={20} />
               <div>
                 <h2>Agenda do dia</h2>
-                <p>Sequencia de follow-up para trial, cobranca e implantacao.</p>
+                <p>Sequencia de follow-up para trial, cobrança e implantação.</p>
               </div>
             </div>
             <div className="status-list">
@@ -1004,7 +1004,7 @@ export default function PlatformPage() {
                         {tenant.status === "trial"
                           ? "Trial em conversao"
                           : tenant.status === "past_due"
-                            ? "Regularizacao financeira"
+                            ? "Regularização financeira"
                             : "Follow-up comercial"}
                       </span>
                     </div>
@@ -1018,7 +1018,7 @@ export default function PlatformPage() {
             {summary ? (
               <div className="platform-support-footnote">
                 <small>
-                  Agenda: {summary.agenda.countsByAlertType.pastDue} cobranca,{" "}
+                  Agenda: {summary.agenda.countsByAlertType.pastDue} cobrança,{" "}
                   {summary.agenda.countsByAlertType.trialEnding} fim de trial,{" "}
                   {summary.agenda.countsByAlertType.followUp} follow-up.
                 </small>
@@ -1075,7 +1075,7 @@ function mapApiTenant(tenant: ApiPlatformTenant): PlatformTenant {
 
 function billingLabel(status: ApiPlatformTenant["billingStatus"]) {
   const labels: Record<ApiPlatformTenant["billingStatus"], string> = {
-    healthy: "cobranca saudavel",
+    healthy: "cobrança saudavel",
     trial_ok: "trial em andamento",
     trial_ending: "trial perto do fim",
     payment_required: "pagamento pendente",

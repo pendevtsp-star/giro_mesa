@@ -21,7 +21,7 @@ import {
 
 const permissionGroups = [
   ["tenant:manage", "Gerenciar tenant"],
-  ["catalog:manage", "Gerenciar cardapio"],
+  ["catalog:manage", "Gerenciar cardápio"],
   ["pos:operate", "Operar PDV"],
   ["pos:kds_send", "Enviar ao KDS"],
   ["pos:qr_review", "Conferir QR"],
@@ -29,8 +29,8 @@ const permissionGroups = [
   ["pos:close_order", "Fechar contas"],
   ["inventory:manage", "Gerenciar estoque"],
   ["fiscal:manage", "Gerenciar fiscal"],
-  ["printing:manage", "Gerenciar impressao"],
-  ["reports:read", "Acessar relatorios"],
+  ["printing:manage", "Gerenciar impressão"],
+  ["reports:read", "Acessar relatórios"],
 ] as const;
 
 export default function TeamPage() {
@@ -73,7 +73,7 @@ export default function TeamPage() {
         const message =
           error instanceof ApiError && error.status === 401
             ? "Acesse o login para administrar equipe."
-            : "Nao foi possivel carregar equipe.";
+            : "Não foi possivel carregar equipe.";
         setStatus(message);
       });
   }, [refreshTeam]);
@@ -143,7 +143,7 @@ export default function TeamPage() {
     void runAction(async () => {
       await assignUserRole(selectedUserId, { roleId: selectedUserRoleId });
       await refreshTeam();
-      setStatus("Cargo aplicado ao usuario.");
+      setStatus("Cargo aplicado ao usuário.");
     });
   }
 
@@ -178,7 +178,7 @@ export default function TeamPage() {
         </a>
         <div>
           <span className="section-kicker">Equipe</span>
-          <h1>Usuarios, convites e cargos</h1>
+          <h1>Usuários, convites e cargos</h1>
           <p>{status}</p>
         </div>
       </header>
@@ -258,14 +258,14 @@ export default function TeamPage() {
         <article className="panel">
           <div className="panel-title">
             <div>
-              <span className="section-kicker">Usuarios</span>
+              <span className="section-kicker">Usuários</span>
               <h2>Atribuir cargo</h2>
             </div>
             <Users size={20} />
           </div>
           <div className="team-form stacked">
             <label>
-              Usuario
+              Usuário
               <select
                 value={selectedUserId}
                 onChange={(event) => setSelectedUserId(event.target.value)}
@@ -322,18 +322,18 @@ export default function TeamPage() {
         <article className="panel">
           <div className="panel-title">
             <div>
-              <span className="section-kicker">Seguranca</span>
+              <span className="section-kicker">Segurança</span>
               <h2>Senha e MFA</h2>
             </div>
             <ShieldCheck size={20} />
           </div>
           <div className="team-form stacked">
             <div className="team-security-card">
-              <strong>{selectedUser?.name ?? "Usuario"}</strong>
+              <strong>{selectedUser?.name ?? "Usuário"}</strong>
               <span>
                 {selectedUser?.mfaEnabled
                   ? "Segundo fator ativo no mock local."
-                  : "Segundo fator pendente para perfis sensiveis."}
+                  : "Segundo fator pendente para perfis sensíveis."}
               </span>
               <div className="team-row-actions">
                 <button
@@ -401,7 +401,7 @@ export default function TeamPage() {
           <div className="panel-title">
             <div>
               <span className="section-kicker">Cargos</span>
-              <h2>Permissoes</h2>
+              <h2>Permissões</h2>
             </div>
             <ShieldCheck size={20} />
           </div>
@@ -415,7 +415,7 @@ export default function TeamPage() {
                   onClick={() => setSelectedRoleId(role.id)}
                 >
                   <strong>{role.name}</strong>
-                  <span>{role.permissions.length} permissoes</span>
+                  <span>{role.permissions.length} permissões</span>
                 </button>
               ))}
             </div>

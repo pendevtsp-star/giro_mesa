@@ -9,6 +9,7 @@ import {
   Plus,
   QrCode,
   ReceiptText,
+  Search,
   Send,
 } from "lucide-react";
 import { use, useEffect, useMemo, useState } from "react";
@@ -51,8 +52,8 @@ const fallbackMenu: PublicMenuResponse = {
   products: [
     {
       id: "demo-burger",
-      name: "Burger Classico",
-      description: "Blend da casa, queijo prato, molho especial e pao brioche.",
+      name: "Burger Clássico",
+      description: "Blend da casa, queijo prato, molho especial e pão brioche.",
       categoryId: null,
       priceCents: 3200,
       imageUrl: null,
@@ -85,7 +86,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const [qr, setQr] = useState<PublicQrResponse>(fallbackQr);
   const [menu, setMenu] = useState<PublicMenuResponse>(fallbackMenu);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [status, setStatus] = useState("Escolha itens do cardapio ou chame o atendimento.");
+  const [status, setStatus] = useState("Escolha itens do cardápio ou chame o atendimento.");
+  const [productQuery, setProductQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
@@ -111,7 +114,23 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   }, [tableCode]);
 
   const totalCents = cart.reduce((sum, line) => sum + line.quantity * line.priceCents, 0);
-  const visibleProducts = useMemo(() => menu.products.slice(0, 6), [menu.products]);
+  const categoryOptions = useMemo(
+    () => [
+      ["all", "Todos"],
+      ...menu.categories.map((category) => [category.id, category.name] as const),
+    ],
+    [menu.categories],
+  );
+  const visibleProducts = useMemo(() => {
+    const normalizedQuery = productQuery.trim().toLowerCase();
+    return menu.products
+      .filter((product) => product.isAvailable)
+      .filter((product) => categoryFilter === "all" || product.categoryId === categoryFilter)
+      .filter((product) =>
+        `${product.name} ${product.description ?? ""}`.toLowerCase().includes(normalizedQuery),
+      )
+      .slice(0, 10);
+  }, [categoryFilter, menu.products, productQuery]);
   const branding = qr.tenant.branding ?? menu.tenant.branding ?? fallbackQr.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
 
@@ -145,7 +164,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     try {
       await action();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Falha ao executar acao.");
+      setStatus(error instanceof Error ? error.message : "Falha ao executar ação.");
     } finally {
       setIsBusy(false);
     }
@@ -161,7 +180,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         items: cart.map((line) => ({ productId: line.productId, quantity: line.quantity })),
       });
       setCart([]);
-      setStatus(`Pedido ${response.orderId.slice(0, 8)} enviado para o salao.`);
+      setStatus(`Pedido ${response.orderId.slice(0, 8)} enviado para o salão.`);
     });
   }
 
@@ -175,7 +194,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   function requestPreBill() {
     void run(async () => {
       await requestPublicQrAction(tableCode, "pre-bill", { tenantSlug: qr.tenant.slug });
-      setStatus("Pre-conta solicitada. O caixa recebeu o pedido de fechamento.");
+      setStatus("Pré-conta solicitada. O caixa recebeu o pedido de fechamento.");
     });
   }
 
@@ -237,14 +256,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           </section>
         `,
         footerNote:
-          "Resumo visual sem valor fiscal, pensado para transparencia do cliente e fluidez do atendimento em mesa.",
+          "Resumo visual sem valor fiscal, pensado para transparência do cliente e fluidez do atendimento em mesa.",
       });
 
       popup.document.write(html);
       popup.document.close();
       popup.focus();
       popup.print();
-      setStatus("Resumo visual da mesa aberto para impressao.");
+      setStatus("Resumo visual da mesa aberto para impressão.");
     });
   }
 
@@ -282,23 +301,49 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               <ClipboardList size={17} /> Cardápio completo
             </a>
           </div>
+          <div className="qr-menu-tools">
+            <label className="search-box">
+              <Search size={16} />
+              <input
+                value={productQuery}
+                onChange={(event) => setProductQuery(event.target.value)}
+                placeholder="Buscar prato, bebida ou sobremesa"
+              />
+            </label>
+            <div className="filter-row">
+              {categoryOptions.map(([value, label]) => (
+                <button
+                  className={`filter ${categoryFilter === value ? "selected" : ""}`}
+                  type="button"
+                  key={value}
+                  onClick={() => setCategoryFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="qr-menu-list">
-            {visibleProducts.map((product) => (
-              <button
-                className="qr-menu-row"
-                type="button"
-                key={product.id}
-                onClick={() => addProduct(product)}
-                disabled={isBusy}
-              >
-                <div>
-                  <strong>{product.name}</strong>
-                  <span>{product.description}</span>
-                </div>
-                <small>{formatMoney(product.priceCents)}</small>
-                <Plus size={18} />
-              </button>
-            ))}
+            {visibleProducts.length ? (
+              visibleProducts.map((product) => (
+                <button
+                  className="qr-menu-row"
+                  type="button"
+                  key={product.id}
+                  onClick={() => addProduct(product)}
+                  disabled={isBusy}
+                >
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>{product.description}</span>
+                  </div>
+                  <small>{formatMoney(product.priceCents)}</small>
+                  <Plus size={18} />
+                </button>
+              ))
+            ) : (
+              <p className="muted-copy">Nenhum item encontrado para esse filtro.</p>
+            )}
           </div>
         </article>
 
@@ -348,7 +393,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <BellRing size={26} />
           <div>
             <h2>Chamar garçom</h2>
-            <p>Solicitacao registrada para o painel do salao.</p>
+            <p>Solicitação registrada para o painel do salão.</p>
           </div>
         </button>
         <button

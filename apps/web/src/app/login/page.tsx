@@ -11,27 +11,6 @@ import {
   requestPasswordReset,
 } from "../../lib/giromesa-api";
 
-const accessModes = {
-  restaurant: {
-    label: "Restaurante",
-    eyebrow: "Bar Aurora Demo",
-    title: "Entre no painel da operação.",
-    description: "Use o ambiente demo para navegar por salão, PDV, cozinha, estoque e caixa.",
-    email: "admin@bar-aurora-demo.local",
-    password: "Demo@12345",
-  },
-  platform: {
-    label: "Dono SaaS",
-    eyebrow: "GiroMesa Platform",
-    title: "Entre no backoffice SaaS.",
-    description: "Controle tenants, trials, planos, status e onboarding dos clientes.",
-    email: "owner@giromesa.local",
-    password: "Platform@12345",
-  },
-} as const;
-
-type AccessMode = keyof typeof accessModes;
-
 export default function LoginPage() {
   return (
     <Suspense fallback={<LoginPageSkeleton />}>
@@ -52,7 +31,7 @@ function LoginPageSkeleton() {
       <section className="login-panel">
         <form className="form">
           <div>
-            <span className="section-kicker">Acesso demo</span>
+            <span className="section-kicker">Acesso seguro</span>
             <h2>Acessar GiroMesa</h2>
             <p>Carregando ambiente de acesso...</p>
           </div>
@@ -65,9 +44,8 @@ function LoginPageSkeleton() {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [accessMode, setAccessMode] = useState<AccessMode>("restaurant");
-  const [email, setEmail] = useState<string>(accessModes.restaurant.email);
-  const [password, setPassword] = useState<string>(accessModes.restaurant.password);
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
+  const [password, setPassword] = useState(searchParams.get("password") ?? "");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [oauthChallenge, setOauthChallenge] = useState<string | null>(null);
@@ -93,16 +71,6 @@ function LoginPageContent() {
       setError("Não foi possível concluir o login com Google.");
     }
   }, [searchParams]);
-
-  function selectAccessMode(mode: AccessMode) {
-    setAccessMode(mode);
-    setEmail(accessModes[mode].email);
-    setPassword(accessModes[mode].password);
-    setMfaCode("");
-    setMfaRequired(false);
-    setOauthChallenge(null);
-    setError(null);
-  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,7 +103,7 @@ function LoginPageContent() {
     } catch (loginError) {
       const message =
         loginError instanceof ApiError && loginError.status === 401
-          ? "Credenciais invalidas para o ambiente demo."
+          ? "E-mail ou senha inválidos."
           : "Não foi possível acessar o GiroMesa agora. Tente novamente em instantes.";
       setError(message);
       setStatus("idle");
@@ -149,7 +117,7 @@ function LoginPageContent() {
       setError(
         reset.resetUrl
           ? `Link de reset preparado: ${reset.resetUrl}`
-          : "Solicitação de reset registrada. Quando o e-mail estiver configurado, o usuário receberá as instruções.",
+          : "Solicitação registrada. Se o e-mail existir, enviaremos as instruções de recuperação.",
       );
     } catch {
       setError("Não foi possível solicitar o reset agora. Tente novamente em instantes.");
@@ -164,32 +132,21 @@ function LoginPageContent() {
           <span>GiroMesa</span>
         </a>
         <div className="login-copy">
-          <span className="eyebrow">{accessModes[accessMode].eyebrow}</span>
-          <h1>{accessModes[accessMode].title}</h1>
-          <p>{accessModes[accessMode].description}</p>
+          <span className="eyebrow">Acesso seguro</span>
+          <h1>Entre no seu ambiente GiroMesa.</h1>
+          <p>
+            Use suas credenciais para acessar a operação do estabelecimento ou o backoffice da
+            plataforma.
+          </p>
         </div>
       </section>
       <section className="login-panel">
         <form className="form" onSubmit={handleSubmit}>
           <div>
-            <span className="section-kicker">Acesso demo</span>
+            <span className="section-kicker">Login</span>
             <h2>Acessar GiroMesa</h2>
-            <p>Escolha se quer entrar como restaurante ou como dono da plataforma.</p>
+            <p>Informe seu e-mail e senha para continuar.</p>
           </div>
-          <fieldset className="login-mode-grid">
-            <legend>Tipo de acesso</legend>
-            {(Object.keys(accessModes) as AccessMode[]).map((mode) => (
-              <button
-                className={`login-mode ${accessMode === mode ? "selected" : ""}`}
-                type="button"
-                key={mode}
-                onClick={() => selectAccessMode(mode)}
-              >
-                <strong>{accessModes[mode].label}</strong>
-                <span>{mode === "platform" ? "Backoffice SaaS" : "Operação do cliente"}</span>
-              </button>
-            ))}
-          </fieldset>
           <label className="field">
             <span>E-mail</span>
             <span className="input-shell">
@@ -200,6 +157,7 @@ function LoginPageContent() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="email"
+                required
               />
             </span>
           </label>
@@ -213,12 +171,13 @@ function LoginPageContent() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="current-password"
+                required
               />
             </span>
           </label>
           {mfaRequired ? (
             <label className="field">
-              <span>Codigo MFA</span>
+              <span>Código MFA</span>
               <span className="input-shell">
                 <LockKeyhole size={18} />
                 <input
@@ -252,9 +211,7 @@ function LoginPageContent() {
           </button>
           <a
             className="button secondary full"
-            href={`${apiBaseUrl}/api/v1/auth/google/start?returnTo=${encodeURIComponent(
-              accessMode === "platform" ? "/platform" : "/app",
-            )}`}
+            href={`${apiBaseUrl}/api/v1/auth/google/start?returnTo=${encodeURIComponent("/app")}`}
           >
             <span>{oauthChallenge ? "Retomar Google após MFA" : "Entrar com Google"}</span>
           </a>
@@ -264,6 +221,9 @@ function LoginPageContent() {
           <button className="button ghost full" type="button" onClick={handleResetPassword}>
             Solicitar reset de senha
           </button>
+          <a className="button ghost full" href="/teste-gratis">
+            Começar teste grátis
+          </a>
         </form>
       </section>
     </main>

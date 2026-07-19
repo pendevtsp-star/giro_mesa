@@ -85,7 +85,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   const { tenantId } = use(params);
   const [tenant, setTenant] = useState<PlatformTenantDetail>(fallbackTenant);
   const [status, setStatus] = useState("demo");
-  const [asaasMessage, setAsaasMessage] = useState("Checkout Asaas ainda nao preparado.");
+  const [asaasMessage, setAsaasMessage] = useState("Checkout Asaas ainda não preparado.");
   const [supportNotes, setSupportNotes] = useState(fallbackTenant.support.commercialNotes);
   const [supportPriority, setSupportPriority] = useState<"normal" | "high">(
     fallbackTenant.support.priority,
@@ -106,7 +106,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
     fallbackTenant.support.nextFollowUpAt?.slice(0, 16) ?? "",
   );
   const [contactSummary, setContactSummary] = useState("");
-  const [communicationStatus, setCommunicationStatus] = useState("Nenhuma comunicacao recente.");
+  const [communicationStatus, setCommunicationStatus] = useState("Nenhuma comunicação recente.");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -155,7 +155,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
 
   async function prepareCheckout() {
     if (tenant.id === "demo") {
-      setAsaasMessage("Checkout mock preparado para ambiente demo.");
+      setAsaasMessage("Prévia de checkout preparada para homologação.");
       return;
     }
 
@@ -202,7 +202,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
         },
       }));
       setContactSummary("");
-      setStatus("suporte: demo");
+      setStatus("suporte: prévia local");
       return;
     }
 
@@ -257,7 +257,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
 
   async function sendCommunication(type: "trial_ending" | "past_due" | "support_follow_up") {
     if (tenant.id === "demo") {
-      setCommunicationStatus(`Demo: mensagem ${type} preparada para envio.`);
+      setCommunicationStatus(`Mensagem ${type} preparada para envio em homologação.`);
       return;
     }
 
@@ -294,7 +294,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
       documentLabel: "Tenant SaaS",
       title: tenant.name,
       subtitle:
-        "Resumo executivo do tenant com onboarding, cobranca, saude, suporte e comunicacoes recentes.",
+        "Resumo executivo do tenant com onboarding, cobrança, saúde, suporte e comunicações recentes.",
       metadata: [
         { label: "Slug", value: tenant.slug },
         { label: "Plano", value: tenant.planName ?? tenant.planCode ?? "N/D" },
@@ -304,24 +304,24 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
       metrics: [
         { label: "MRR", value: formatMoney(tenant.priceCents ?? 0) },
         { label: "Saude", value: `${tenant.health}%` },
-        { label: "Usuarios", value: String(tenant.userCount) },
-        { label: "Comunicacoes", value: String(communicationEvents.length) },
+        { label: "Usuários", value: String(tenant.userCount) },
+        { label: "Comunicações", value: String(communicationEvents.length) },
       ],
       bodyHtml: `
         <section class="section">
           <h2>Leitura do tenant</h2>
           <table>
             <tbody>
-              <tr><th>Proxima acao</th><td>${escapeHtml(tenant.nextAction)}</td></tr>
+              <tr><th>Proxima ação</th><td>${escapeHtml(tenant.nextAction)}</td></tr>
               <tr><th>Billing</th><td>${escapeHtml(tenant.billingStatus)}</td></tr>
               <tr><th>SLA</th><td>${escapeHtml(tenant.support.slaTier)}</td></tr>
-              <tr><th>Responsavel comercial</th><td>${escapeHtml(tenant.support.relationshipOwnerName || "Nao definido")}</td></tr>
-              <tr><th>Follow-up</th><td>${escapeHtml(tenant.support.nextFollowUpAt ? new Date(tenant.support.nextFollowUpAt).toLocaleString("pt-BR") : "Nao agendado")}</td></tr>
+              <tr><th>Responsável comercial</th><td>${escapeHtml(tenant.support.relationshipOwnerName || "Não definido")}</td></tr>
+              <tr><th>Follow-up</th><td>${escapeHtml(tenant.support.nextFollowUpAt ? new Date(tenant.support.nextFollowUpAt).toLocaleString("pt-BR") : "Não agendado")}</td></tr>
             </tbody>
           </table>
         </section>
         <section class="section">
-          <h2>Comunicacoes recentes</h2>
+          <h2>Comunicações recentes</h2>
           <table>
             <thead>
               <tr>
@@ -338,13 +338,13 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                     <td>${escapeHtml(new Date(event.createdAt).toLocaleString("pt-BR"))}</td>
                   </tr>`,
                 )
-                .join("") || "<tr><td colspan='2'>Sem comunicacoes registradas.</td></tr>"
+                .join("") || "<tr><td colspan='2'>Sem comunicações registradas.</td></tr>"
             }</tbody>
           </table>
         </section>
       `,
       footerNote:
-        "Exportacao executiva do tenant para acompanhamento de conta, retencao e operacao do SaaS.",
+        "Exportação executiva do tenant para acompanhamento de conta, retencao e operação do SaaS.",
     });
 
     popup.document.write(html);
@@ -434,7 +434,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
               <CalendarClock size={20} />
               <div>
                 <h2>Checklist</h2>
-                <p>Implantacao comercial e tecnica.</p>
+                <p>Implantação comercial e tecnica.</p>
               </div>
             </div>
             <div className="status-list">
@@ -457,7 +457,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
               <LifeBuoy size={20} />
               <div>
                 <h2>Suporte</h2>
-                <p>Visao rapida para atendimento e retencao.</p>
+                <p>Visão rápida para atendimento e retenção.</p>
               </div>
             </div>
             <div className="status-list">
@@ -470,7 +470,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
               </div>
               <div className="status-row rich">
                 <div>
-                  <strong>Usuarios</strong>
+                  <strong>Usuários</strong>
                   <span>{tenant.users.map((user) => user.email).join(", ")}</span>
                 </div>
                 <span>{tenant.userCount}</span>
@@ -482,7 +482,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                     {tenant.asaas.checkoutReady ? "Checkout pendente" : "Monitorar webhooks"}
                   </span>
                 </div>
-                <span className="gm-badge gm-badge-info">homologacao</span>
+                <span className="gm-badge gm-badge-info">homologação</span>
               </div>
               <div className="status-row rich">
                 <div>
@@ -500,7 +500,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
               </div>
               <div className="status-row rich">
                 <div>
-                  <strong>Comunicacoes</strong>
+                  <strong>Comunicações</strong>
                   <span>{communicationStatus}</span>
                 </div>
                 <span className="gm-badge gm-badge-info">email</span>
@@ -522,7 +522,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
               <Activity size={20} />
               <div>
                 <h2>Timeline</h2>
-                <p>Ultimos eventos auditaveis do tenant.</p>
+                <p>Últimos eventos auditáveis do tenant.</p>
               </div>
             </div>
             <div className="audit-list">
@@ -542,7 +542,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
             <div className="panel-title">
               <Mail size={20} />
               <div>
-                <h2>Central de comunicacoes</h2>
+                <h2>Central de comunicações</h2>
                 <p>Historico auditavel de mensagens comerciais e operacionais deste tenant.</p>
               </div>
             </div>
@@ -558,7 +558,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                   </div>
                 ))
               ) : (
-                <p className="muted-copy">Nenhuma comunicacao auditada ainda para este tenant.</p>
+                <p className="muted-copy">Nenhuma comunicação auditada ainda para este tenant.</p>
               )}
             </div>
           </article>
@@ -568,7 +568,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
               <ShieldCheck size={20} />
               <div>
                 <h2>Acoes de suporte</h2>
-                <p>Registro comercial do tenant com prioridade e observacoes.</p>
+                <p>Registro comercial do tenant com prioridade e observações.</p>
               </div>
             </div>
             <div className="support-form">
@@ -603,7 +603,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                 </select>
               </label>
               <label>
-                Responsavel comercial
+                Responsável comercial
                 <input
                   value={relationshipOwnerName}
                   onChange={(event) => setRelationshipOwnerName(event.target.value)}
@@ -647,7 +647,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                   rows={7}
                   maxLength={4000}
                   onChange={(event) => setSupportNotes(event.target.value)}
-                  placeholder="Contexto comercial, riscos, follow-up, combinados e proximo contato."
+                  placeholder="Contexto comercial, riscos, follow-up, combinados e próximo contato."
                 />
               </label>
               <label>

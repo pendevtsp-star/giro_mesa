@@ -5,6 +5,7 @@ import { Pool } from "pg";
 import {
   auditLogs,
   branches,
+  cashMovements,
   cashSessions,
   categories,
   customers,
@@ -21,6 +22,9 @@ import {
   mfaRecoveryCodes,
   modifierGroups,
   modifierOptions,
+  oauthAccounts,
+  onboardingSteps,
+  operationalShifts,
   orderItems,
   orders,
   outboxEvents,
@@ -38,6 +42,7 @@ import {
   stockLocations,
   stockMovements,
   subscriptions,
+  suppliers,
   tabs,
   tenants,
   userRoles,
@@ -92,12 +97,14 @@ async function resetDemoTenant() {
   await db.delete(fiscalSettings).where(eq(fiscalSettings.tenantId, tenantId));
   await db.delete(tabs).where(eq(tabs.tenantId, tenantId));
   await db.delete(orders).where(eq(orders.tenantId, tenantId));
+  await db.delete(cashMovements).where(eq(cashMovements.tenantId, tenantId));
   await db.delete(cashSessions).where(eq(cashSessions.tenantId, tenantId));
   await db.delete(modifierOptions).where(eq(modifierOptions.tenantId, tenantId));
   await db.delete(modifierGroups).where(eq(modifierGroups.tenantId, tenantId));
   await db.delete(recipeItems).where(eq(recipeItems.tenantId, tenantId));
   await db.delete(recipes).where(eq(recipes.tenantId, tenantId));
   await db.delete(stockMovements).where(eq(stockMovements.tenantId, tenantId));
+  await db.delete(suppliers).where(eq(suppliers.tenantId, tenantId));
   await db.delete(stockLocations).where(eq(stockLocations.tenantId, tenantId));
   await db.delete(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
   await db.delete(products).where(eq(products.tenantId, tenantId));
@@ -106,9 +113,12 @@ async function resetDemoTenant() {
   await db.delete(diningTables).where(eq(diningTables.tenantId, tenantId));
   await db.delete(floorPlans).where(eq(floorPlans.tenantId, tenantId));
   await db.delete(customers).where(eq(customers.tenantId, tenantId));
+  await db.delete(onboardingSteps).where(eq(onboardingSteps.tenantId, tenantId));
+  await db.delete(operationalShifts).where(eq(operationalShifts.tenantId, tenantId));
   await db.delete(invitations).where(eq(invitations.tenantId, tenantId));
   await db.delete(passwordResetTokens).where(eq(passwordResetTokens.tenantId, tenantId));
   await db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.tenantId, tenantId));
+  await db.delete(oauthAccounts).where(eq(oauthAccounts.tenantId, tenantId));
   await db.delete(sessions).where(eq(sessions.tenantId, tenantId));
   await db.delete(userRoles).where(eq(userRoles.tenantId, tenantId));
   await db.delete(roles).where(eq(roles.tenantId, tenantId));
@@ -193,7 +203,7 @@ async function upsertDemo() {
     planId: starterPlan.id,
     provider: "asaas",
     status: "trial",
-    currentPeriodEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    currentPeriodEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
   const demoRoles: DemoRoleSeed[] = [
@@ -253,7 +263,7 @@ async function upsertDemo() {
     },
     {
       code: "waiter",
-      name: "Garcom",
+      name: "Garçom",
       permissions: ["pos:operate", "pos:qr_review", "pos:kds_send"],
     },
     {
@@ -313,7 +323,7 @@ async function upsertDemo() {
     },
     {
       email: "garcom@bar-aurora-demo.local",
-      name: "Garcom Demo",
+      name: "Garçom Demo",
       password: "Garcom@12345",
       roleCode: "waiter",
     },

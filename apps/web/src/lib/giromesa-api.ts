@@ -17,6 +17,12 @@ export type TenantSession = {
   requestId: string;
   permissions: string[];
   mfaRequired?: boolean;
+  billing?: {
+    status: "healthy" | "trial_ok" | "trial_ending" | "payment_required" | "access_blocked";
+    tenantStatus?: "trial" | "active" | "past_due" | "suspended" | "canceled" | null;
+    currentPeriodEndsAt?: string | null;
+    trialDaysRemaining?: number | null;
+  };
 };
 
 export type TenantBranding = {
@@ -899,6 +905,23 @@ export function formatMoney(cents: number) {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET";
+  let response = await fetch(`${apiBaseUrl}${path}`, await buildRequestInit(path, method, options));
+  let payload = await readPayload(response);
+
+  if (!response.ok && isCsrfInvalid(response.status, payload) && options.body !== undefined) {
+    csrfTokenCache = null;
+    response = await fetch(`${apiBaseUrl}${path}`, await buildRequestInit(path, method, options));
+    payload = await readPayload(response);
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, payload);
+  }
+
+  return payload as T;
+}
+
+async function buildRequestInit(path: string, method: string, options: RequestOptions) {
   const requestInit: RequestInit = {
     method,
     credentials: "include",
@@ -912,20 +935,21 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     if (csrfToken) {
       headers["x-csrf-token"] = csrfToken;
     }
-    requestInit.headers = {
-      ...headers,
-    };
+    requestInit.headers = headers;
     requestInit.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, requestInit);
+  return requestInit;
+}
 
-  const payload = await readPayload(response);
-  if (!response.ok) {
-    throw new ApiError(response.status, payload);
-  }
-
-  return payload as T;
+function isCsrfInvalid(status: number, payload: unknown) {
+  return (
+    status === 403 &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "error" in payload &&
+    (payload as { error?: unknown }).error === "csrf_invalid"
+  );
 }
 
 export async function login(email: string, password: string, mfaCode?: string) {
@@ -950,10 +974,53 @@ export async function login(email: string, password: string, mfaCode?: string) {
   });
 }
 
+export async function startTrial(input: {
+  establishmentName: string;
+  ownerName: string;
+  ownerEmail: string;
+  password: string;
+  phone?: string;
+  document?: string;
+  branchName?: string;
+  planCode?: "starter" | "professional" | "premium";
+}) {
+  csrfTokenCache = null;
+  return apiRequest<{
+    user: {
+      id: string;
+      tenantId: string | null;
+      email: string;
+      name: string;
+      isPlatformUser: boolean;
+      permissions: string[];
+    };
+    tenant: {
+      id: string;
+      name: string;
+      slug: string;
+      status: "trial" | "active" | "past_due" | "suspended" | "canceled";
+    };
+    subscription: {
+      status: "trial" | "active" | "past_due" | "suspended" | "canceled";
+      trialDays: number;
+      currentPeriodEndsAt: string;
+    };
+    session: {
+      tokenType: string;
+      expiresInSeconds: number;
+      mfaRequired: boolean;
+    };
+  }>("/api/v1/auth/trial", {
+    method: "POST",
+    body: input,
+  });
+}
+
 async function csrfTokenForRequest(path: string, method: string) {
   if (
     method === "GET" ||
     path === "/api/v1/auth/login" ||
+    path === "/api/v1/auth/trial" ||
     path.startsWith("/api/v1/catalog/public/")
   ) {
     return null;

@@ -33,13 +33,13 @@ export function ApiUnavailableState({ requestId }: { requestId?: string }) {
 
 export function UnauthenticatedState({ actions }: { actions?: ReactNode }) {
   return (
-    <section className="demo-entry-panel" aria-label="Acesso demonstrativo">
+    <section className="demo-entry-panel" aria-label="Acesso ao painel">
       <div>
-        <span className="section-kicker">Demo pública</span>
+        <span className="section-kicker">Acesso seguro</span>
         <h2>Explore o GiroMesa com uma operação preparada.</h2>
         <p>
           O painel abaixo mostra a estrutura do Bar Aurora para você conhecer a navegação. Ao entrar
-          na demo, as ações passam a usar sessão, permissões e dados reais do backend.
+          no painel, as ações passam a usar sessão, permissões e dados reais do backend.
         </p>
       </div>
       {actions ? <div className="demo-entry-actions">{actions}</div> : null}

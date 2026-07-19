@@ -49,7 +49,7 @@ const demoTables: DiningTable[] = [
     id: "demo-b01",
     branchId: "demo",
     code: "B01",
-    name: "Balcao 01",
+    name: "Balcão 01",
     seats: 1,
     status: "waiting_payment",
   },
@@ -59,7 +59,7 @@ const demoProducts: Product[] = [
   {
     id: "demo-burger",
     name: "Burger Aurora",
-    description: "Pao brioche, blend da casa e queijo.",
+    description: "Pão brioche, blend da casa e queijo.",
     categoryId: null,
     priceCents: 4290,
     costCents: 1800,
@@ -69,7 +69,7 @@ const demoProducts: Product[] = [
   {
     id: "demo-chopp",
     name: "Chopp Pilsen 500ml",
-    description: "Tiragem rapida para salao.",
+    description: "Tiragem rápida para salão.",
     categoryId: null,
     priceCents: 1690,
     costCents: 720,
@@ -140,7 +140,7 @@ export default function WaiterPage() {
     },
   ]);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
-  const [message, setMessage] = useState("Demo pronta para operar mesa, balcao e envio KDS.");
+  const [message, setMessage] = useState("Pronto para operar mesa, balcão e envio KDS.");
 
   const selectedTable = tables.find((table) => table.id === selectedTableId) ?? tables[0];
   const itemsTotalCents = useMemo(
@@ -192,17 +192,17 @@ export default function WaiterPage() {
   const nextAction = useMemo(() => {
     if (!order) {
       return {
-        title: serviceMode === "counter" ? "Abrir venda de balcao" : "Abrir a mesa selecionada",
+        title: serviceMode === "counter" ? "Abrir venda de balcão" : "Abrir a mesa selecionada",
         detail:
           serviceMode === "counter"
-            ? "Use esse modo para consumo rapido sem depender do mapa de mesas."
-            : "Garanta pessoas e observacao antes do primeiro item.",
+            ? "Use esse modo para consumo rápido sem depender do mapa de mesas."
+            : "Garanta pessoas e observação antes do primeiro item.",
         tone: "warn" as const,
       };
     }
     if (items.length === 0) {
       return {
-        title: "Lancar primeiros itens",
+        title: "Lançar primeiros itens",
         detail: "Monte a comanda antes de disparar a cozinha ou cobrar.",
         tone: "warn" as const,
       };
@@ -210,7 +210,7 @@ export default function WaiterPage() {
     if (order.status === "opened") {
       return {
         title: "Enviar para preparo",
-        detail: "Os itens ja podem seguir para cozinha e bar com historico auditavel.",
+        detail: "Os itens já podem seguir para cozinha e bar com histórico auditável.",
         tone: "neutral" as const,
       };
     }
@@ -225,13 +225,13 @@ export default function WaiterPage() {
     if (order.status === "paid") {
       return {
         title: "Conta recebida",
-        detail: "Fechamento registrado. Siga para a proxima mesa critica do turno.",
+        detail: "Fechamento registrado. Siga para a próxima mesa crítica do turno.",
         tone: "good" as const,
       };
     }
     return {
       title: "Monitorar conta",
-      detail: "Mantenha o salao girando com foco em preparo, entrega e fechamento.",
+      detail: "Mantenha o salão girando com foco em preparo, entrega e fechamento.",
       tone: "neutral" as const,
     };
   }, [items.length, order, serviceMode]);
@@ -259,10 +259,10 @@ export default function WaiterPage() {
       setBranding(tenantBranding);
       setSelectedTableId(tableList[0]?.id ?? demoTables[0]?.id ?? "");
       setStatus("ready");
-      setMessage("Modo garçom conectado ao demo do Bar Aurora.");
+      setMessage("Modo garçom conectado ao Bar Aurora.");
     } catch {
       setStatus("demo");
-      setMessage("Entre no demo para operar com dados reais. Esta tela segue navegavel offline.");
+      setMessage("Entre no painel para operar com dados reais. Esta tela segue navegável offline.");
     }
   }, []);
 
@@ -275,7 +275,7 @@ export default function WaiterPage() {
       setBusyLabel(label);
       await action();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Nao foi possivel concluir a acao.");
+      setMessage(error instanceof Error ? error.message : "Não foi possível concluir a ação.");
     } finally {
       setBusyLabel(null);
     }
@@ -295,7 +295,7 @@ export default function WaiterPage() {
   function handleOpenOrder() {
     void run("Abrindo mesa", async () => {
       if (!branchId || (serviceMode === "table" && !selectedTable)) {
-        setMessage("Entre no demo para abrir uma mesa real.");
+        setMessage("Entre no painel para abrir uma mesa real.");
         return;
       }
       const activeTable = selectedTable;
@@ -309,18 +309,18 @@ export default function WaiterPage() {
       pushActionLog({
         title:
           serviceMode === "counter"
-            ? "Venda de balcao aberta"
+            ? "Venda de balcão aberta"
             : `Conta aberta em ${activeTable?.code ?? "mesa"}`,
         detail:
           serviceMode === "counter"
-            ? `${peopleCount} atendimento(s) iniciados no balcao.`
-            : `${peopleCount} pessoa(s) vinculadas com observacao operacional pronta.`,
+            ? `${peopleCount} atendimento(s) iniciados no balcão.`
+            : `${peopleCount} pessoa(s) vinculadas com observação operacional pronta.`,
         tone: "good",
       });
       setMessage(
         serviceMode === "counter"
-          ? `Balcao aberto para ${peopleCount} atendimento(s) com seguranca e auditoria.`
-          : `${activeTable?.code ?? "Mesa"} aberta para ${peopleCount} pessoa(s) com seguranca e auditoria.`,
+          ? `Balcão aberto para ${peopleCount} atendimento(s) com segurança e auditoria.`
+          : `${activeTable?.code ?? "Mesa"} aberta para ${peopleCount} pessoa(s) com segurança e auditoria.`,
       );
     });
   }
@@ -328,18 +328,18 @@ export default function WaiterPage() {
   function handleAddItem(product: Product) {
     void run("Lancando item", async () => {
       if (!order) {
-        setMessage("Abra a mesa antes de lancar itens.");
+        setMessage("Abra a mesa antes de lançar itens.");
         return;
       }
       const item = await addOrderItem(order.id, product.id);
       setItems((current) => [...current, item]);
       pushActionLog({
-        title: `${product.name} lancado`,
-        detail: `${formatMoney(product.priceCents)} incluido na comanda atual.`,
+        title: `${product.name} lançado`,
+        detail: `${formatMoney(product.priceCents)} incluído na comanda atual.`,
         tone: "neutral",
       });
       setMessage(
-        `${product.name} lancado na conta.${serviceNote.trim() ? ` Observacao ativa: ${serviceNote.trim()}.` : ""}`,
+        `${product.name} lançado na conta.${serviceNote.trim() ? ` Observação ativa: ${serviceNote.trim()}.` : ""}`,
       );
     });
   }
@@ -399,7 +399,7 @@ export default function WaiterPage() {
         </a>
         <div className="waiter-status">
           <span className={`gm-badge ${status === "ready" ? "gm-badge-good" : "gm-badge-warn"}`}>
-            {status === "ready" ? "online" : "demo"}
+            {status === "ready" ? "online" : "prévia"}
           </span>
           <a className="button secondary compact" href="/login">
             <LogIn size={16} /> Entrar
@@ -416,8 +416,8 @@ export default function WaiterPage() {
           <p>{message}</p>
         </div>
         <div className="waiter-shift-card">
-          <span>{serviceMode === "counter" ? "Atendimento balcao" : "Turno jantar"}</span>
-          <strong>{serviceMode === "counter" ? "Balcao" : (selectedTable?.code ?? "Mesa")}</strong>
+          <span>{serviceMode === "counter" ? "Atendimento balcão" : "Turno jantar"}</span>
+          <strong>{serviceMode === "counter" ? "Balcão" : (selectedTable?.code ?? "Mesa")}</strong>
           <small>{order ? `Conta ${order.status}` : "Sem conta aberta"}</small>
         </div>
       </section>
@@ -426,7 +426,7 @@ export default function WaiterPage() {
         <article>
           <span>Mesas livres</span>
           <strong>{tableCounters.free}</strong>
-          <small>Prontas para giro rapido</small>
+          <small>Prontas para giro rápido</small>
         </article>
         <article>
           <span>Em atendimento</span>
@@ -479,7 +479,7 @@ export default function WaiterPage() {
               type="button"
               onClick={() => setServiceMode("counter")}
             >
-              <CupSoda size={16} /> Balcao
+              <CupSoda size={16} /> Balcão
             </button>
           </div>
           <div className="platform-toolbar">
@@ -523,9 +523,9 @@ export default function WaiterPage() {
             </div>
           ) : (
             <div className="waiter-counter-card">
-              <strong>Balcao rapido</strong>
+              <strong>Balcão rápido</strong>
               <span>Use para pedidos sem mesa, retirada e atendimento direto no caixa.</span>
-              <small>O fluxo segue auditado e pode receber pagamento logo apos o preparo.</small>
+              <small>O fluxo segue auditado e pode receber pagamento logo após o preparo.</small>
             </div>
           )}
           <div className="waiter-note-presets">
@@ -541,7 +541,7 @@ export default function WaiterPage() {
             ))}
           </div>
           <label className="platform-search">
-            Observacao da mesa
+            Observação da mesa
             <input
               value={serviceNote}
               onChange={(event) => setServiceNote(event.target.value)}
@@ -562,7 +562,7 @@ export default function WaiterPage() {
         <div className="waiter-column">
           <div className="waiter-section-title">
             <ChefHat size={18} />
-            <strong>Itens rapidos</strong>
+            <strong>Itens rápidos</strong>
           </div>
           <div className="waiter-service-insights">
             <div>
@@ -586,7 +586,7 @@ export default function WaiterPage() {
                 <input
                   value={productQuery}
                   onChange={(event) => setProductQuery(event.target.value)}
-                  placeholder="Buscar item rapido"
+                  placeholder="Buscar item rápido"
                 />
               </div>
             </label>
@@ -615,7 +615,7 @@ export default function WaiterPage() {
               >
                 <span>
                   <strong>{product.name}</strong>
-                  <small>{product.description ?? "Item de venda rapida"}</small>
+                  <small>{product.description ?? "Item de venda rápida"}</small>
                 </span>
                 <b>{formatMoney(product.priceCents)}</b>
                 <Plus size={18} />
@@ -632,10 +632,10 @@ export default function WaiterPage() {
           <div className="status-row rich">
             <div>
               <strong>
-                {serviceMode === "counter" ? "Balcao" : (selectedTable?.code ?? "Mesa")}
+                {serviceMode === "counter" ? "Balcão" : (selectedTable?.code ?? "Mesa")}
               </strong>
               <span>
-                {peopleCount} pessoa(s) · {serviceNote.trim() || "sem observacao operacional"}
+                {peopleCount} pessoa(s) · {serviceNote.trim() || "sem observação operacional"}
               </span>
             </div>
             <Clock3 size={16} />
@@ -648,7 +648,7 @@ export default function WaiterPage() {
             <span
               className={`gm-badge gm-badge-${nextAction.tone === "good" ? "good" : nextAction.tone === "warn" ? "warn" : "info"}`}
             >
-              proximo
+              próximo
             </span>
           </div>
           <div className="waiter-ticket-lines">
@@ -685,12 +685,12 @@ export default function WaiterPage() {
           </div>
           <div className="waiter-note">
             <Bell size={16} />
-            <span>Acoes sensiveis continuam auditadas no backend.</span>
+            <span>Ações sensíveis continuam auditadas no backend.</span>
           </div>
           <details className="waiter-activity-feed">
             <summary className="waiter-section-title">
               <Sparkles size={16} />
-              <strong>Ultimas acoes</strong>
+              <strong>Últimas ações</strong>
             </summary>
             {actionLog.slice(0, 5).map((entry) => (
               <div className="waiter-activity-item" key={entry.id}>
@@ -710,7 +710,7 @@ export default function WaiterPage() {
           {order?.status === "paid" ? (
             <div className="waiter-note danger">
               <AlertTriangle size={16} />
-              <span>Conta recebida. O ideal agora e liberar mesa ou partir para nova rodada.</span>
+              <span>Conta recebida. O ideal agora é liberar mesa ou partir para nova rodada.</span>
             </div>
           ) : null}
         </aside>

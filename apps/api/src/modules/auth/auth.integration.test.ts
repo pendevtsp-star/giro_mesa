@@ -1,5 +1,16 @@
 import * as schema from "@giromesa/db";
-import { auditLogs, invitations, roles, tenants, userRoles, users } from "@giromesa/db";
+import {
+  auditLogs,
+  branches,
+  invitations,
+  roles,
+  sessions,
+  subscriptions,
+  tenants,
+  userRoles,
+  users,
+} from "@giromesa/db";
+import { TRIAL_DAYS } from "@giromesa/domain";
 import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -20,9 +31,12 @@ const databaseUrl =
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
   await db.delete(invitations).where(eq(invitations.tenantId, tenantId));
+  await db.delete(sessions).where(eq(sessions.tenantId, tenantId));
   await db.delete(userRoles).where(eq(userRoles.tenantId, tenantId));
   await db.delete(users).where(eq(users.tenantId, tenantId));
   await db.delete(roles).where(eq(roles.tenantId, tenantId));
+  await db.delete(subscriptions).where(eq(subscriptions.tenantId, tenantId));
+  await db.delete(branches).where(eq(branches.tenantId, tenantId));
   await db.delete(tenants).where(eq(tenants.id, tenantId));
 }
 
@@ -125,5 +139,48 @@ runIntegration("AuthService RBAC operations", () => {
     );
 
     await cleanupTenant(db, createdTenant.id);
+  });
+
+  it("starts a public seven-day trial with owner, branch, subscription, audit and session", async () => {
+    const timestamp = Date.now();
+    const result = await service.startTrial(
+      {
+        establishmentName: `Trial Bistro ${timestamp}`,
+        ownerName: "Trial Owner",
+        ownerEmail: `trial-owner-${timestamp}@example.com`,
+        password: "Teste@12345",
+        phone: "11999999999",
+        branchName: "Matriz",
+        planCode: "professional",
+      },
+      { "user-agent": "vitest" },
+    );
+
+    expect(result.tenant.status).toBe("trial");
+    expect(result.subscription.status).toBe("trial");
+    expect(result.subscription.trialDays).toBe(TRIAL_DAYS);
+    expect(result.token.length).toBeGreaterThanOrEqual(40);
+
+    const [branch] = await db
+      .select()
+      .from(branches)
+      .where(eq(branches.tenantId, result.tenant.id))
+      .limit(1);
+    const [audit] = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.tenantId, result.tenant.id))
+      .limit(1);
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.tenantId, result.tenant.id))
+      .limit(1);
+
+    expect(branch?.name).toBe("Matriz");
+    expect(audit?.action).toBe("auth.trial_started");
+    expect(session?.userId).toBe(result.user.id);
+
+    await cleanupTenant(db, result.tenant.id);
   });
 });

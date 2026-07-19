@@ -108,6 +108,13 @@ export const appNavigationItems = [
   },
   {
     group: "Configuração",
+    icon: CreditCard,
+    label: "Assinatura",
+    href: "/app/billing",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "Configuração",
     icon: Palette,
     label: "Personalização",
     href: "/app/settings/branding",

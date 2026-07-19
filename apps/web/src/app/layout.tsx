@@ -12,7 +12,7 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "GiroMesa | Gestão que gira. Resultados que ficam.",
   description:
-    "SaaS multi-tenant para PDV, mesas, comandas, KDS, cardapio digital, estoque e financeiro.",
+    "SaaS multi-tenant para PDV, mesas, comandas, KDS, cardápio digital, estoque e financeiro.",
   openGraph: {
     title: "GiroMesa | Gestão que gira. Resultados que ficam.",
     description: "Operação, salão, cozinha e caixa em uma plataforma SaaS.",

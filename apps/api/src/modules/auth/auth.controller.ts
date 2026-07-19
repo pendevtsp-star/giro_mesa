@@ -27,6 +27,17 @@ const loginSchema = z.object({
   mfaCode: z.string().min(6).max(12).optional(),
 });
 
+const startTrialSchema = z.object({
+  establishmentName: z.string().min(2).max(160),
+  ownerName: z.string().min(2).max(160),
+  ownerEmail: z.email(),
+  password: z.string().min(8),
+  phone: z.string().max(32).optional(),
+  document: z.string().max(32).optional(),
+  branchName: z.string().min(2).max(140).default("Matriz"),
+  planCode: z.enum(["starter", "professional", "premium"]).default("professional"),
+});
+
 const inviteSchema = z.object({
   email: z.email(),
   roleId: z.string().uuid().optional(),
@@ -203,6 +214,35 @@ export class AuthController {
       session: {
         tokenType: "cookie",
         mfaRequired: session.mfaRequired,
+        expiresInSeconds: session.maxAgeSeconds,
+      },
+    };
+  }
+
+  @Post("trial")
+  async startTrial(
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    rejectTenantOverride(body);
+    const input = startTrialSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "auth_trial_signup",
+      limit: 5,
+      windowMs: 60_000,
+      identifier: input.ownerEmail.toLowerCase(),
+    });
+    const session = await this.authService.startTrial(input, headers);
+    reply.header("set-cookie", sessionCookie(session.token, session.maxAgeSeconds));
+
+    return {
+      user: session.user,
+      tenant: session.tenant,
+      subscription: session.subscription,
+      session: {
+        tokenType: "cookie",
+        mfaRequired: false,
         expiresInSeconds: session.maxAgeSeconds,
       },
     };

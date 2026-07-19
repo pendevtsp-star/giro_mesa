@@ -32,7 +32,7 @@ export default function AcceptInvitationPage() {
       const message =
         acceptError instanceof ApiError && acceptError.status === 401
           ? "Convite invalido, expirado ou ja utilizado."
-          : "Nao foi possivel aceitar o convite agora.";
+          : "Não foi possivel aceitar o convite agora.";
       setError(message);
       setStatus("idle");
     }

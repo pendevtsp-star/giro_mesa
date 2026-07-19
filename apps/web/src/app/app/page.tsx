@@ -3,13 +3,11 @@
 import { escapeHtml, renderBrandedPrintDocument } from "@giromesa/domain";
 import {
   BadgeDollarSign,
-  ClipboardList,
   Copy,
   FileCheck2,
   FileText,
   Gauge,
   KeyRound,
-  PackageOpen,
   Palette,
   Printer,
   QrCode,
@@ -25,6 +23,7 @@ import { AppShell } from "../../components/app-shell/AppShell";
 import { filterNavigationByPermissions } from "../../components/app-shell/navigation";
 import { CatalogManagementPanel } from "../../features/catalog/CatalogManagementPanel";
 import {
+  OperationalReadinessPanel,
   OperationalSummaryCards,
   ProfileActionStrip,
   ShiftPriorities,
@@ -35,11 +34,13 @@ import type {
   RealtimeStatus,
 } from "../../features/dashboard/dashboard-types";
 import { FloorMapPanel } from "../../features/floor/FloorMapPanel";
+import { InventoryPanel } from "../../features/inventory/InventoryPanel";
 import {
   ModifierSelectorDialog,
   PosProductGrid,
   PosTicketPreview,
 } from "../../features/pos/PosWorkspace";
+import { PrintingPanel } from "../../features/printing/PrintingPanel";
 import { QrOperationsPanel } from "../../features/qr/QrOperationsPanel";
 import { TeamAccessPanel } from "../../features/team/TeamAccessPanel";
 import {
@@ -252,7 +253,7 @@ export default function AppDashboardPage() {
   const [customPaymentAmount, setCustomPaymentAmount] = useState("");
   const [countedCashAmount, setCountedCashAmount] = useState("");
   const [orderStatus, setOrderStatus] = useState("sem pedido aberto");
-  const [actionStatus, setActionStatus] = useState("Entre na demo para acionar o PDV real.");
+  const [actionStatus, setActionStatus] = useState("Entre no painel para acionar o PDV real.");
   const [branding, setBranding] = useState<TenantBranding>(demoBranding);
   const [clubConfig, setClubConfig] = useState<ClubWhiskyIntegrationConfig | null>(null);
   const [generatedClubKey, setGeneratedClubKey] = useState<string | null>(null);
@@ -351,8 +352,8 @@ export default function AppDashboardPage() {
     if (cashDifferenceCents !== null && cashDifferenceCents !== 0) {
       return {
         tone: "danger" as const,
-        title: "Fechamento com divergencia",
-        detail: `Existe diferenca de ${formatMoney(cashDifferenceCents)} que precisa de justificativa.`,
+        title: "Fechamento com divergência",
+        detail: `Existe diferença de ${formatMoney(cashDifferenceCents)} que precisa de justificativa.`,
       };
     }
     if (cashOpenOrdersCount > 0) {
@@ -364,8 +365,8 @@ export default function AppDashboardPage() {
     }
     return {
       tone: "good" as const,
-      title: "Caixa pronto para conferencia",
-      detail: "Sem divergencia registrada e sem exposicao relevante em pedidos abertos.",
+      title: "Caixa pronto para conferência",
+      detail: "Sem divergência registrada e sem exposição relevante em pedidos abertos.",
     };
   }, [cashDifferenceCents, cashOpenOrdersCents, cashOpenOrdersCount, cashSummary?.session]);
   const cashChecklist = useMemo(
@@ -385,7 +386,7 @@ export default function AppDashboardPage() {
         done: cashOpenOrdersCount === 0,
         detail:
           cashOpenOrdersCount === 0
-            ? "Sem exposicao em aberto."
+            ? "Sem exposição em aberto."
             : `${cashOpenOrdersCount} conta(s) ainda consomem ${formatMoney(cashOpenOrdersCents)}.`,
       },
       {
@@ -393,10 +394,10 @@ export default function AppDashboardPage() {
         done: cashDifferenceCents === null || cashDifferenceCents === 0,
         detail:
           cashDifferenceCents === null
-            ? "Diferenca ainda nao informada."
+            ? "Diferença ainda não informada."
             : cashDifferenceCents === 0
-              ? "Conferencia sem divergencia."
-              : `Existe diferenca de ${formatMoney(cashDifferenceCents)}.`,
+              ? "Conferência sem divergência."
+              : `Existe diferença de ${formatMoney(cashDifferenceCents)}.`,
       },
     ],
     [cashDifferenceCents, cashOpenOrdersCents, cashOpenOrdersCount, currentOrder, orderStatus],
@@ -411,7 +412,7 @@ export default function AppDashboardPage() {
       {
         label: "Esperado",
         value: formatMoney(cashExpectedCents),
-        hint: "Base da conferencia operacional.",
+        hint: "Base da conferência operacional.",
       },
       {
         label: "Exposicao aberta",
@@ -610,6 +611,14 @@ export default function AppDashboardPage() {
           return;
         }
         setSession(context);
+        if (
+          context.billing?.status === "payment_required" ||
+          context.billing?.status === "access_blocked"
+        ) {
+          setStatus("ready");
+          setActionStatus("O teste grátis terminou. Ative a assinatura para continuar operando.");
+          return;
+        }
         await refreshBranding();
         await refreshRealtimeData(context);
         await refreshClubConfig();
@@ -636,7 +645,7 @@ export default function AppDashboardPage() {
         setStatus(maybeApiError.status === 401 ? "unauthenticated" : "offline");
         setActionStatus(
           maybeApiError.status === 401
-            ? "Entre com uma conta demo para ativar operações reais, permissões e dados do Bar Aurora."
+            ? "Entre com sua conta para ativar operações reais, permissões e dados do estabelecimento."
             : "Não foi possível carregar a operação agora. Tente novamente em instantes.",
         );
       }
@@ -855,13 +864,13 @@ export default function AppDashboardPage() {
       renderBrandingDocument(
         {
           branding,
-          documentLabel: "Pre-conta",
-          title: `Pre-conta ${selectedTable?.code ?? currentOrder.channel.toUpperCase()}`,
+          documentLabel: "Pré-conta",
+          title: `Pré-conta ${selectedTable?.code ?? currentOrder.channel.toUpperCase()}`,
           subtitle:
-            "Documento de conferencia para a mesa, com itens, servico e total apurado no momento da emissao.",
+            "Documento de conferência para a mesa, com itens, serviço e total apurado no momento da emissão.",
           metadata: [
             { label: "Pedido", value: currentOrder.id.slice(0, 8) },
-            { label: "Mesa/Comanda", value: selectedTable?.code ?? "Balcao" },
+            { label: "Mesa/Comanda", value: selectedTable?.code ?? "Balcão" },
             { label: "Emitido em", value: new Date().toLocaleString("pt-BR") },
           ],
           metrics: [
@@ -871,7 +880,7 @@ export default function AppDashboardPage() {
           ],
           bodyHtml: `
             <section class="section">
-              <h2>Itens lancados</h2>
+              <h2>Itens lançados</h2>
               <table>
                 <thead>
                   <tr>
@@ -896,18 +905,18 @@ export default function AppDashboardPage() {
             </section>
           `,
           footerNote:
-            "Pre-conta sem valor fiscal. Use este documento para conferencia e fechamento operacional.",
+            "Pré-conta sem valor fiscal. Use este documento para conferência e fechamento operacional.",
         },
         "pre-conta",
       );
-      setActionStatus("Pre-conta executiva aberta para impressao.");
+      setActionStatus("Pré-conta executiva aberta para impressão.");
     });
   }
 
   function handleExportCashSummaryDocument() {
     void runAction(async () => {
       if (!cashSummary?.session?.id) {
-        throw new Error("Nao ha caixa carregado para gerar o resumo executivo.");
+        throw new Error("Não há caixa carregado para gerar o resumo executivo.");
       }
 
       renderBrandingDocument(
@@ -916,10 +925,10 @@ export default function AppDashboardPage() {
           documentLabel: "Resumo de caixa",
           title: "Fechamento operacional do caixa",
           subtitle:
-            "Leitura resumida do turno com esperado, recebido, pedidos em aberto e diferenca apurada ate o momento.",
+            "Leitura resumida do turno com esperado, recebido, pedidos em aberto e diferença apurada até o momento.",
           metadata: [
             {
-              label: "Sessao",
+              label: "Sessão",
               value: cashSummary.session.id.slice(0, 8),
             },
             {
@@ -959,7 +968,7 @@ export default function AppDashboardPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Metodo</th>
+                    <th>Método</th>
                     <th>Valor</th>
                   </tr>
                 </thead>
@@ -976,11 +985,11 @@ export default function AppDashboardPage() {
             </section>
           `,
           footerNote:
-            "Documento de conferencia interna. A impressao operacional por rota continua disponivel em paralelo.",
+            "Documento de conferência interna. A impressão operacional por rota continua disponível em paralelo.",
         },
         "resumo de caixa",
       );
-      setActionStatus("Resumo executivo do caixa aberto para impressao.");
+      setActionStatus("Resumo executivo do caixa aberto para impressão.");
     });
   }
 
@@ -996,14 +1005,14 @@ export default function AppDashboardPage() {
           documentLabel: "Comprovante",
           title: "Comprovante de pagamento",
           subtitle:
-            "Registro de recebimento para conferencia do cliente e do caixa, emitido a partir do fluxo operacional do PDV.",
+            "Registro de recebimento para conferência do cliente e do caixa, emitido a partir do fluxo operacional do PDV.",
           metadata: [
             { label: "Pedido", value: currentOrder.id.slice(0, 8) },
-            { label: "Mesa/Comanda", value: selectedTable?.code ?? "Balcao" },
+            { label: "Mesa/Comanda", value: selectedTable?.code ?? "Balcão" },
             { label: "Emitido em", value: new Date().toLocaleString("pt-BR") },
           ],
           metrics: [
-            { label: "Metodo", value: lastPaymentReceipt.method },
+            { label: "Método", value: lastPaymentReceipt.method },
             { label: "Valor pago", value: formatMoney(lastPaymentReceipt.amountCents) },
             { label: "Status do pedido", value: lastPaymentReceipt.orderStatus },
           ],
@@ -1025,7 +1034,7 @@ export default function AppDashboardPage() {
         },
         "comprovante",
       );
-      setActionStatus("Comprovante de pagamento aberto para impressao.");
+      setActionStatus("Comprovante de pagamento aberto para impressão.");
     });
   }
 
@@ -1037,7 +1046,7 @@ export default function AppDashboardPage() {
           documentLabel: "Fiscal auxiliar",
           title: `${document.model.toUpperCase()} ${document.number ? `${document.series ?? "1"}-${document.number}` : "pendente"}`,
           subtitle:
-            "Capa operacional para conferencia do documento fiscal, com status, totais e referencias do pedido.",
+            "Capa operacional para conferência do documento fiscal, com status, totais e referências do pedido.",
           metadata: [
             { label: "Status", value: document.status },
             { label: "Pedido", value: document.orderId?.slice(0, 8) ?? "Sem pedido" },
@@ -1045,7 +1054,7 @@ export default function AppDashboardPage() {
               label: "Emitido em",
               value: document.issuedAt
                 ? new Date(document.issuedAt).toLocaleString("pt-BR")
-                : "Ainda nao emitido",
+                : "Ainda não emitido",
             },
           ],
           metrics: [
@@ -1061,19 +1070,19 @@ export default function AppDashboardPage() {
                   <tr><th>Provider</th><td>${escapeHtml(document.provider)}</td></tr>
                   <tr><th>Ambiente</th><td>${escapeHtml(document.environment)}</td></tr>
                   <tr><th>Chave de acesso</th><td>${escapeHtml(document.accessKey ?? "Pendente")}</td></tr>
-                  <tr><th>XML</th><td>${escapeHtml(document.xmlUrl ?? "Nao disponivel")}</td></tr>
-                  <tr><th>DANFE</th><td>${escapeHtml(document.danfeUrl ?? "Nao disponivel")}</td></tr>
+                  <tr><th>XML</th><td>${escapeHtml(document.xmlUrl ?? "Não disponível")}</td></tr>
+                  <tr><th>DANFE</th><td>${escapeHtml(document.danfeUrl ?? "Não disponível")}</td></tr>
                   <tr><th>Erro</th><td>${escapeHtml(document.errorMessage ?? "Sem erro")}</td></tr>
                 </tbody>
               </table>
             </section>
           `,
           footerNote:
-            "Anexo auxiliar para conferencia interna. Nao substitui o documento fiscal oficial nem o XML autorizado.",
+            "Anexo auxiliar para conferência interna. Não substitui o documento fiscal oficial nem o XML autorizado.",
         },
         "fiscal auxiliar",
       );
-      setActionStatus("Documento fiscal auxiliar aberto para impressao.");
+      setActionStatus("Documento fiscal auxiliar aberto para impressão.");
     });
   }
 
@@ -1108,7 +1117,7 @@ export default function AppDashboardPage() {
       const order = currentOrder ?? (await ensureOrder());
       if (ticketItems.length === 0) {
         if (!selectedProduct) {
-          throw new Error("Nenhum produto disponivel para enviar ao KDS.");
+          throw new Error("Nenhum produto disponível para enviar ao KDS.");
         }
         const item = await addOrderItem(order.id, selectedProduct.id);
         setTicketItems((current) => [...current, item]);
@@ -1168,7 +1177,7 @@ export default function AppDashboardPage() {
       await cancelQrOrderItem(
         order.id,
         itemId,
-        "Item cancelado na conferencia operacional antes do envio ao KDS.",
+        "Item cancelado na conferência operacional antes do envio ao KDS.",
       );
       setActionStatus(`${readQrOrderLabel(order)} teve um item cancelado antes do KDS.`);
       if (session) {
@@ -1181,7 +1190,7 @@ export default function AppDashboardPage() {
   function handleRejectQrOrder(order: QrPendingOrder) {
     void runAction(async () => {
       await rejectQrOrder(order.id, qrRejectReason);
-      setActionStatus(`${readQrOrderLabel(order)} recusada. Motivo registrado no historico.`);
+      setActionStatus(`${readQrOrderLabel(order)} recusada. Motivo registrado no histórico.`);
       if (session) {
         await refreshRealtimeData(session);
         await refreshTableHistory(session, order.tableId ?? selectedTableId);
@@ -1257,7 +1266,7 @@ export default function AppDashboardPage() {
       }
       const closed = await closeCashSession(cashSummary.session.id, countedAmountCents);
       setActionStatus(
-        `${closed.audit === "cash_session.disputed" ? "Caixa encerrado com divergencia" : "Caixa encerrado"}: ${formatMoney(closed.differenceCents)} de diferenca.`,
+        `${closed.audit === "cash_session.disputed" ? "Caixa encerrado com divergência" : "Caixa encerrado"}: ${formatMoney(closed.differenceCents)} de diferença.`,
       );
       if (session) {
         await refreshCashSummary(session);
@@ -1270,33 +1279,33 @@ export default function AppDashboardPage() {
   function handlePrintBillPreview() {
     void runAction(async () => {
       if (!currentOrder) {
-        throw new Error("Abra uma conta antes de imprimir a pre-conta.");
+        throw new Error("Abra uma conta antes de imprimir a pré-conta.");
       }
       const job = await printBillPreview(currentOrder.id);
       setPrintJobs((current) => [job, ...current]);
-      setActionStatus(`Pre-conta enviada para impressao: ${job.id.slice(0, 8)}.`);
+      setActionStatus(`Pré-conta enviada para impressão: ${job.id.slice(0, 8)}.`);
     });
   }
 
   function handlePrintCashSummary() {
     void runAction(async () => {
       if (!cashSummary?.session?.id) {
-        throw new Error("Nao ha caixa aberto/carregado para imprimir resumo.");
+        throw new Error("Não há caixa aberto/carregado para imprimir resumo.");
       }
       const job = await printCashSessionSummary(cashSummary.session.id);
       setPrintJobs((current) => [job, ...current]);
-      setActionStatus(`Resumo de caixa enviado para impressao: ${job.id.slice(0, 8)}.`);
+      setActionStatus(`Resumo de caixa enviado para impressão: ${job.id.slice(0, 8)}.`);
     });
   }
 
   function handlePrintPaymentReceipt() {
     void runAction(async () => {
       if (!currentOrder || !lastPaymentReceipt) {
-        throw new Error("Receba um pagamento antes de imprimir o comprovante fisico.");
+        throw new Error("Receba um pagamento antes de imprimir o comprovante físico.");
       }
       const job = await printPaymentReceipt(currentOrder.id);
       setPrintJobs((current) => [job, ...current]);
-      setActionStatus(`Comprovante fisico enviado para impressao: ${job.id.slice(0, 8)}.`);
+      setActionStatus(`Comprovante físico enviado para impressão: ${job.id.slice(0, 8)}.`);
     });
   }
 
@@ -1307,8 +1316,8 @@ export default function AppDashboardPage() {
       setGeneratedClubKey(response.apiKey ?? null);
       setActionStatus(
         response.apiKey
-          ? "Chave do Dose Club gerada. Ela sera exibida somente agora."
-          : "Integracao Dose Club atualizada.",
+          ? "Chave do Dose Club gerada. Ela será exibida somente agora."
+          : "Integração Dose Club atualizada.",
       );
     });
   }
@@ -1321,7 +1330,7 @@ export default function AppDashboardPage() {
 
       const updated = await updateRole(role.id, { permissions: nextPermissions });
       setRoles((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
-      setActionStatus(`Permissoes de ${updated.name} atualizadas com auditoria.`);
+      setActionStatus(`Permissões de ${updated.name} atualizadas com auditoria.`);
     });
   }
 
@@ -1393,7 +1402,7 @@ export default function AppDashboardPage() {
     }
 
     await navigator.clipboard.writeText(generatedClubKey);
-    setActionStatus("Chave do Dose Club copiada para a area de transferencia.");
+    setActionStatus("Chave do Dose Club copiada para a área de transferência.");
   }
 
   function handleCreateCategory() {
@@ -1432,7 +1441,7 @@ export default function AppDashboardPage() {
         fiscalOrigin: productForm.fiscalOrigin,
         fiscalCsosn: productForm.fiscalCsosn,
       });
-      setActionStatus("Produto cadastrado no catalogo.");
+      setActionStatus("Produto cadastrado no catálogo.");
       if (session) {
         await refreshRealtimeData(session);
       }
@@ -1492,7 +1501,7 @@ export default function AppDashboardPage() {
   function handleAdjustStock() {
     void runAction(async () => {
       if (!branchId) {
-        throw new Error("Filial ativa obrigatoria para ajuste de estoque.");
+        throw new Error("Filial ativa obrigatória para ajuste de estoque.");
       }
       if (!stockAdjustmentForm.inventoryItemId) {
         throw new Error("Selecione um insumo para ajustar.");
@@ -1514,7 +1523,7 @@ export default function AppDashboardPage() {
   function handleRetryPrint(jobId: string) {
     void runAction(async () => {
       await retryPrintJob(jobId);
-      setActionStatus("Job de impressao reenfileirado.");
+      setActionStatus("Job de impressão reenfileirado.");
       if (session) {
         await refreshPrinting(session);
       }
@@ -1523,8 +1532,8 @@ export default function AppDashboardPage() {
 
   function handleReprint(jobId: string) {
     void runAction(async () => {
-      await reprintPrintJob(jobId, "Reimpressao solicitada pelo painel operacional.");
-      setActionStatus("Reimpressao adicionada a fila.");
+      await reprintPrintJob(jobId, "Reimpressão solicitada pelo painel operacional.");
+      setActionStatus("Reimpressão adicionada à fila.");
       if (session) {
         await refreshPrinting(session);
       }
@@ -1534,14 +1543,14 @@ export default function AppDashboardPage() {
   function handleConfigurePrinterConnector(rotateKey: boolean) {
     void runAction(async () => {
       if (!branchId) {
-        throw new Error("Filial ativa obrigatoria para provisionar o conector.");
+        throw new Error("Filial ativa obrigatória para provisionar o conector.");
       }
       const response = await configurePrinterConnector(branchId, rotateKey);
       setPrinterConnectorConfig(response);
       setGeneratedPrinterConnectorKey(response.apiKey ?? null);
       setActionStatus(
         response.apiKey
-          ? "Token do conector gerado. Ele sera exibido somente agora."
+          ? "Token do conector gerado. Ele será exibido somente agora."
           : "Conector local atualizado.",
       );
     });
@@ -1559,7 +1568,7 @@ export default function AppDashboardPage() {
   function handleCreatePrinterDevice() {
     void runAction(async () => {
       if (!branchId) {
-        throw new Error("Filial ativa obrigatoria para cadastrar impressora.");
+        throw new Error("Filial ativa obrigatória para cadastrar impressora.");
       }
 
       await createPrinterDevice({
@@ -1589,7 +1598,7 @@ export default function AppDashboardPage() {
   function handleCreatePrintRoute() {
     void runAction(async () => {
       if (!branchId) {
-        throw new Error("Filial ativa obrigatoria para cadastrar rota.");
+        throw new Error("Filial ativa obrigatória para cadastrar rota.");
       }
       if (!printRouteForm.printerDeviceId) {
         throw new Error("Selecione uma impressora para a rota.");
@@ -1604,7 +1613,7 @@ export default function AppDashboardPage() {
         printerDeviceId: printRouteForm.printerDeviceId,
         copies: Number(printRouteForm.copies),
       });
-      setActionStatus("Rota de impressao cadastrada.");
+      setActionStatus("Rota de impressão cadastrada.");
       if (session) {
         await refreshPrinting(session);
       }
@@ -1617,7 +1626,7 @@ export default function AppDashboardPage() {
     }
 
     await navigator.clipboard.writeText(generatedPrinterConnectorKey);
-    setActionStatus("Token do conector copiado para a area de transferencia.");
+    setActionStatus("Token do conector copiado para a área de transferência.");
   }
 
   function handlePosCustomerSearchChange(value: string) {
@@ -1641,6 +1650,11 @@ export default function AppDashboardPage() {
     }
   }
 
+  const billingBlocked =
+    session?.billing?.status === "payment_required" ||
+    session?.billing?.status === "access_blocked";
+  const trialDaysLeft = session?.billing?.trialDaysRemaining;
+
   return (
     <AppShell
       branding={activeBranding}
@@ -1653,9 +1667,43 @@ export default function AppDashboardPage() {
     >
       {!isPosWorkspace ? <ProfileActionStrip profile={operatorProfile} /> : null}
 
-      <OperationalSummaryCards metrics={metrics} compact={isPosWorkspace} />
+      {billingBlocked ? (
+        <section className="billing-gate panel">
+          <div>
+            <span className="section-kicker">Assinatura necessária</span>
+            <h1>Ative sua assinatura para continuar usando o GiroMesa.</h1>
+            <p>
+              O teste grátis de 7 dias terminou. Seus dados permanecem preservados, mas operações
+              como PDV, caixa, estoque e relatórios ficam bloqueadas até a ativação comercial.
+            </p>
+          </div>
+          <div className="billing-gate-actions">
+            <a className="button primary" href="mailto:comercial@giromesa.com.br">
+              Falar com comercial
+            </a>
+            <a className="button secondary" href="/login">
+              Trocar conta
+            </a>
+          </div>
+        </section>
+      ) : null}
 
-      {!isPosWorkspace ? (
+      {!billingBlocked ? (
+        <OperationalSummaryCards metrics={metrics} compact={isPosWorkspace} />
+      ) : null}
+
+      {!billingBlocked && !isPosWorkspace ? (
+        <div className="trial-status-strip">
+          <span>
+            {typeof trialDaysLeft === "number" && session?.billing?.tenantStatus === "trial"
+              ? `${trialDaysLeft} dia(s) restantes do teste grátis`
+              : "Assinatura ativa"}
+          </span>
+          <a href="/app/settings/branding">Preparar ambiente</a>
+        </div>
+      ) : null}
+
+      {!billingBlocked && !isPosWorkspace ? (
         <ShiftPriorities
           activeOrderCount={activeOrderCount}
           ticketCount={tickets.length}
@@ -1663,87 +1711,22 @@ export default function AppDashboardPage() {
         />
       ) : null}
 
-      {!isPosWorkspace ? (
-        <section className="panel operational-readiness-panel">
-          <div className="panel-title">
-            <div>
-              <span className="section-kicker">Prontidão operacional</span>
-              <h2>
-                {onboardingStatus?.readiness === "ready"
-                  ? "Casa pronta para operar"
-                  : "Ajustes antes do turno"}
-              </h2>
-            </div>
-            <Badge
-              tone={
-                onboardingStatus?.readiness === "ready"
-                  ? "good"
-                  : onboardingStatus?.readiness === "blocked"
-                    ? "warn"
-                    : "info"
-              }
-            >
-              {onboardingStatus?.progressPercent ?? 0}%
-            </Badge>
-          </div>
-          <div className="cash-grid">
-            <div>
-              <span>Onboarding</span>
-              <strong>
-                {onboardingStatus?.readiness === "ready" ? "completo" : "em implantação"}
-              </strong>
-            </div>
-            <div>
-              <span>Turno</span>
-              <strong>{currentShift?.shift ? "aberto" : "fechado"}</strong>
-            </div>
-            <div>
-              <span>Caixa</span>
-              <strong>{cashSummary?.session?.status === "open" ? "aberto" : "fechado"}</strong>
-            </div>
-            <div>
-              <span>Próxima ação</span>
-              <strong>
-                {onboardingStatus?.readiness !== "ready"
-                  ? "concluir onboarding"
-                  : !currentShift?.shift
-                    ? "abrir turno"
-                    : cashSummary?.session?.status !== "open"
-                      ? "abrir caixa"
-                      : "operar PDV"}
-              </strong>
-            </div>
-          </div>
-          <div className="ticket-actions">
-            {onboardingStatus?.readiness !== "ready" ? (
-              <a className="button secondary compact" href="/app/onboarding">
-                Abrir onboarding
-              </a>
-            ) : null}
-            {!currentShift?.shift || cashSummary?.session?.status !== "open" ? (
-              <a className="button primary compact" href="/app/cash">
-                Turno e caixa
-              </a>
-            ) : (
-              <button
-                className="button primary compact"
-                type="button"
-                onClick={() => setIsPosWorkspace(true)}
-              >
-                Abrir PDV
-              </button>
-            )}
-          </div>
-        </section>
+      {!billingBlocked && !isPosWorkspace ? (
+        <OperationalReadinessPanel
+          onboardingStatus={onboardingStatus}
+          currentShift={currentShift}
+          cashSummary={cashSummary}
+          onOpenPos={() => setIsPosWorkspace(true)}
+        />
       ) : null}
 
-      {isPosWorkspace ? (
+      {!billingBlocked && isPosWorkspace ? (
         <section className="ops-grid">
           <article className="panel pos-panel">
             <div className="panel-title">
               <div>
-                <span className="section-kicker">PDV rapido</span>
-                <h2>{selectedTable ? `Mesa ${selectedTable.code}` : "Balcao"}</h2>
+                <span className="section-kicker">PDV rápido</span>
+                <h2>{selectedTable ? `Mesa ${selectedTable.code}` : "Balcão"}</h2>
               </div>
               <Badge tone={currentOrder ? "good" : "warn"}>{orderStatus}</Badge>
             </div>
@@ -1850,7 +1833,7 @@ export default function AppDashboardPage() {
                 <input
                   value={historyQuery}
                   onChange={(event) => setHistoryQuery(event.target.value)}
-                  placeholder="Buscar historico"
+                  placeholder="Buscar histórico"
                 />
               </label>
               <select
@@ -1861,7 +1844,7 @@ export default function AppDashboardPage() {
                 <option value="qr">QR</option>
                 <option value="kds">KDS</option>
                 <option value="payments">Pagamentos</option>
-                <option value="ops">Operacao</option>
+                <option value="ops">Operação</option>
               </select>
             </div>
             <div className="timeline-list">
@@ -1978,553 +1961,60 @@ export default function AppDashboardPage() {
             </div>
           </article>
 
-          <article className="panel print-panel">
-            <div className="panel-title">
-              <div>
-                <span className="section-kicker">Impressao</span>
-                <h2>Comandas termicas</h2>
-              </div>
-              <Badge tone={readPrintBadgeTone(printJobs)}>{readPrintSummary(printJobs)}</Badge>
-            </div>
-            <div className="integration-list">
-              <div>
-                <span>Impressoras ativas</span>
-                <strong>{printerDevices.filter((device) => device.isActive).length}</strong>
-              </div>
-              <div>
-                <span>Rotas configuradas</span>
-                <strong>{printRoutes.filter((route) => route.isActive).length}</strong>
-              </div>
-              <div>
-                <span>Conector local</span>
-                <strong>
-                  {printerConnectorConfig.hasApiKey
-                    ? `${printerConnectorConfig.online ? "online" : "offline"} ${
-                        printerConnectorConfig.apiKeyLastFour
-                      }`
-                    : "sem token"}
-                </strong>
-              </div>
-              <div>
-                <span>Ultima conexao</span>
-                <strong>{readConnectorLastSeen(printerConnectorConfig.lastSyncAt)}</strong>
-              </div>
-              <div>
-                <span>Versao</span>
-                <strong>{readConnectorHeartbeatValue(printerConnectorConfig, "version")}</strong>
-              </div>
-              <div>
-                <span>Host</span>
-                <strong>{readConnectorHeartbeatValue(printerConnectorConfig, "hostname")}</strong>
-              </div>
-            </div>
-            {generatedPrinterConnectorKey ? (
-              <div className="secret-box">
-                <span>Token exibido uma unica vez</span>
-                <code>{generatedPrinterConnectorKey}</code>
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={handleCopyPrinterConnectorKey}
-                >
-                  <Copy size={16} />
-                </button>
-              </div>
-            ) : null}
-            <div className="hardware-forms">
-              <form
-                className="hardware-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleCreatePrinterDevice();
-                }}
-              >
-                <strong>Nova impressora</strong>
-                <label>
-                  Nome
-                  <input
-                    value={printerForm.name}
-                    onChange={(event) =>
-                      setPrinterForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-                <div className="form-grid-compact">
-                  <label>
-                    Funcao
-                    <select
-                      value={printerForm.role}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({ ...current, role: event.target.value }))
-                      }
-                    >
-                      <option value="kitchen">Cozinha</option>
-                      <option value="bar">Bar</option>
-                      <option value="cashier">Caixa</option>
-                      <option value="conference">Conferencia</option>
-                      <option value="fiscal">Fiscal</option>
-                    </select>
-                  </label>
-                  <label>
-                    Papel
-                    <select
-                      value={printerForm.paperWidth}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({
-                          ...current,
-                          paperWidth: event.target.value,
-                          charactersPerLine: event.target.value === "58" ? "32" : "48",
-                        }))
-                      }
-                    >
-                      <option value="80">80mm</option>
-                      <option value="58">58mm</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="form-grid-compact">
-                  <label>
-                    IP/host
-                    <input
-                      value={printerForm.address}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({ ...current, address: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Porta
-                    <input
-                      inputMode="numeric"
-                      value={printerForm.port}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({ ...current, port: event.target.value }))
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="form-grid-compact">
-                  <label>
-                    Codepage
-                    <select
-                      value={printerForm.codepage}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({
-                          ...current,
-                          codepage: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="cp850">CP850</option>
-                      <option value="cp860">CP860</option>
-                      <option value="cp1252">Windows-1252</option>
-                    </select>
-                  </label>
-                  <label>
-                    Corte
-                    <select
-                      value={printerForm.cutMode}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({ ...current, cutMode: event.target.value }))
-                      }
-                    >
-                      <option value="partial">Parcial</option>
-                      <option value="full">Total</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="check-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={printerForm.boldHeader}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({
-                          ...current,
-                          boldHeader: event.target.checked,
-                        }))
-                      }
-                    />
-                    Cabecalho em negrito
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={printerForm.beep}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({ ...current, beep: event.target.checked }))
-                      }
-                    />
-                    Beep
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={printerForm.openDrawer}
-                      onChange={(event) =>
-                        setPrinterForm((current) => ({
-                          ...current,
-                          openDrawer: event.target.checked,
-                        }))
-                      }
-                    />
-                    Gaveta
-                  </label>
-                </div>
-                <button className="button secondary full" type="submit" disabled={isBusy}>
-                  <Printer size={17} /> Cadastrar impressora
-                </button>
-              </form>
+          <PrintingPanel
+            printerDevices={printerDevices}
+            printRoutes={printRoutes}
+            printJobs={printJobs}
+            kdsStations={kdsStations}
+            printerConnectorConfig={printerConnectorConfig}
+            generatedPrinterConnectorKey={generatedPrinterConnectorKey}
+            printerForm={printerForm}
+            printRouteForm={printRouteForm}
+            isBusy={isBusy}
+            branchId={branchId}
+            hasCurrentOrder={Boolean(currentOrder)}
+            onPrinterFormChange={setPrinterForm}
+            onPrintRouteFormChange={setPrintRouteForm}
+            onCreatePrinterDevice={handleCreatePrinterDevice}
+            onCreatePrintRoute={handleCreatePrintRoute}
+            onCopyConnectorKey={handleCopyPrinterConnectorKey}
+            onConfigureConnector={handleConfigurePrinterConnector}
+            onRevokeConnector={handleRevokePrinterConnector}
+            onPrintBillPreview={handlePrintBillPreview}
+            onExportBillDocument={handleExportBillDocument}
+            onRetryPrint={handleRetryPrint}
+            onReprint={handleReprint}
+            readPrintBadgeTone={readPrintBadgeTone}
+            readPrintSummary={readPrintSummary}
+            readPrintKind={readPrintKind}
+            readPrintTone={readPrintTone}
+            readPrintStatus={readPrintStatus}
+            readConnectorLastSeen={readConnectorLastSeen}
+            readConnectorHeartbeatValue={readConnectorHeartbeatValue}
+          />
 
-              <form
-                className="hardware-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleCreatePrintRoute();
-                }}
-              >
-                <strong>Nova rota</strong>
-                <label>
-                  Nome
-                  <input
-                    value={printRouteForm.name}
-                    onChange={(event) =>
-                      setPrintRouteForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Estacao KDS
-                  <select
-                    value={printRouteForm.stationId}
-                    onChange={(event) =>
-                      setPrintRouteForm((current) => ({
-                        ...current,
-                        stationId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Todas</option>
-                    {kdsStations.map((station) => (
-                      <option value={station.id} key={station.id}>
-                        {station.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Impressora
-                  <select
-                    value={printRouteForm.printerDeviceId}
-                    onChange={(event) =>
-                      setPrintRouteForm((current) => ({
-                        ...current,
-                        printerDeviceId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Selecione</option>
-                    {printerDevices.map((device) => (
-                      <option value={device.id} key={device.id}>
-                        {device.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="form-grid-compact">
-                  <label>
-                    Tipo
-                    <select
-                      value={printRouteForm.targetType}
-                      onChange={(event) =>
-                        setPrintRouteForm((current) => ({
-                          ...current,
-                          targetType: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="kitchen_ticket">Cozinha</option>
-                      <option value="bar_ticket">Bar</option>
-                      <option value="bill_preview">Conferencia</option>
-                      <option value="cash_summary">Caixa</option>
-                      <option value="payment_receipt">Comprovante</option>
-                    </select>
-                  </label>
-                  <label>
-                    Vias
-                    <input
-                      inputMode="numeric"
-                      value={printRouteForm.copies}
-                      onChange={(event) =>
-                        setPrintRouteForm((current) => ({
-                          ...current,
-                          copies: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <button className="button secondary full" type="submit" disabled={isBusy}>
-                  <ClipboardList size={17} /> Cadastrar rota
-                </button>
-              </form>
-            </div>
-            <div className="status-list">
-              {printJobs.slice(0, 3).map((job) => (
-                <div className="status-row rich" key={job.id}>
-                  <div>
-                    <strong>{job.printerName ?? "Sem impressora"}</strong>
-                    <span>
-                      {readPrintKind(job.kind)} - {job.orderId?.slice(0, 8) ?? "sem pedido"}
-                    </span>
-                  </div>
-                  <Badge tone={readPrintTone(job.status)}>{readPrintStatus(job.status)}</Badge>
-                  <small>{job.copies} via(s)</small>
-                </div>
-              ))}
-            </div>
-            <div className="ticket-actions">
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => handleConfigurePrinterConnector(false)}
-                disabled={isBusy || !branchId}
-              >
-                <KeyRound size={17} /> Token
-              </button>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => handleConfigurePrinterConnector(true)}
-                disabled={isBusy || !branchId}
-              >
-                <RotateCw size={17} /> Rotacionar
-              </button>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={handleRevokePrinterConnector}
-                disabled={isBusy || !printerConnectorConfig.hasApiKey}
-              >
-                <ShieldCheck size={17} /> Revogar
-              </button>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={handlePrintBillPreview}
-                disabled={isBusy || !currentOrder}
-              >
-                <ReceiptText size={17} /> Pre-conta
-              </button>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={handleExportBillDocument}
-                disabled={isBusy || !currentOrder}
-              >
-                <FileText size={17} /> Pre-conta PDF
-              </button>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => printJobs[0] && handleRetryPrint(printJobs[0].id)}
-                disabled={
-                  isBusy || !printJobs[0] || !["failed", "canceled"].includes(printJobs[0].status)
-                }
-              >
-                <RotateCw size={17} /> Retry
-              </button>
-              <button
-                className="button primary"
-                type="button"
-                onClick={() => printJobs[0] && handleReprint(printJobs[0].id)}
-                disabled={isBusy || !printJobs[0]}
-              >
-                <Printer size={17} /> Reimprimir
-              </button>
-            </div>
-          </article>
-
-          <article className="panel">
-            <div className="panel-title">
-              <div>
-                <span className="section-kicker">Estoque</span>
-                <h2>Ficha tecnica e saldos</h2>
-              </div>
-              <Badge tone={inventoryAlerts.length > 0 ? "danger" : "warn"}>
-                {inventoryAlerts.length > 0
-                  ? `${inventoryAlerts.length} alerta(s)`
-                  : `${inventorySummary.length} insumos`}
-              </Badge>
-            </div>
-            <div className="hardware-forms">
-              <form
-                className="hardware-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleCreateInventoryItem();
-                }}
-              >
-                <strong>Novo insumo</strong>
-                <div className="form-grid-compact">
-                  <label>
-                    Nome
-                    <input
-                      value={inventoryForm.name}
-                      onChange={(event) =>
-                        setInventoryForm((current) => ({ ...current, name: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Unidade
-                    <input
-                      value={inventoryForm.unit}
-                      onChange={(event) =>
-                        setInventoryForm((current) => ({ ...current, unit: event.target.value }))
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="form-grid-compact">
-                  <label>
-                    Custo medio
-                    <input
-                      inputMode="decimal"
-                      value={inventoryForm.averageCost}
-                      onChange={(event) =>
-                        setInventoryForm((current) => ({
-                          ...current,
-                          averageCost: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Minimo
-                    <input
-                      inputMode="decimal"
-                      value={inventoryForm.minQuantity}
-                      onChange={(event) =>
-                        setInventoryForm((current) => ({
-                          ...current,
-                          minQuantity: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <button className="button secondary full" type="submit" disabled={isBusy}>
-                  <PackageOpen size={17} /> Cadastrar insumo
-                </button>
-              </form>
-              <form
-                className="hardware-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleAdjustStock();
-                }}
-              >
-                <strong>Ajuste auditado</strong>
-                <label>
-                  Insumo
-                  <select
-                    value={stockAdjustmentForm.inventoryItemId}
-                    onChange={(event) =>
-                      setStockAdjustmentForm((current) => ({
-                        ...current,
-                        inventoryItemId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Selecione</option>
-                    {inventorySummary.map((item) => (
-                      <option value={item.id} key={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="form-grid-compact">
-                  <label>
-                    Quantidade
-                    <input
-                      inputMode="decimal"
-                      value={stockAdjustmentForm.quantity}
-                      onChange={(event) =>
-                        setStockAdjustmentForm((current) => ({
-                          ...current,
-                          quantity: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Motivo
-                    <input
-                      value={stockAdjustmentForm.reason}
-                      onChange={(event) =>
-                        setStockAdjustmentForm((current) => ({
-                          ...current,
-                          reason: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <button className="button secondary full" type="submit" disabled={isBusy}>
-                  <ShieldCheck size={17} /> Registrar movimento
-                </button>
-              </form>
-            </div>
-            {inventoryAlerts.length > 0 ? (
-              <div className="inventory-alerts">
-                {inventoryAlerts.slice(0, 3).map((alert) => (
-                  <div className="inventory-row" key={alert.id}>
-                    <div>
-                      <strong>{alert.name}</strong>
-                      <span>
-                        {alert.status === "negative" ? "Saldo negativo" : "Abaixo do minimo"} -
-                        falta {alert.shortage.toFixed(3)} {alert.unit}
-                      </span>
-                    </div>
-                    <Badge tone="danger">
-                      {alert.quantity} / {alert.minQuantity}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            <div className="inventory-list">
-              {(inventorySummary.length > 0 ? inventorySummary : demoInventoryRows()).map(
-                (item) => {
-                  const current = Number(item.quantity);
-                  const minimum = Number(item.minQuantity);
-                  return (
-                    <div className="inventory-row" key={item.id}>
-                      <div>
-                        <strong>{item.name}</strong>
-                        <span>
-                          Minimo {item.minQuantity} {item.unit}
-                        </span>
-                      </div>
-                      <Badge tone={current < minimum ? "danger" : "good"}>
-                        {item.quantity} {item.unit}
-                      </Badge>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          </article>
+          <InventoryPanel
+            inventorySummary={inventorySummary}
+            inventoryAlerts={inventoryAlerts}
+            inventoryForm={inventoryForm}
+            stockAdjustmentForm={stockAdjustmentForm}
+            isBusy={isBusy}
+            demoInventoryRows={demoInventoryRows}
+            onInventoryFormChange={setInventoryForm}
+            onStockAdjustmentFormChange={setStockAdjustmentForm}
+            onCreateInventoryItem={handleCreateInventoryItem}
+            onAdjustStock={handleAdjustStock}
+          />
 
           <article className="panel cash-panel" id="caixa">
             <div className="panel-title">
               <div>
                 <span className="section-kicker">Caixa</span>
-                <h2>Conferencia do turno</h2>
+                <h2>Conferência do turno</h2>
               </div>
-              <Badge tone={cashReadiness.tone}>{cashSummary?.session?.status ?? "demo"}</Badge>
+              <Badge tone={cashReadiness.tone}>
+                {cashSummary?.session?.status ?? "sem sessão"}
+              </Badge>
             </div>
             <div className="cash-readiness-card">
               <div>
@@ -2746,11 +2236,11 @@ export default function AppDashboardPage() {
           <article className="panel integration-panel">
             <div className="panel-title">
               <div>
-                <span className="section-kicker">Integracao</span>
+                <span className="section-kicker">Integração</span>
                 <h2>Dose Club</h2>
               </div>
               <Badge tone={clubConfig?.status === "active" ? "good" : "warn"}>
-                {clubConfig?.status ?? "nao configurado"}
+                {clubConfig?.status ?? "não configurado"}
               </Badge>
             </div>
             <div className="integration-list">
@@ -2759,7 +2249,7 @@ export default function AppDashboardPage() {
                 <strong>
                   {clubConfig?.hasApiKey
                     ? `termina em ${clubConfig.apiKeyLastFour}`
-                    : "nao provisionada"}
+                    : "não provisionada"}
                 </strong>
               </div>
               <div>
@@ -2768,12 +2258,12 @@ export default function AppDashboardPage() {
               </div>
               <div>
                 <span>Scopes</span>
-                <strong>{clubConfig?.scopes?.length ?? 0} permissoes</strong>
+                <strong>{clubConfig?.scopes?.length ?? 0} permissões</strong>
               </div>
             </div>
             {generatedClubKey ? (
               <div className="secret-box">
-                <span>Exibida uma unica vez</span>
+                <span>Exibida uma única vez</span>
                 <code>{generatedClubKey}</code>
                 <button className="icon-button" type="button" onClick={handleCopyClubKey}>
                   <Copy size={16} />
@@ -2804,7 +2294,7 @@ export default function AppDashboardPage() {
             <div className="panel-title">
               <div>
                 <span className="section-kicker">Auditoria</span>
-                <h2>Eventos sensiveis</h2>
+                <h2>Eventos sensíveis</h2>
               </div>
               <Gauge size={20} />
             </div>
@@ -2820,7 +2310,7 @@ export default function AppDashboardPage() {
                 />
               </label>
               <label>
-                Usuario
+                Usuário
                 <select
                   value={auditFilters.userId}
                   onChange={(event) =>

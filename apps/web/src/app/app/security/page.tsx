@@ -34,7 +34,7 @@ export default function SecurityPage() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [mfaCode, setMfaCode] = useState("");
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
-  const [status, setStatus] = useState("Carregando seguranca...");
+  const [status, setStatus] = useState("Carregando segurança...");
   const [isBusy, setIsBusy] = useState(false);
   const [oauthBusy, setOauthBusy] = useState(false);
 
@@ -45,20 +45,20 @@ export default function SecurityPage() {
     {
       label: "MFA do usuario atual",
       done: Boolean(currentUser?.mfaEnabled),
-      detail: currentUser?.mfaEnabled ? "Segundo fator ativo." : "Ativar antes de operacao real.",
+      detail: currentUser?.mfaEnabled ? "Segundo fator ativo." : "Ativar antes de operação real.",
     },
     {
       label: "Troca de senha auditada",
       done: events.some((event) => event.action === "password.changed"),
-      detail: "Validar rotacao inicial da senha administrativa.",
+      detail: "Validar rotação inicial da senha administrativa.",
     },
     {
       label: "Eventos de MFA auditados",
       done: events.some((event) => event.action === "mfa.enabled"),
-      detail: "Confirmar trilha de auditoria antes de liberar perfis sensiveis.",
+      detail: "Confirmar trilha de auditoria antes de liberar perfis sensíveis.",
     },
     {
-      label: "Metodo de acesso federado",
+      label: "Método de acesso federado",
       done: Boolean(googleAccount),
       detail: googleAccount
         ? "Conta Google vinculada com trilha de auditoria."
@@ -98,12 +98,12 @@ export default function SecurityPage() {
 
   useEffect(() => {
     refresh()
-      .then(() => setStatus("Seguranca carregada."))
+      .then(() => setStatus("Segurança carregada."))
       .catch((error) => {
         const message =
           error instanceof ApiError && error.status === 401
-            ? "Acesse o login para configurar seguranca."
-            : "Nao foi possivel carregar seguranca.";
+            ? "Acesse o login para configurar segurança."
+            : "Não foi possivel carregar segurança.";
         setStatus(message);
       });
   }, [refresh]);
@@ -113,7 +113,7 @@ export default function SecurityPage() {
     try {
       await action();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Falha ao executar acao.");
+      setStatus(error instanceof Error ? error.message : "Falha ao executar ação.");
     } finally {
       setIsBusy(false);
     }
@@ -143,7 +143,7 @@ export default function SecurityPage() {
       setRecoveryCodes(response.recoveryCodes);
       setMfaCode("");
       await refresh();
-      setStatus("MFA TOTP ativado. Guarde os codigos de recuperacao agora.");
+      setStatus("MFA TOTP ativado. Guarde os codigos de recuperação agora.");
     });
   }
 
@@ -163,7 +163,7 @@ export default function SecurityPage() {
       setRecoveryCodes(response.recoveryCodes);
       setMfaCode("");
       await refresh();
-      setStatus("Novos codigos de recuperacao gerados. Guarde-os agora.");
+      setStatus("Novos codigos de recuperação gerados. Guarde-os agora.");
     });
   }
 
@@ -187,7 +187,7 @@ export default function SecurityPage() {
           <ArrowLeft size={16} /> Painel
         </a>
         <div>
-          <span className="section-kicker">Seguranca</span>
+          <span className="section-kicker">Segurança</span>
           <h1>Conta e segundo fator</h1>
           <p>{status}</p>
         </div>
@@ -204,8 +204,8 @@ export default function SecurityPage() {
           </div>
           <div className="team-form stacked">
             <div className="team-security-card">
-              <strong>{currentUser?.name ?? "Usuario atual"}</strong>
-              <span>{currentUser?.mfaEnabled ? "MFA ativo" : "MFA ainda nao confirmado"}</span>
+              <strong>{currentUser?.name ?? "Usuário atual"}</strong>
+              <span>{currentUser?.mfaEnabled ? "MFA ativo" : "MFA ainda não confirmado"}</span>
             </div>
             {setup ? (
               <div className="secret-box">
@@ -224,7 +224,7 @@ export default function SecurityPage() {
             ) : null}
             {recoveryCodes.length > 0 ? (
               <div className="secret-box">
-                <strong>Codigos de recuperacao</strong>
+                <strong>Codigos de recuperação</strong>
                 <span>Use cada codigo apenas uma vez caso perca acesso ao autenticador.</span>
                 <div className="recovery-code-grid">
                   {recoveryCodes.map((recoveryCode) => (
@@ -290,7 +290,7 @@ export default function SecurityPage() {
           <div className="team-form stacked">
             <div className="team-security-card">
               <strong>
-                {googleAccount ? "Conta Google vinculada" : "Conta Google ainda nao vinculada"}
+                {googleAccount ? "Conta Google vinculada" : "Conta Google ainda não vinculada"}
               </strong>
               <span>
                 {googleAccount?.email
@@ -391,7 +391,7 @@ export default function SecurityPage() {
             <div className="status-row rich">
               <div>
                 <strong>Score atual</strong>
-                <span>Base minima de seguranca para ambiente real.</span>
+                <span>Base minima de segurança para ambiente real.</span>
               </div>
               <small>{readinessScore}%</small>
             </div>

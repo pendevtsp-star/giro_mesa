@@ -63,8 +63,8 @@ function methodLabel(method: string) {
   const labels: Record<string, string> = {
     pix: "Pix",
     cash: "Dinheiro",
-    credit_card: "Credito",
-    debit_card: "Debito",
+    credit_card: "Crédito",
+    debit_card: "Débito",
   };
   return labels[method] ?? method;
 }
@@ -85,7 +85,7 @@ const reportPeriods = [
   ["week", "7 dias"],
   ["month", "30 dias"],
   ["shift", "Turno atual"],
-  ["custom", "Periodo"],
+  ["custom", "Período"],
 ] as const;
 
 function reportPeriodLabel(period: "today" | "week" | "month" | "shift" | "custom") {
@@ -307,14 +307,14 @@ export default function ReportsPage() {
   const visibleCashSessions = cashSessions;
   const executiveAlerts = [
     cashManagement.divergentSessions > 0
-      ? `${cashManagement.divergentSessions} caixa(s) com diferenca no periodo.`
-      : "Nenhuma divergencia de caixa encontrada nesta janela.",
+      ? `${cashManagement.divergentSessions} caixa(s) com diferença no período.`
+      : "Nenhuma divergência de caixa encontrada nesta janela.",
     fiscalPending.length > 0
-      ? `${fiscalPending.length} documento(s) fiscal(is) exigem acao administrativa.`
-      : "Sem pendencias fiscais relevantes agora.",
+      ? `${fiscalPending.length} documento(s) fiscal(is) exigem ação administrativa.`
+      : "Sem pendências fiscais relevantes agora.",
     lowStock.length > 0
-      ? `${lowStock.length} item(ns) abaixo do minimo podem pressionar a operacao.`
-      : "Sem risco critico de estoque no recorte atual.",
+      ? `${lowStock.length} item(ns) abaixo do mínimo podem pressionar a operação.`
+      : "Sem risco crítico de estoque no recorte atual.",
   ];
   const largestChannelTotal = useMemo(
     () => Math.max(1, ...reportChannels.map((entry) => entry.totalCents)),
@@ -415,20 +415,20 @@ export default function ReportsPage() {
       documentLabel: "Fechamento gerencial",
       title: "Fechamento por caixa",
       subtitle:
-        "Visao executiva do desempenho dos caixas do periodo, com conferencias, divergencias e total recebido por operador.",
+        "Visão executiva do desempenho dos caixas do período, com conferências, divergências e total recebido por operador.",
       metadata: [
-        { label: "Periodo", value: reportPeriodLabel(period) },
+        { label: "Período", value: reportPeriodLabel(period) },
         { label: "Ambiente", value: branding.displayName },
         { label: "Gerado em", value: new Date().toLocaleString("pt-BR") },
       ],
       metrics: [
         { label: "Caixas fechados", value: String(cashManagement.sessionsClosed) },
-        { label: "Divergencia total", value: formatMoney(cashManagement.totalDifferenceCents) },
+        { label: "Divergência total", value: formatMoney(cashManagement.totalDifferenceCents) },
         {
-          label: "Taxa de conferencia",
+          label: "Taxa de conferência",
           value: `${cashManagement.conferenceRatePercent.toFixed(1)}%`,
         },
-        { label: "Caixas com diferenca", value: String(cashManagement.divergentSessions) },
+        { label: "Caixas com diferença", value: String(cashManagement.divergentSessions) },
       ],
       bodyHtml: `
         <section class="section">
@@ -440,16 +440,16 @@ export default function ReportsPage() {
                 <th>Status</th>
                 <th>Esperado</th>
                 <th>Contado</th>
-                <th>Diferenca</th>
+                <th>Diferença</th>
                 <th>Recebido</th>
               </tr>
             </thead>
-            <tbody>${rows || "<tr><td colspan='6'>Sem sessoes no periodo.</td></tr>"}</tbody>
+            <tbody>${rows || "<tr><td colspan='6'>Sem sessões no período.</td></tr>"}</tbody>
           </table>
         </section>
       `,
       footerNote:
-        "Relatorio emitido pelo GiroMesa com identidade visual padronizada do estabelecimento para uso gerencial e auditoria interna.",
+        "Relatório emitido pelo GiroMesa com identidade visual padronizada do estabelecimento para uso gerencial e auditoria interna.",
     });
 
     popup.document.write(html);
@@ -491,22 +491,22 @@ export default function ReportsPage() {
 
     const html = renderBrandedPrintDocument({
       branding,
-      documentLabel: "Relatorio executivo",
-      title: "Panorama financeiro do periodo",
+      documentLabel: "Relatório executivo",
+      title: "Panorama financeiro do período",
       subtitle:
         "Leitura consolidada para dono, gerente e fechamento administrativo com filtros gerenciais aplicados.",
       metadata: [
-        { label: "Periodo", value: reportPeriodLabel(period) },
+        { label: "Período", value: reportPeriodLabel(period) },
         { label: "Caixa", value: cashSessionFilter === "all" ? "Todos" : "Filtrado" },
         {
-          label: "Metodo",
+          label: "Método",
           value: paymentMethodFilter === "all" ? "Todos" : methodLabel(paymentMethodFilter),
         },
       ],
       metrics: [
         { label: "Receita", value: formatMoney(summary.payments.totalCents) },
         {
-          label: "Ticket medio",
+          label: "Ticket médio",
           value: formatMoney(summary.payments.averageTicketCents ?? avgTicket),
         },
         { label: "Margem", value: `${reportDre.operationalMarginPercent.toFixed(1)}%` },
@@ -520,20 +520,20 @@ export default function ReportsPage() {
         <section class="section">
           <h2>Mix de pagamentos</h2>
           <table>
-            <thead><tr><th>Metodo</th><th>Total</th><th>Share</th><th>Pagamentos</th></tr></thead>
+            <thead><tr><th>Método</th><th>Total</th><th>Share</th><th>Pagamentos</th></tr></thead>
             <tbody>${paymentRows || "<tr><td colspan='4'>Sem dados.</td></tr>"}</tbody>
           </table>
         </section>
         <section class="section">
           <h2>Caixas e operadores</h2>
           <table>
-            <thead><tr><th>Operador</th><th>Status</th><th>Recebido</th><th>Diferenca</th></tr></thead>
-            <tbody>${operatorRows || "<tr><td colspan='4'>Sem sessoes no recorte atual.</td></tr>"}</tbody>
+            <thead><tr><th>Operador</th><th>Status</th><th>Recebido</th><th>Diferença</th></tr></thead>
+            <tbody>${operatorRows || "<tr><td colspan='4'>Sem sessões no recorte atual.</td></tr>"}</tbody>
           </table>
         </section>
       `,
       footerNote:
-        "Relatorio gerado pelo GiroMesa para leitura gerencial do estabelecimento. Nao substitui conciliacao contabil oficial.",
+        "Relatório gerado pelo GiroMesa para leitura gerencial do estabelecimento. Não substitui conciliação contábil oficial.",
     });
 
     popup.document.write(html);
@@ -627,7 +627,7 @@ export default function ReportsPage() {
           value={cashSessionFilter}
           onChange={(event) => setCashSessionFilter(event.target.value)}
         >
-          <option value="all">Todos os caixas</option>
+          <option value="all">Todas as conferências</option>
           {cashSessions.map((session) => (
             <option key={session.id} value={session.id}>
               {session.operatorName} - {new Date(session.openedAt).toLocaleDateString("pt-BR")}
@@ -635,7 +635,7 @@ export default function ReportsPage() {
           ))}
         </select>
         <select
-          aria-label="Filtrar por metodo"
+          aria-label="Filtrar por método"
           value={paymentMethodFilter}
           onChange={(event) => setPaymentMethodFilter(event.target.value)}
         >
@@ -647,7 +647,7 @@ export default function ReportsPage() {
           ))}
         </select>
         <select
-          aria-label="Filtrar por conferencia"
+          aria-label="Filtrar por conferência"
           value={varianceFilter}
           onChange={(event) =>
             setVarianceFilter(event.target.value as "all" | "divergent" | "balanced")
@@ -695,12 +695,12 @@ export default function ReportsPage() {
         <span className={`gm-badge ${status === "online" ? "gm-badge-good" : "gm-badge-warn"}`}>
           {status}
         </span>
-        <strong>Fechamento mais confiavel com conciliacao por turno.</strong>
+        <strong>Fechamento mais confiável com conciliação por turno.</strong>
         <span>
           {closeReadiness === "ready"
             ? "Sem pedidos em aberto relevantes para o fechamento."
             : closeReadiness === "attention"
-              ? "Valor em aberto exige conferencia antes de fechar."
+              ? "Valor em aberto exige conferência antes de fechar."
               : "Monitore pedidos em aberto antes de encerrar o turno."}
         </span>
       </section>
@@ -714,7 +714,7 @@ export default function ReportsPage() {
               <small>{summary.payments.count} pagamentos registrados</small>
             </article>
             <article className="report-card">
-              <span>Ticket medio</span>
+              <span>Ticket médio</span>
               <strong>{formatMoney(summary.payments.averageTicketCents ?? avgTicket)}</strong>
               <small>Baseado nos pagamentos do turno</small>
             </article>
@@ -731,7 +731,7 @@ export default function ReportsPage() {
             <article className="report-card">
               <span>Margem estimada</span>
               <strong>{reportDre.operationalMarginPercent.toFixed(1)}%</strong>
-              <small>{formatMoney(serviceMarginCents)} apos CMV inicial</small>
+              <small>{formatMoney(serviceMarginCents)} após CMV inicial</small>
             </article>
             <article className="report-card">
               <span>Comparativo</span>
@@ -740,7 +740,7 @@ export default function ReportsPage() {
                   ? "Base nova"
                   : `${financialCommercial.deltaPercent > 0 ? "+" : ""}${financialCommercial.deltaPercent.toFixed(1)}%`}
               </strong>
-              <small>Versus periodo anterior equivalente</small>
+              <small>Versus período anterior equivalente</small>
             </article>
             <article className="report-card">
               <span>Operador lider</span>
@@ -748,14 +748,14 @@ export default function ReportsPage() {
               <small>
                 {topOperator
                   ? `${formatMoney(topOperator.paymentsTotalCents)} em ${topOperator.cashSessionCount} caixa(s)`
-                  : "Sem sessoes no periodo"}
+                  : "Sem sessões no período"}
               </small>
             </article>
             <article className="report-card">
-              <span>Conferencia de caixa</span>
+              <span>Conferência de caixa</span>
               <strong>{cashManagement.conferenceRatePercent.toFixed(1)}%</strong>
               <small>
-                {cashManagement.balancedSessions}/{cashSessions.length || 0} caixas sem diferenca
+                {cashManagement.balancedSessions}/{cashSessions.length || 0} caixas sem diferença
               </small>
             </article>
           </section>
@@ -766,14 +766,14 @@ export default function ReportsPage() {
                 <AlertTriangle size={19} />
                 <div>
                   <h2>Radar executivo</h2>
-                  <p>Os sinais que merecem decisao gerencial neste fechamento.</p>
+                  <p>Os sinais que merecem decisão gerencial neste fechamento.</p>
                 </div>
               </div>
               <div className="status-list">
                 {executiveAlerts.map((item) => (
                   <div className="status-row rich" key={item}>
                     <div>
-                      <strong>Atencao operacional</strong>
+                      <strong>Atenção operacional</strong>
                       <span>{item}</span>
                     </div>
                   </div>
@@ -785,23 +785,23 @@ export default function ReportsPage() {
               <div className="panel-title">
                 <TrendingUp size={19} />
                 <div>
-                  <h2>Comparativo de periodo</h2>
-                  <p>Leitura rapida do ritmo financeiro contra a janela anterior.</p>
+                  <h2>Comparativo de período</h2>
+                  <p>Leitura rápida do ritmo financeiro contra a janela anterior.</p>
                 </div>
               </div>
               <div className="report-comparison-grid">
                 <div>
-                  <span>Periodo atual</span>
+                  <span>Período atual</span>
                   <strong>{formatMoney(summary.payments.totalCents)}</strong>
                   <small>{summary.payments.count} pagamentos</small>
                 </div>
                 <div>
-                  <span>Periodo anterior</span>
+                  <span>Período anterior</span>
                   <strong>{formatMoney(financialCommercial.previousTotalCents)}</strong>
                   <small>{financialCommercial.previousCount} pagamentos</small>
                 </div>
                 <div>
-                  <span>Variacao</span>
+                  <span>Variação</span>
                   <strong className={financialCommercial.deltaCents < 0 ? "danger-text" : ""}>
                     {formatMoney(financialCommercial.deltaCents)}
                   </strong>
@@ -819,7 +819,7 @@ export default function ReportsPage() {
                 <CreditCard size={19} />
                 <div>
                   <h2>Fechamento gerencial por caixa</h2>
-                  <p>Leitura de divergencia, conferência e volume por sessoes.</p>
+                  <p>Leitura de divergência, conferência e volume por sessões.</p>
                 </div>
               </div>
               <div className="report-comparison-grid">
@@ -829,22 +829,22 @@ export default function ReportsPage() {
                   <small>{cashManagement.sessionsOpen} ainda aberto(s)</small>
                 </div>
                 <div>
-                  <span>Divergencia total</span>
+                  <span>Divergência total</span>
                   <strong
                     className={cashManagement.totalDifferenceCents !== 0 ? "danger-text" : ""}
                   >
                     {formatMoney(cashManagement.totalDifferenceCents)}
                   </strong>
-                  <small>{cashManagement.divergentSessions} caixa(s) com diferenca</small>
+                  <small>{cashManagement.divergentSessions} caixa(s) com diferença</small>
                 </div>
                 <div>
-                  <span>Diferenca media</span>
+                  <span>Diferença média</span>
                   <strong
                     className={cashManagement.averageDifferenceCents !== 0 ? "danger-text" : ""}
                   >
                     {formatMoney(cashManagement.averageDifferenceCents)}
                   </strong>
-                  <small>Por sessao no periodo</small>
+                  <small>Por sessão no período</small>
                 </div>
               </div>
             </article>
@@ -853,8 +853,8 @@ export default function ReportsPage() {
               <div className="panel-title">
                 <CreditCard size={19} />
                 <div>
-                  <h2>Pagamentos por metodo</h2>
-                  <p>Composicao do turno atual.</p>
+                  <h2>Pagamentos por método</h2>
+                  <p>Composição do turno atual.</p>
                 </div>
               </div>
               <div className="payment-bars">
@@ -875,7 +875,7 @@ export default function ReportsPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="muted-copy">Nenhum metodo corresponde ao filtro atual.</p>
+                  <p className="muted-copy">Nenhum método corresponde ao filtro atual.</p>
                 )}
               </div>
             </article>
@@ -906,7 +906,7 @@ export default function ReportsPage() {
                 <FileText size={19} />
                 <div>
                   <h2>Fiscal e estoque</h2>
-                  <p>Pendencias que podem travar rotina administrativa.</p>
+                  <p>Pendências que podem travar rotina administrativa.</p>
                 </div>
               </div>
               <div className="report-alerts">
@@ -918,7 +918,7 @@ export default function ReportsPage() {
                 <div>
                   <Activity size={18} />
                   <strong>{lowStock.length}</strong>
-                  <span>itens abaixo do minimo</span>
+                  <span>itens abaixo do mínimo</span>
                 </div>
               </div>
             </article>
@@ -949,7 +949,7 @@ export default function ReportsPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="muted-copy">Ainda sem dados por canal neste periodo.</p>
+                  <p className="muted-copy">Ainda sem dados por canal neste período.</p>
                 )}
               </div>
             </article>
@@ -959,7 +959,7 @@ export default function ReportsPage() {
                 <Activity size={19} />
                 <div>
                   <h2>Operadores e caixas</h2>
-                  <p>Quem puxou receita e como cada caixa performou no periodo.</p>
+                  <p>Quem puxou receita e como cada caixa performou no período.</p>
                 </div>
               </div>
               <div className="report-operator-grid">
@@ -978,7 +978,7 @@ export default function ReportsPage() {
                       </div>
                     ))
                   ) : (
-                    <p className="muted-copy">Sem operadores consolidados neste periodo.</p>
+                    <p className="muted-copy">Sem operadores consolidados neste período.</p>
                   )}
                 </div>
                 <div className="report-cash-session-list">
@@ -1011,8 +1011,8 @@ export default function ReportsPage() {
               <div className="panel-title">
                 <Activity size={19} />
                 <div>
-                  <h2>Ultimas movimentacoes</h2>
-                  <p>Eventos auditaveis ligados a caixa e operacao.</p>
+                  <h2>Últimas movimentações</h2>
+                  <p>Eventos auditáveis ligados a caixa e operação.</p>
                 </div>
               </div>
               <div className="audit-list">
@@ -1030,7 +1030,7 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <p className="muted-copy">
-                    Sem eventos reais carregados. Entre no demo para ver auditoria.
+                    Sem eventos reais carregados. Entre no painel para ver auditoria.
                   </p>
                 )}
               </div>

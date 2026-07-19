@@ -266,7 +266,7 @@ export default function BrandingSettingsPage() {
             <div className="branding-preview-card">
               <span>Prévia do ambiente</span>
               <strong>Turno jantar</strong>
-              <p>{form.displayName} com identidade propria em painel, QR e comunicacoes.</p>
+              <p>{form.displayName} com identidade propria em painel, QR e comunicações.</p>
               <button className="button primary compact" type="button">
                 Botao principal
               </button>
@@ -279,7 +279,7 @@ export default function BrandingSettingsPage() {
               target="_blank"
               rel="noopener"
             >
-              <ExternalLink size={16} /> Cardapio
+              <ExternalLink size={16} /> Cardápio
             </a>
             <a className="button secondary" href="/q/M03" target="_blank" rel="noopener">
               <ExternalLink size={16} /> QR mesa

@@ -1,5 +1,10 @@
 import { BadgeDollarSign } from "lucide-react";
 import type { ReactNode } from "react";
+import type {
+  CashSessionSummary,
+  CurrentShiftResponse,
+  OnboardingStatus,
+} from "../../lib/giromesa-api";
 import type { DashboardMetric, OperatorProfile } from "./dashboard-types";
 
 function Badge({
@@ -90,6 +95,76 @@ export function ShiftPriorities({
           Ver relatórios
         </a>
       </article>
+    </section>
+  );
+}
+
+export function OperationalReadinessPanel({
+  onboardingStatus,
+  currentShift,
+  cashSummary,
+  onOpenPos,
+}: {
+  onboardingStatus: OnboardingStatus | null;
+  currentShift: CurrentShiftResponse | null;
+  cashSummary: CashSessionSummary | null;
+  onOpenPos: () => void;
+}) {
+  const readiness = onboardingStatus?.readiness ?? "pending";
+  const nextAction =
+    readiness !== "ready"
+      ? "concluir onboarding"
+      : !currentShift?.shift
+        ? "abrir turno"
+        : cashSummary?.session?.status !== "open"
+          ? "abrir caixa"
+          : "operar PDV";
+
+  return (
+    <section className="panel operational-readiness-panel">
+      <div className="panel-title">
+        <div>
+          <span className="section-kicker">Prontidão operacional</span>
+          <h2>{readiness === "ready" ? "Casa pronta para operar" : "Ajustes antes do turno"}</h2>
+        </div>
+        <Badge tone={readiness === "ready" ? "good" : readiness === "blocked" ? "warn" : "info"}>
+          {onboardingStatus?.progressPercent ?? 0}%
+        </Badge>
+      </div>
+      <div className="cash-grid readiness-grid">
+        <div>
+          <span>Onboarding</span>
+          <strong>{readiness === "ready" ? "completo" : "em implantação"}</strong>
+        </div>
+        <div>
+          <span>Turno</span>
+          <strong>{currentShift?.shift ? "aberto" : "fechado"}</strong>
+        </div>
+        <div>
+          <span>Caixa</span>
+          <strong>{cashSummary?.session?.status === "open" ? "aberto" : "fechado"}</strong>
+        </div>
+        <div>
+          <span>Próxima ação</span>
+          <strong>{nextAction}</strong>
+        </div>
+      </div>
+      <div className="ticket-actions">
+        {readiness !== "ready" ? (
+          <a className="button secondary compact" href="/app/onboarding">
+            Abrir onboarding
+          </a>
+        ) : null}
+        {!currentShift?.shift || cashSummary?.session?.status !== "open" ? (
+          <a className="button primary compact" href="/app/cash">
+            Turno e caixa
+          </a>
+        ) : (
+          <button className="button primary compact" type="button" onClick={onOpenPos}>
+            Abrir PDV
+          </button>
+        )}
+      </div>
     </section>
   );
 }

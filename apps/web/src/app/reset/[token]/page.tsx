@@ -27,7 +27,7 @@ export default function ResetPasswordPage() {
       const message =
         resetError instanceof ApiError && resetError.status === 401
           ? "Link invalido, expirado ou ja utilizado."
-          : "Nao foi possivel redefinir a senha agora.";
+          : "Não foi possivel redefinir a senha agora.";
       setError(message);
       setStatus("idle");
     }
@@ -41,7 +41,7 @@ export default function ResetPasswordPage() {
           <span>GiroMesa</span>
         </a>
         <div className="login-copy">
-          <span className="eyebrow">Recuperacao de acesso</span>
+          <span className="eyebrow">Recuperação de acesso</span>
           <h1>Defina uma nova senha.</h1>
           <p>O link de reset e temporario e fica registrado na auditoria do estabelecimento.</p>
         </div>

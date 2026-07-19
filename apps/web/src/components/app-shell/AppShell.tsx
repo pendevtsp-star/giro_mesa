@@ -30,7 +30,7 @@ export function AppShell({
   return (
     <main
       className="app-layout"
-      data-testid="demo-dashboard"
+      data-testid="workspace-dashboard"
       data-theme={branding.themeMode}
       data-accent={branding.accentPreset}
       data-view={isPosWorkspace ? "pos" : "dashboard"}
@@ -63,7 +63,7 @@ export function AppShell({
           </div>
           <div className="toolbar">
             <a className="button secondary" href="/login">
-              <Bell size={18} /> {status === "ready" ? "Sessão ativa" : "Entrar na demo"}
+              <Bell size={18} /> {status === "ready" ? "Sessão ativa" : "Entrar"}
             </a>
             <a className="button primary" href="/app?view=pos" data-testid="open-pos">
               <BadgeDollarSign size={18} /> Abrir PDV
@@ -81,7 +81,7 @@ export function AppShell({
             actions={
               <>
                 <a className="button primary" href="/login">
-                  Entrar na demo
+                  Entrar no painel
                 </a>
                 <a className="button secondary" href="/m/bar-aurora-demo">
                   Ver cardápio QR

@@ -10,7 +10,14 @@ import {
   userRoles,
   users,
 } from "@giromesa/db";
-import { type DocumentBranding, renderBrandedEmail, type TenantContext } from "@giromesa/domain";
+import {
+  billingStatusForTenant,
+  type DocumentBranding,
+  renderBrandedEmail,
+  type TenantContext,
+  TRIAL_DAYS,
+  trialDaysRemaining,
+} from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, like, sql } from "drizzle-orm";
 import { createEmailProvider } from "../../common/email-provider";
@@ -427,7 +434,7 @@ export class PlatformService {
           planId: plan.id,
           provider: "asaas",
           status: "trial",
-          currentPeriodEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+          currentPeriodEndsAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
         })
         .returning();
 
@@ -1034,27 +1041,11 @@ export class PlatformService {
   }
 
   private trialDaysRemaining(currentPeriodEndsAt: Date | null) {
-    if (!currentPeriodEndsAt) {
-      return null;
-    }
-    return Math.max(
-      0,
-      Math.ceil((currentPeriodEndsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)),
-    );
+    return trialDaysRemaining(currentPeriodEndsAt);
   }
 
   private billingStatusFor(status: TenantStatus, currentPeriodEndsAt: Date | null) {
-    if (status === "past_due") {
-      return "payment_required";
-    }
-    if (status === "suspended" || status === "canceled") {
-      return "access_blocked";
-    }
-    if (status === "trial") {
-      const daysRemaining = this.trialDaysRemaining(currentPeriodEndsAt);
-      return daysRemaining !== null && daysRemaining <= 3 ? "trial_ending" : "trial_ok";
-    }
-    return "healthy";
+    return billingStatusForTenant(status, currentPeriodEndsAt);
   }
 
   private onboardingChecklistFor(

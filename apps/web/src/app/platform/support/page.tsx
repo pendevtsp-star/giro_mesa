@@ -41,7 +41,7 @@ const demoTenants: PlatformTenant[] = [
     branchCount: 1,
     userCount: 6,
     health: 92,
-    nextAction: "Acompanhar implantacao",
+    nextAction: "Acompanhar implantação",
     trialDaysRemaining: 2,
     billingStatus: "trial_ending",
     onboardingChecklist: [],
@@ -105,7 +105,7 @@ function alertLabel(
 
 function billingStatusLabel(status: PlatformTenant["billingStatus"]) {
   const labels: Record<PlatformTenant["billingStatus"], string> = {
-    healthy: "cobranca saudavel",
+    healthy: "cobrança saudavel",
     trial_ok: "trial ativo",
     trial_ending: "trial acabando",
     payment_required: "pagamento pendente",
@@ -261,7 +261,7 @@ export default function PlatformSupportPage() {
       documentLabel: "Backoffice SaaS",
       title: "Fila executiva de suporte",
       subtitle:
-        "Leitura consolidada de tenants em acompanhamento, com prioridade, SLA, alerta comercial e proximo follow-up.",
+        "Leitura consolidada de tenants em acompanhamento, com prioridade, SLA, alerta comercial e próximo follow-up.",
       metadata: [
         { label: "Itens filtrados", value: String(filtered.length) },
         { label: "Alertas", value: String(counters.alerts) },
@@ -287,7 +287,7 @@ export default function PlatformSupportPage() {
                 <th>Prioridade</th>
                 <th>SLA</th>
                 <th>Alerta</th>
-                <th>Responsavel</th>
+                <th>Responsável</th>
                 <th>Proximo follow-up</th>
               </tr>
             </thead>
@@ -296,7 +296,7 @@ export default function PlatformSupportPage() {
         </section>
       `,
       footerNote:
-        "Exportacao executiva da fila de suporte do GiroMesa para leitura gerencial, operacao comercial e acompanhamento de risco.",
+        "Exportação executiva da fila de suporte do GiroMesa para leitura gerencial, operação comercial e acompanhamento de risco.",
     });
 
     popup.document.write(html);
@@ -327,7 +327,7 @@ export default function PlatformSupportPage() {
           <div>
             <span className="section-kicker">Backoffice SaaS - {status}</span>
             <h1>Fila de suporte</h1>
-            <p>Atendimento comercial e operacional com foco em SLA, cobranca e conversao.</p>
+            <p>Atendimento comercial e operacional com foco em SLA, cobrança e conversao.</p>
           </div>
           <div className="toolbar">
             <button className="button secondary" type="button" onClick={handleExportSupportCsv}>
@@ -343,7 +343,7 @@ export default function PlatformSupportPage() {
           <article className="metric">
             <span>Na fila</span>
             <strong>{counters.queued}</strong>
-            <small>Aguardando primeira acao</small>
+            <small>Aguardando primeira ação</small>
           </article>
           <article className="metric">
             <span>Em andamento</span>
@@ -358,7 +358,7 @@ export default function PlatformSupportPage() {
           <article className="metric">
             <span>Alertas</span>
             <strong>{counters.alerts}</strong>
-            <small>Trial acabando ou cobranca</small>
+            <small>Trial acabando ou cobrança</small>
           </article>
         </section>
 
@@ -395,7 +395,7 @@ export default function PlatformSupportPage() {
               <LifeBuoy size={20} />
               <div>
                 <h2>Itens da fila</h2>
-                <p>Ordene pela urgencia certa, nao pelo grito mais alto.</p>
+                <p>Ordene pela urgência certa, não pelo grito mais alto.</p>
               </div>
             </div>
             <div className="platform-support-list">
@@ -465,7 +465,7 @@ export default function PlatformSupportPage() {
               <div className="status-row rich">
                 <div>
                   <strong>Alta prioridade</strong>
-                  <span>Conta sensivel, risco ou implantacao critica.</span>
+                  <span>Conta sensivel, risco ou implantação critica.</span>
                 </div>
                 <AlertTriangle size={16} />
               </div>

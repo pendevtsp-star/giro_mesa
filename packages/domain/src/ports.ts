@@ -5,6 +5,12 @@ export type TenantContext = {
   requestId: string;
   permissions: string[];
   mfaRequired?: boolean;
+  billing?: {
+    status: "healthy" | "trial_ok" | "trial_ending" | "payment_required" | "access_blocked";
+    tenantStatus?: "trial" | "active" | "past_due" | "suspended" | "canceled" | null;
+    currentPeriodEndsAt?: string | null;
+    trialDaysRemaining?: number | null;
+  };
 };
 
 export type ProviderResult<T> = {

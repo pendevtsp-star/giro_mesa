@@ -40,6 +40,29 @@ function createController() {
       maxAgeSeconds: 28800,
       redirectTo: "http://localhost:3002/platform",
     })),
+    startTrial: vi.fn(async () => ({
+      token: "trial-token",
+      maxAgeSeconds: 28800,
+      user: {
+        id: "owner-1",
+        tenantId: "tenant-1",
+        email: "dono@novo-bar.com",
+        name: "Dono Novo",
+        isPlatformUser: false,
+        permissions: ["tenant:manage"],
+      },
+      tenant: {
+        id: "tenant-1",
+        name: "Novo Bar",
+        slug: "novo-bar",
+        status: "trial",
+      },
+      subscription: {
+        status: "trial",
+        trialDays: 7,
+        currentPeriodEndsAt: new Date("2026-07-26T12:00:00.000Z"),
+      },
+    })),
     listOauthAccounts: vi.fn(async () => []),
     unlinkGoogleAccount: vi.fn(async () => ({ unlinked: true })),
   };
@@ -138,5 +161,51 @@ describe("AuthController Google OAuth", () => {
 
     expect(authService.unlinkGoogleAccount).toHaveBeenCalled();
     expect(result.unlinked).toBe(true);
+  });
+
+  it("starts a public seven-day trial and sets a session cookie", async () => {
+    const { controller, authService } = createController();
+    const reply = createReply();
+
+    const result = await controller.startTrial(
+      {
+        establishmentName: "Novo Bar",
+        ownerName: "Dono Novo",
+        ownerEmail: "dono@novo-bar.com",
+        password: "Teste@12345",
+        phone: "11999999999",
+      },
+      {},
+      reply as never,
+    );
+
+    expect(authService.startTrial).toHaveBeenCalledWith(
+      expect.objectContaining({
+        establishmentName: "Novo Bar",
+        ownerEmail: "dono@novo-bar.com",
+      }),
+      {},
+    );
+    expect(result.subscription.trialDays).toBe(7);
+    expect(reply.headers.some(([key]) => key === "set-cookie")).toBe(true);
+  });
+
+  it("rejects tenant overrides on public trial signup", async () => {
+    const { controller } = createController();
+    const reply = createReply();
+
+    await expect(
+      controller.startTrial(
+        {
+          establishmentName: "Novo Bar",
+          ownerName: "Dono Novo",
+          ownerEmail: "dono@novo-bar.com",
+          password: "Teste@12345",
+          tenant_id: "malicious",
+        },
+        {},
+        reply as never,
+      ),
+    ).rejects.toThrow();
   });
 });

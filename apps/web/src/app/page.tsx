@@ -71,8 +71,8 @@ export default function HomePage() {
           <a className="button ghost" href="/login">
             Entrar
           </a>
-          <a className="button primary" href="/app">
-            Conhecer a demo <ArrowRight size={16} />
+          <a className="button primary" href="/teste-gratis">
+            Começar teste grátis <ArrowRight size={16} />
           </a>
         </div>
       </header>
@@ -88,8 +88,8 @@ export default function HomePage() {
             inteligente, prática e confiável para a equipe e para quem toma decisões.
           </p>
           <div className="sales-hero-actions">
-            <a className="button primary" href="/app">
-              Entrar na demo guiada <ArrowRight size={18} />
+            <a className="button primary" href="/teste-gratis">
+              Testar grátis por 7 dias <ArrowRight size={18} />
             </a>
             <a className="button secondary" href="/m/bar-aurora-demo">
               Explorar cardápio QR
@@ -162,8 +162,8 @@ export default function HomePage() {
               <Icon size={24} />
               <h3>{title}</h3>
               <p>{body}</p>
-              <a href="/app">
-                Ver na demo <ArrowRight size={15} />
+              <a href="/teste-gratis">
+                Ativar no meu ambiente <ArrowRight size={15} />
               </a>
             </article>
           ))}
@@ -200,7 +200,7 @@ export default function HomePage() {
       <section className="sales-implementation">
         <div className="sales-section-heading">
           <span className="section-kicker">Implantação sem improviso</span>
-          <h2>Uma casa preparada para rodar, não apenas para assistir uma demonstração.</h2>
+          <h2>Uma casa preparada para rodar com processo, equipe e acompanhamento.</h2>
           <p>
             O GiroMesa organiza a entrada do cliente por etapas operacionais que a equipe consegue
             validar.
@@ -231,12 +231,12 @@ export default function HomePage() {
           <span className="section-kicker">Próximo passo</span>
           <h2>Veja o GiroMesa no ritmo de um estabelecimento.</h2>
           <p>
-            A demo usa um cenário operacional completo. Entre, explore e veja o que a sua equipe vai
-            operar.
+            Comece sem cartão e valide a rotina com mesas, pedidos, caixa, relatórios e equipe em um
+            ambiente próprio.
           </p>
         </div>
-        <a className="button primary" href="/app">
-          Acessar demo <ArrowRight size={18} />
+        <a className="button primary" href="/teste-gratis">
+          Começar teste grátis <ArrowRight size={18} />
         </a>
       </section>
 

@@ -19,6 +19,7 @@ const statusLabel: Record<string, string> = {
 export default function KdsPage() {
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [station, setStation] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
   const [message, setMessage] = useState("Carregando produção...");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [stations, setStations] = useState<Array<{ id: string; name: string }>>([]);
@@ -40,8 +41,11 @@ export default function KdsPage() {
     () =>
       tickets
         .filter((ticket) => station === "all" || ticket.stationName === station)
-        .filter((ticket) => ticket.status !== "served"),
-    [station, tickets],
+        .filter((ticket) =>
+          statusFilter === "active" ? ticket.status !== "served" : ticket.status === statusFilter,
+        )
+        .sort((a, b) => Number(b.priority ?? 0) - Number(a.priority ?? 0)),
+    [station, statusFilter, tickets],
   );
   async function advance(ticket: KdsTicket) {
     const next =
@@ -91,6 +95,16 @@ export default function KdsPage() {
             ))}
           </select>
         </label>
+        <label>
+          Status
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="active">Ativos</option>
+            <option value="sent">Novos</option>
+            <option value="preparing">Em preparo</option>
+            <option value="ready">Prontos</option>
+            <option value="served">Entregues</option>
+          </select>
+        </label>
       </section>
       <section className="kds-board">
         {visible.map((ticket) => (
@@ -101,16 +115,15 @@ export default function KdsPage() {
                 {ticket.orderChannel === "table" ? "Mesa" : "Pedido"} {ticket.orderId.slice(0, 5)}
               </strong>
               <small>
-                <Clock3 size={14} />{" "}
-                {new Date(ticket.createdAt).toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                <Clock3 size={14} /> {readAge(ticket.createdAt)}
               </small>
             </div>
             <p>{String(ticket.payload.summary ?? "Itens do pedido")}</p>
             <footer>
-              <span>{statusLabel[ticket.status] ?? ticket.status}</span>
+              <span>
+                {statusLabel[ticket.status] ?? ticket.status}
+                {ticket.priority ? ` · prioridade ${ticket.priority}` : ""}
+              </span>
               <button
                 className="button primary compact"
                 type="button"
@@ -131,4 +144,12 @@ export default function KdsPage() {
       </section>
     </main>
   );
+}
+
+function readAge(createdAt: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 60000));
+  if (minutes <= 0) {
+    return "agora";
+  }
+  return `${minutes} min`;
 }

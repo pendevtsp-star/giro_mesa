@@ -26,7 +26,7 @@ export function readStatusTitle(status: AppStatus) {
     return "Carregando sessão";
   }
   if (status === "unauthenticated") {
-    return "Demo aguardando acesso";
+    return "Aguardando acesso";
   }
   return "Operação temporariamente indisponível";
 }

@@ -157,9 +157,7 @@ export function PosTicketPreview({
           <div className="ticket-line" key={item.id}>
             <strong>{readQuantity(item.quantity)}</strong>
             <span>{item.nameSnapshot}</span>
-            <small>
-              {ticketItems.length > 0 ? "Lançado no pedido real" : "Item ilustrativo demo"}
-            </small>
+            <small>{ticketItems.length > 0 ? "Lançado no pedido real" : "Item ilustrativo"}</small>
           </div>
         ))}
       </div>
