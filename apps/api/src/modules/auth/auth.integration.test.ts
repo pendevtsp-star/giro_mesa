@@ -183,4 +183,73 @@ runIntegration("AuthService RBAC operations", () => {
 
     await cleanupTenant(db, result.tenant.id);
   });
+
+  it("records subscription activation requests as tenant audit events", async () => {
+    const timestamp = Date.now();
+    const result = await service.startTrial(
+      {
+        establishmentName: `Activation Bistro ${timestamp}`,
+        ownerName: "Activation Owner",
+        ownerEmail: `activation-owner-${timestamp}@example.com`,
+        password: "Teste@12345",
+        phone: "11999999999",
+        branchName: "Matriz",
+        planCode: "professional",
+      },
+      { "user-agent": "vitest" },
+    );
+
+    const activation = await service.requestSubscriptionActivation(
+      {
+        tenantId: result.tenant.id,
+        userId: result.user.id,
+        requestId: "activation-test",
+        permissions: ["tenant:manage"],
+      },
+      {
+        planCode: "premium",
+        paymentMethod: "pix",
+        billingEmail: "financeiro@example.com",
+        billingDocument: "12.345.678/0001-90",
+        notes: "Ativar antes do fim do teste.\nSem quebrar a operação.",
+      },
+      { "user-agent": "vitest", "x-forwarded-for": "127.0.0.1" },
+    );
+
+    expect(activation).toMatchObject({
+      status: "queued",
+      planCode: "premium",
+      nextStep: "commercial_follow_up",
+    });
+
+    const [audit] = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.tenantId, result.tenant.id))
+      .orderBy(auditLogs.createdAt)
+      .limit(1);
+    const auditRows = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.tenantId, result.tenant.id));
+
+    expect(auditRows.map((row) => row.action)).toContain(
+      "billing.subscription_activation_requested",
+    );
+    const activationAudit = auditRows.find(
+      (row) => row.action === "billing.subscription_activation_requested",
+    );
+    expect(activationAudit?.entityId).toBe(result.tenant.id);
+    expect(activationAudit?.metadata).toMatchObject({
+      planCode: "premium",
+      paymentMethod: "pix",
+      billingEmail: "financeiro@example.com",
+      hasBillingDocument: true,
+      checkoutReady: false,
+    });
+    expect(String(activationAudit?.metadata.notes)).not.toContain("\n");
+    expect(audit?.tenantId).toBe(result.tenant.id);
+
+    await cleanupTenant(db, result.tenant.id);
+  });
 });

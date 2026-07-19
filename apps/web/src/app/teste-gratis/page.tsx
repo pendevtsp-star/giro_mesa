@@ -19,6 +19,24 @@ const activationSteps = [
   "A assinatura só é ativada se você decidir continuar.",
 ] as const;
 
+const trialPlans = {
+  starter: {
+    name: "Starter",
+    price: "R$ 149/mês após o teste",
+    detail: "1 unidade",
+  },
+  professional: {
+    name: "Professional",
+    price: "R$ 299/mês após o teste",
+    detail: "Operação completa",
+  },
+  premium: {
+    name: "Premium",
+    price: "R$ 499/mês após o teste",
+    detail: "Multiunidade",
+  },
+} as const;
+
 export default function TrialSignupPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -187,20 +205,9 @@ export default function TrialSignupPage() {
                 className={form.planCode === plan ? "selected" : ""}
                 onClick={() => updateForm("planCode", plan)}
               >
-                <strong>
-                  {plan === "starter"
-                    ? "Starter"
-                    : plan === "professional"
-                      ? "Professional"
-                      : "Premium"}
-                </strong>
-                <span>
-                  {plan === "starter"
-                    ? "1 unidade"
-                    : plan === "professional"
-                      ? "Operação completa"
-                      : "Multiunidade"}
-                </span>
+                <strong>{trialPlans[plan].name}</strong>
+                <span>{trialPlans[plan].detail}</span>
+                <small>{trialPlans[plan].price}</small>
               </button>
             ))}
           </fieldset>

@@ -13,6 +13,7 @@ import {
   ApiError,
   getSession,
   getTenantBranding,
+  requestSubscriptionActivation,
   type TenantBranding,
   type TenantSession,
 } from "../../../lib/giromesa-api";
@@ -23,6 +24,27 @@ const fallbackBranding: TenantBranding = {
   themeMode: "light",
   accentPreset: "emerald",
 };
+
+const planOptions = [
+  {
+    code: "starter",
+    name: "Starter",
+    price: "R$ 149/mês",
+    detail: "1 unidade, equipe enxuta e operação inicial.",
+  },
+  {
+    code: "professional",
+    name: "Professional",
+    price: "R$ 299/mês",
+    detail: "PDV, salão, KDS, estoque, relatórios e rotina completa.",
+  },
+  {
+    code: "premium",
+    name: "Premium",
+    price: "R$ 499/mês",
+    detail: "Multiunidade, operação avançada e acompanhamento prioritário.",
+  },
+] as const;
 
 function billingStatusLabel(status?: TenantSession["billing"]) {
   if (!status) {
@@ -53,6 +75,15 @@ export default function BillingPage() {
   const [session, setSession] = useState<TenantSession | null>(null);
   const [branding, setBranding] = useState<TenantBranding>(fallbackBranding);
   const [status, setStatus] = useState("Carregando assinatura...");
+  const [activationForm, setActivationForm] = useState({
+    planCode: "professional" as "starter" | "professional" | "premium",
+    paymentMethod: "pix" as "pix" | "credit_card" | "boleto" | "commercial_contact",
+    billingDocument: "",
+    billingEmail: "",
+    notes: "",
+  });
+  const [activationStatus, setActivationStatus] = useState<"idle" | "loading" | "success">("idle");
+  const [activationMessage, setActivationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([getSession(), getTenantBranding()])
@@ -88,6 +119,33 @@ export default function BillingPage() {
       session?.tenantId ?? "não carregado"
     }\nStatus atual: ${billingStatusLabel(billing)}`,
   );
+
+  async function handleActivationSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setActivationStatus("loading");
+    setActivationMessage(null);
+
+    try {
+      const result = await requestSubscriptionActivation({
+        planCode: activationForm.planCode,
+        paymentMethod: activationForm.paymentMethod,
+        ...(activationForm.billingDocument
+          ? { billingDocument: activationForm.billingDocument }
+          : {}),
+        ...(activationForm.billingEmail ? { billingEmail: activationForm.billingEmail } : {}),
+        ...(activationForm.notes ? { notes: activationForm.notes } : {}),
+      });
+      setActivationStatus("success");
+      setActivationMessage(result.message);
+    } catch (error) {
+      const message =
+        error instanceof ApiError && error.status === 401
+          ? "Entre novamente para solicitar a ativação."
+          : "Não foi possível registrar a ativação agora. Tente novamente em instantes.";
+      setActivationStatus("idle");
+      setActivationMessage(message);
+    }
+  }
 
   return (
     <main
@@ -159,12 +217,102 @@ export default function BillingPage() {
               <span>Ativar Pix, cartão ou boleto para continuidade do serviço.</span>
             </div>
           </div>
-          <a
-            className="button primary"
-            href={`mailto:${commercialEmail}?subject=${activationSubject}&body=${activationBody}`}
-          >
-            Solicitar ativação <ExternalLink size={18} />
-          </a>
+          <form className="billing-activation-form" onSubmit={handleActivationSubmit}>
+            <fieldset>
+              <legend>Escolha o plano de continuidade</legend>
+              <div className="billing-plan-options">
+                {planOptions.map((plan) => (
+                  <button
+                    className={activationForm.planCode === plan.code ? "selected" : ""}
+                    key={plan.code}
+                    type="button"
+                    onClick={() =>
+                      setActivationForm((current) => ({ ...current, planCode: plan.code }))
+                    }
+                  >
+                    <strong>{plan.name}</strong>
+                    <span>{plan.price}</span>
+                    <small>{plan.detail}</small>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <div className="billing-form-grid">
+              <label>
+                Método preferido
+                <select
+                  value={activationForm.paymentMethod}
+                  onChange={(event) =>
+                    setActivationForm((current) => ({
+                      ...current,
+                      paymentMethod: event.target.value as typeof activationForm.paymentMethod,
+                    }))
+                  }
+                >
+                  <option value="pix">Pix</option>
+                  <option value="credit_card">Cartão</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="commercial_contact">Falar com comercial</option>
+                </select>
+              </label>
+              <label>
+                CNPJ/CPF financeiro
+                <input
+                  value={activationForm.billingDocument}
+                  onChange={(event) =>
+                    setActivationForm((current) => ({
+                      ...current,
+                      billingDocument: event.target.value,
+                    }))
+                  }
+                  placeholder="Opcional nesta fase"
+                />
+              </label>
+              <label>
+                E-mail financeiro
+                <input
+                  type="email"
+                  value={activationForm.billingEmail}
+                  onChange={(event) =>
+                    setActivationForm((current) => ({
+                      ...current,
+                      billingEmail: event.target.value,
+                    }))
+                  }
+                  placeholder="financeiro@empresa.com.br"
+                />
+              </label>
+              <label>
+                Observação
+                <input
+                  value={activationForm.notes}
+                  onChange={(event) =>
+                    setActivationForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  placeholder="Ex.: ativar antes do fim do teste"
+                />
+              </label>
+            </div>
+            {activationMessage ? (
+              <p className={activationStatus === "success" ? "form-success" : "form-alert"}>
+                {activationMessage}
+              </p>
+            ) : null}
+            <button
+              className="button primary"
+              type="submit"
+              disabled={activationStatus === "loading"}
+            >
+              {activationStatus === "loading" ? "Registrando ativação..." : "Solicitar ativação"}
+              <ExternalLink size={18} />
+            </button>
+            <a
+              className="button ghost"
+              href={`mailto:${commercialEmail}?subject=${activationSubject}&body=${activationBody}`}
+            >
+              Preferir contato manual
+            </a>
+          </form>
         </article>
 
         <article className="panel billing-note">

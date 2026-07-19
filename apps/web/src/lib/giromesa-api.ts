@@ -1015,6 +1015,27 @@ export async function startTrial(input: {
   });
 }
 
+export async function requestSubscriptionActivation(input: {
+  planCode: "starter" | "professional" | "premium";
+  paymentMethod?: "pix" | "credit_card" | "boleto" | "commercial_contact";
+  billingDocument?: string;
+  billingEmail?: string;
+  notes?: string;
+}) {
+  return apiRequest<{
+    status: "queued";
+    planCode: "starter" | "professional" | "premium";
+    planName: string;
+    priceCents: number;
+    checkoutReady: boolean;
+    nextStep: "asaas_checkout_pending" | "commercial_follow_up";
+    message: string;
+  }>("/api/v1/auth/subscription/activation", {
+    method: "POST",
+    body: input,
+  });
+}
+
 async function csrfTokenForRequest(path: string, method: string) {
   if (
     method === "GET" ||

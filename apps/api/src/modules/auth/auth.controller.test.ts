@@ -65,6 +65,13 @@ function createController() {
     })),
     listOauthAccounts: vi.fn(async () => []),
     unlinkGoogleAccount: vi.fn(async () => ({ unlinked: true })),
+    requestSubscriptionActivation: vi.fn(async () => ({
+      status: "queued",
+      planCode: "professional",
+      nextStep: "commercial_follow_up",
+      checkoutReady: false,
+      message: "Solicitação recebida.",
+    })),
   };
 
   return {
@@ -205,6 +212,47 @@ describe("AuthController Google OAuth", () => {
         },
         {},
         reply as never,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("requests subscription activation for the authenticated tenant", async () => {
+    const { controller, authService } = createController();
+
+    const result = await controller.requestSubscriptionActivation(
+      {
+        planCode: "premium",
+        paymentMethod: "pix",
+        billingDocument: "12.345.678/0001-90",
+        billingEmail: "financeiro@novo-bar.com",
+        notes: "Quero ativar antes do fim do teste.",
+      },
+      { "user-agent": "vitest" },
+    );
+
+    expect(authService.resolveContext).toHaveBeenCalledWith({ "user-agent": "vitest" });
+    expect(authService.requestSubscriptionActivation).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-1", userId: "user-1" }),
+      expect.objectContaining({
+        planCode: "premium",
+        paymentMethod: "pix",
+        billingEmail: "financeiro@novo-bar.com",
+      }),
+      { "user-agent": "vitest" },
+    );
+    expect(result.nextStep).toBe("commercial_follow_up");
+  });
+
+  it("rejects tenant overrides on subscription activation", async () => {
+    const { controller } = createController();
+
+    await expect(
+      controller.requestSubscriptionActivation(
+        {
+          planCode: "professional",
+          tenant_id: "malicious",
+        },
+        {},
       ),
     ).rejects.toThrow();
   });

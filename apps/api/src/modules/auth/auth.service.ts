@@ -149,6 +149,14 @@ export type GoogleMfaCompleteInput = {
   code: string;
 };
 
+export type SubscriptionActivationInput = {
+  planCode: "starter" | "professional" | "premium";
+  paymentMethod: "pix" | "credit_card" | "boleto" | "commercial_contact";
+  billingDocument?: string | undefined;
+  billingEmail?: string | undefined;
+  notes?: string | undefined;
+};
+
 @Injectable()
 export class AuthService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -761,6 +769,72 @@ export class AuthService {
         trialDays: TRIAL_DAYS,
         currentPeriodEndsAt: created.subscription.currentPeriodEndsAt,
       },
+    };
+  }
+
+  async requestSubscriptionActivation(
+    context: TenantContext,
+    input: SubscriptionActivationInput,
+    headers: HeaderRecord,
+  ) {
+    const plan = planCatalog[input.planCode];
+    if (!plan) {
+      throw new BadRequestException("Invalid plan");
+    }
+
+    const [tenant] = await this.database.db
+      .select({
+        id: tenants.id,
+        name: tenants.name,
+        status: tenants.status,
+      })
+      .from(tenants)
+      .where(eq(tenants.id, context.tenantId))
+      .limit(1);
+
+    if (!tenant) {
+      throw new NotFoundException("Tenant not found");
+    }
+
+    const checkoutReady = Boolean(process.env.ASAAS_API_KEY);
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: context.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "billing.subscription_activation_requested",
+      entityType: "tenant",
+      entityId: context.tenantId,
+      ipAddress: Array.isArray(headers["x-forwarded-for"])
+        ? headers["x-forwarded-for"][0]
+        : headers["x-forwarded-for"],
+      userAgent: Array.isArray(headers["user-agent"])
+        ? headers["user-agent"][0]
+        : headers["user-agent"],
+      metadata: {
+        tenantName: tenant.name,
+        tenantStatus: tenant.status,
+        planCode: input.planCode,
+        planName: plan.name,
+        priceCents: plan.priceCents,
+        paymentMethod: input.paymentMethod,
+        billingEmail: input.billingEmail ?? null,
+        hasBillingDocument: Boolean(input.billingDocument),
+        notes: sanitizeCommercialNote(input.notes),
+        checkoutReady,
+      },
+    });
+
+    return {
+      status: "queued" as const,
+      planCode: input.planCode,
+      planName: plan.name,
+      priceCents: plan.priceCents,
+      checkoutReady,
+      nextStep: checkoutReady ? "asaas_checkout_pending" : "commercial_follow_up",
+      message: checkoutReady
+        ? "Solicitação recebida. O checkout seguro será preparado para este tenant."
+        : "Solicitação recebida. Vamos confirmar os dados comerciais e liberar a continuidade.",
     };
   }
 
@@ -1939,6 +2013,18 @@ function assertStrongPassword(password: string) {
   if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
     throw new BadRequestException(PASSWORD_POLICY_MESSAGE);
   }
+}
+
+function sanitizeCommercialNote(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+  return (
+    value
+      .replace(/[\r\n\t]+/g, " ")
+      .trim()
+      .slice(0, 500) || null
+  );
 }
 
 function slugify(value: string) {

@@ -335,6 +335,11 @@ test.describe("GiroMesa commercial and operational flows", () => {
 
     await page.goto("/app/billing", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: /Assinatura GiroMesa/i })).toBeVisible();
+    await page.getByRole("button", { name: /Premium/i }).click();
+    await page.getByLabel("E-mail financeiro").fill("financeiro@bar-aurora-demo.local");
+    await page.getByLabel("Observação").fill("Ativação E2E antes do fim do teste.");
+    await page.getByRole("button", { name: /^Solicitar ativação/i }).click();
+    await expect(page.getByText(/Solicitação recebida/i)).toBeVisible();
 
     await page.goto("/app/security", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Conta e segundo fator" })).toBeVisible();

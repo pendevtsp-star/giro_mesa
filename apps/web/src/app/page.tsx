@@ -53,6 +53,30 @@ const modules = [
   ],
 ] as const;
 
+const plans = [
+  {
+    name: "Starter",
+    price: "R$ 149/mês",
+    body: "Para casas começando a organizar PDV, mesas e caixa.",
+    bullets: ["1 unidade", "Até 5 usuários", "Cardápio, PDV e caixa"],
+    featured: false,
+  },
+  {
+    name: "Professional",
+    price: "R$ 299/mês",
+    body: "Para operação completa com salão, KDS, estoque e relatórios.",
+    bullets: ["2 unidades", "Até 15 usuários", "KDS, estoque e relatórios"],
+    featured: true,
+  },
+  {
+    name: "Premium",
+    price: "R$ 499/mês",
+    body: "Para multiunidade e operação com acompanhamento prioritário.",
+    bullets: ["5 unidades", "Até 40 usuários", "Gestão avançada e suporte"],
+    featured: false,
+  },
+] as const;
+
 export default function HomePage() {
   return (
     <main className="sales-page">
@@ -195,6 +219,36 @@ export default function HomePage() {
             <dd>Cancelamentos e ajustes ficam rastreáveis.</dd>
           </div>
         </dl>
+      </section>
+
+      <section className="sales-plans" id="planos">
+        <div className="sales-section-heading">
+          <span className="section-kicker">Teste grátis sem cartão</span>
+          <h2>Planos claros antes da ativação.</h2>
+          <p>
+            O cliente testa por 7 dias e só escolhe a continuidade quando a operação fizer sentido.
+          </p>
+        </div>
+        <div className="sales-plan-grid">
+          {plans.map((plan) => (
+            <article className={plan.featured ? "featured" : ""} key={plan.name}>
+              {plan.featured ? <span className="gm-badge gm-badge-good">Mais indicado</span> : null}
+              <h3>{plan.name}</h3>
+              <strong>{plan.price}</strong>
+              <p>{plan.body}</p>
+              <ul>
+                {plan.bullets.map((bullet) => (
+                  <li key={bullet}>
+                    <Check size={15} /> {bullet}
+                  </li>
+                ))}
+              </ul>
+              <a className={plan.featured ? "button primary" : "button ghost"} href="/teste-gratis">
+                Testar este plano
+              </a>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="sales-implementation">

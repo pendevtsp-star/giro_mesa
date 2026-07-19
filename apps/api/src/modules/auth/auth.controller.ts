@@ -74,6 +74,14 @@ const mfaConfigureSchema = z.object({
   enabled: z.boolean(),
 });
 
+const subscriptionActivationSchema = z.object({
+  planCode: z.enum(["starter", "professional", "premium"]),
+  paymentMethod: z.enum(["pix", "credit_card", "boleto", "commercial_contact"]).default("pix"),
+  billingDocument: z.string().max(32).optional(),
+  billingEmail: z.email().optional(),
+  notes: z.string().max(500).optional(),
+});
+
 const mfaVerifySchema = z.object({
   code: z.string().min(6).max(12),
 });
@@ -266,6 +274,16 @@ export class AuthController {
     return {
       csrfToken: createCsrfToken(token, loadEnv().SESSION_SECRET),
     };
+  }
+
+  @Post("subscription/activation")
+  async requestSubscriptionActivation(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const input = subscriptionActivationSchema.parse(body);
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "tenant:manage");
+
+    return this.authService.requestSubscriptionActivation(context, input, headers);
   }
 
   @Post("logout")
