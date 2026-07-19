@@ -200,6 +200,27 @@ runIntegration("ReportsService filters", () => {
     expect(report.cashSessions[1]?.paymentsTotalCents).toBe(9000);
   });
 
+  it("rejects branch filters outside the current user scope", async () => {
+    await expect(
+      reportsService.financialReport(
+        {
+          tenantId: fixture.tenant.id,
+          branchId: fixture.branch.id,
+          userId: fixture.operator.id,
+          requestId: "reports-it-branch-scope",
+          permissions: ["reports:read"],
+        },
+        {
+          branchId: "99999999-9999-4999-8999-999999999999",
+          period: "custom",
+          variance: "all",
+          dateFrom: new Date("2026-07-07T00:00:00.000Z"),
+          dateTo: new Date("2026-07-08T00:00:00.000Z"),
+        },
+      ),
+    ).rejects.toThrow("branchId is outside the current user scope");
+  });
+
   it("filters report by divergent variance only", async () => {
     const report = await reportsService.financialReport(
       {

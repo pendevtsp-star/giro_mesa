@@ -509,8 +509,7 @@ export class PlatformService {
               tokenReturnedOnce: invitationToken,
             }
           : null,
-        temporaryPassword,
-        nextStep: "send_invitation_or_configure_asaas_checkout",
+        nextStep: "owner_invitation_sent_configure_asaas_checkout",
       };
     });
   }

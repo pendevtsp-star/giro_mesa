@@ -21,7 +21,7 @@ async function checkHttp(url) {
 async function checkApi(url) {
   try {
     const context = await request.newContext({ baseURL: url });
-    const response = await context.get("/health", { timeout: 2500 });
+    const response = await context.get("/health/ready", { timeout: 2500 });
     const body = await response.text();
     await context.dispose();
     return { ok: response.ok(), status: response.status(), body };

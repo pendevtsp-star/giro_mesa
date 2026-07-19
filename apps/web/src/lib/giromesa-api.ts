@@ -598,7 +598,6 @@ export type PlatformTenantCreateResponse = {
     delivery: string;
     tokenReturnedOnce: string;
   } | null;
-  temporaryPassword: string;
   nextStep: string;
 };
 
@@ -1463,13 +1462,14 @@ export function addOrderItem(
   orderId: string,
   productId: string,
   modifiers: Array<{ optionId: string }> = [],
+  notes = "Lançado pelo painel GiroMesa",
 ) {
   return apiRequest<OrderItemResponse>(`/api/v1/pos/orders/${orderId}/items`, {
     method: "POST",
     body: {
       productId,
       quantity: 1,
-      notes: "Lancado pelo painel demo",
+      notes,
       modifiers,
     },
   });

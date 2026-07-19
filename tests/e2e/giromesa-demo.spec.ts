@@ -375,10 +375,19 @@ test.describe("GiroMesa commercial and operational flows", () => {
     const createdPayload = (await created.json()) as {
       tenant: { id: string; name: string };
       owner: { email: string };
-      temporaryPassword: string;
       invitation: { acceptUrl: string; tokenReturnedOnce: string; delivery: string } | null;
     };
     expect(createdPayload.invitation?.tokenReturnedOnce).toBeTruthy();
+
+    const ownerPassword = `TenantPass${suffix}!`;
+    const accepted = await platformApi.post("/api/v1/auth/invitations/accept", {
+      data: {
+        token: createdPayload.invitation?.tokenReturnedOnce,
+        name: "E2E Owner",
+        password: ownerPassword,
+      },
+    });
+    expect(accepted.ok()).toBe(true);
 
     const suspended = await platformApi.patch(
       `/api/v1/platform/tenants/${createdPayload.tenant.id}/status`,
@@ -387,7 +396,7 @@ test.describe("GiroMesa commercial and operational flows", () => {
     expect(suspended.ok()).toBe(true);
 
     const blockedLogin = await platformApi.post("/api/v1/auth/login", {
-      data: { email: createdPayload.owner.email, password: createdPayload.temporaryPassword },
+      data: { email: createdPayload.owner.email, password: ownerPassword },
     });
     expect(blockedLogin.status()).toBe(401);
 

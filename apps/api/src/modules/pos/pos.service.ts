@@ -642,6 +642,9 @@ export class PosService {
         if (!table) {
           throw new NotFoundException("Table not found");
         }
+        if (table.branchId !== input.branchId) {
+          throw new BadRequestException("Table does not belong to the selected branch");
+        }
 
         await tx
           .update(diningTables)

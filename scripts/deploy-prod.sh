@@ -2,7 +2,7 @@
 set -eu
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
-API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:3333/health}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:3333/health/ready}"
 WEB_HEALTH_URL="${WEB_HEALTH_URL:-http://127.0.0.1:3000}"
 CURL_BIN="${CURL_BIN:-curl}"
 

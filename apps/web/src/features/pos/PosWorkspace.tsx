@@ -1,4 +1,15 @@
-import { Banknote, ChefHat, FileText, Printer, ReceiptText, X } from "lucide-react";
+import {
+  Banknote,
+  ChefHat,
+  FileText,
+  MessageSquareText,
+  Percent,
+  Phone,
+  Printer,
+  ReceiptText,
+  UserRound,
+  X,
+} from "lucide-react";
 import { demoTicketLines, paymentMethodOptions } from "../../lib/fixtures/app-dashboard-demo";
 import { readQuantity } from "../../lib/formatters/app-dashboard";
 import type {
@@ -35,7 +46,7 @@ export function PosProductGrid({
 }: PosProductGridProps) {
   return (
     <div className="product-grid">
-      {products.slice(0, 4).map((product, index) => (
+      {products.slice(0, 8).map((product, index) => (
         <button
           className={product.id === selectedProductId ? "product-tile selected" : "product-tile"}
           type="button"
@@ -61,6 +72,9 @@ type PosTicketPreviewProps = {
   customers: Customer[];
   selectedCustomerId: string;
   customerHistory: CustomerOrderHistory[];
+  customerDiscountPercent: string;
+  customerPreferences: string;
+  orderNotes: string;
   ticketItems: OrderItemResponse[];
   orderTotalCents: number;
   paidOrderTotalCents: number;
@@ -75,6 +89,10 @@ type PosTicketPreviewProps = {
   currentOrder: OpenOrderResponse | null;
   hasLastPaymentReceipt: boolean;
   onCustomerSearchChange: (value: string) => void;
+  onCustomerSelect: (customer: Customer) => void;
+  onCustomerDiscountPercentChange: (value: string) => void;
+  onCustomerPreferencesChange: (value: string) => void;
+  onOrderNotesChange: (value: string) => void;
   onPaymentMethodChange: (method: PaymentMethod) => void;
   onPaymentAmountModeChange: (mode: PaymentAmountMode) => void;
   onCustomPaymentAmountChange: (value: string) => void;
@@ -90,6 +108,9 @@ export function PosTicketPreview({
   customers,
   selectedCustomerId,
   customerHistory,
+  customerDiscountPercent,
+  customerPreferences,
+  orderNotes,
   ticketItems,
   orderTotalCents,
   paidOrderTotalCents,
@@ -104,6 +125,10 @@ export function PosTicketPreview({
   currentOrder,
   hasLastPaymentReceipt,
   onCustomerSearchChange,
+  onCustomerSelect,
+  onCustomerDiscountPercentChange,
+  onCustomerPreferencesChange,
+  onOrderNotesChange,
   onPaymentMethodChange,
   onPaymentAmountModeChange,
   onCustomPaymentAmountChange,
@@ -113,6 +138,18 @@ export function PosTicketPreview({
   onPrintPaymentReceipt,
 }: PosTicketPreviewProps) {
   const visibleLines = ticketItems.length > 0 ? ticketItems : demoTicketLines();
+  const normalizedCustomerSearch = customerSearch.trim().toLowerCase();
+  const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
+  const visibleCustomers = customers
+    .filter((customer) => {
+      if (!normalizedCustomerSearch) {
+        return true;
+      }
+      return `${customer.name} ${customer.phone ?? ""} ${customer.email ?? ""}`
+        .toLowerCase()
+        .includes(normalizedCustomerSearch);
+    })
+    .slice(0, 5);
 
   return (
     <div className="ticket-preview">
@@ -120,23 +157,45 @@ export function PosTicketPreview({
         <ReceiptText size={18} />
         <strong>Comanda #{table?.code ?? "Balcão"}</strong>
       </div>
-      <label className="pos-customer-select">
-        Cliente
-        <input
-          list="pos-customers"
-          value={customerSearch}
-          onChange={(event) => onCustomerSearchChange(event.target.value)}
-          placeholder="Buscar nome ou telefone"
-        />
-        <datalist id="pos-customers">
-          {customers.map((customer) => (
-            <option
-              key={customer.id}
-              value={`${customer.name} · ${customer.phone ?? customer.email ?? ""}`}
+      <section className="pos-customer-box">
+        <label className="pos-customer-select">
+          Cliente
+          <span>
+            <UserRound size={16} />
+            <input
+              value={customerSearch}
+              onChange={(event) => onCustomerSearchChange(event.target.value)}
+              placeholder="Buscar por nome, telefone ou e-mail"
             />
-          ))}
-        </datalist>
-      </label>
+          </span>
+        </label>
+        {selectedCustomer ? (
+          <div className="pos-selected-customer">
+            <strong>{selectedCustomer.name}</strong>
+            <span>{selectedCustomer.phone ?? selectedCustomer.email ?? "Cliente sem contato"}</span>
+          </div>
+        ) : null}
+        {customerSearch || visibleCustomers.length ? (
+          <div className="pos-customer-results">
+            {visibleCustomers.map((customer) => (
+              <button
+                className={customer.id === selectedCustomerId ? "selected" : ""}
+                key={customer.id}
+                type="button"
+                onClick={() => onCustomerSelect(customer)}
+              >
+                <strong>{customer.name}</strong>
+                <span>
+                  <Phone size={13} /> {customer.phone ?? customer.email ?? "sem contato"}
+                </span>
+              </button>
+            ))}
+            {!visibleCustomers.length ? (
+              <p className="muted-copy">Nenhum cliente encontrado para a busca atual.</p>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
       {selectedCustomerId ? (
         <div className="pos-customer-history">
           <strong>
@@ -152,6 +211,33 @@ export function PosTicketPreview({
           ))}
         </div>
       ) : null}
+      <div className="pos-order-context">
+        <label>
+          <Percent size={15} /> Desconto autorizado
+          <input
+            inputMode="decimal"
+            value={customerDiscountPercent}
+            onChange={(event) => onCustomerDiscountPercentChange(event.target.value)}
+            placeholder="0"
+          />
+        </label>
+        <label>
+          <UserRound size={15} /> Preferências
+          <input
+            value={customerPreferences}
+            onChange={(event) => onCustomerPreferencesChange(event.target.value)}
+            placeholder="Ex.: sem gelo, mesa externa"
+          />
+        </label>
+        <label>
+          <MessageSquareText size={15} /> Observação da comanda
+          <input
+            value={orderNotes}
+            onChange={(event) => onOrderNotesChange(event.target.value)}
+            placeholder="Observação enviada junto ao próximo item"
+          />
+        </label>
+      </div>
       <div className="ticket-lines">
         {visibleLines.map((item) => (
           <div className="ticket-line" key={item.id}>

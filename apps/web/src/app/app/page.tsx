@@ -239,6 +239,9 @@ export default function AppDashboardPage() {
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerHistory, setCustomerHistory] = useState<CustomerOrderHistory[]>([]);
+  const [customerDiscountPercent, setCustomerDiscountPercent] = useState("");
+  const [customerPreferences, setCustomerPreferences] = useState("");
+  const [orderNotes, setOrderNotes] = useState("");
   const [modifierProduct, setModifierProduct] = useState<Product | null>(null);
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
@@ -300,8 +303,6 @@ export default function AppDashboardPage() {
 
   const branchId = session?.branchId;
   const selectedTable = tables.find((table) => table.id === selectedTableId) ?? tables[0];
-  const selectedProduct =
-    products.find((product) => product.id === selectedProductId) ?? products[0] ?? demoProducts[0];
   const selectedQrOrder =
     qrPendingOrders.find((order) => order.id === selectedQrOrderId) ?? qrPendingOrders[0] ?? null;
   const selectedRole = roles.find((role) => role.id === selectedRoleId) ?? roles[0] ?? null;
@@ -764,7 +765,12 @@ export default function AppDashboardPage() {
   }, [lastQrOrderCount, qrPendingOrders, status]);
 
   useEffect(() => {
-    setIsPosWorkspace(new URLSearchParams(window.location.search).get("view") === "pos");
+    const params = new URLSearchParams(window.location.search);
+    setIsPosWorkspace(params.get("view") === "pos");
+    const tableId = params.get("table");
+    if (tableId) {
+      setSelectedTableId(tableId);
+    }
   }, []);
 
   useEffect(() => {
@@ -1088,10 +1094,20 @@ export default function AppDashboardPage() {
 
   async function addProductToOrder(product: Product, modifierIds: string[] = []) {
     const order = await ensureOrder();
+    const notes = [
+      orderNotes.trim(),
+      customerPreferences.trim() ? `Preferências: ${customerPreferences.trim()}` : "",
+      customerDiscountPercent.trim()
+        ? `Desconto autorizado no atendimento: ${customerDiscountPercent.trim()}%`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
     const item = await addOrderItem(
       order.id,
       product.id,
       modifierIds.map((optionId) => ({ optionId })),
+      notes || undefined,
     );
     setTicketItems((current) => [...current, item]);
     setOrderStatus("opened");
@@ -1116,11 +1132,7 @@ export default function AppDashboardPage() {
     void runAction(async () => {
       const order = currentOrder ?? (await ensureOrder());
       if (ticketItems.length === 0) {
-        if (!selectedProduct) {
-          throw new Error("Nenhum produto disponível para enviar ao KDS.");
-        }
-        const item = await addOrderItem(order.id, selectedProduct.id);
-        setTicketItems((current) => [...current, item]);
+        throw new Error("Adicione ao menos um item antes de enviar a comanda para produção.");
       }
 
       const sent = await sendOrderToKitchen(order.id);
@@ -1629,15 +1641,8 @@ export default function AppDashboardPage() {
     setActionStatus("Token do conector copiado para a área de transferência.");
   }
 
-  function handlePosCustomerSearchChange(value: string) {
-    setCustomerSearch(value);
-    const customer = posCustomers.find(
-      (item) => `${item.name} · ${item.phone ?? item.email ?? ""}` === value,
-    );
-    if (!customer) {
-      return;
-    }
-
+  function handlePosCustomerSelect(customer: Customer) {
+    setCustomerSearch(customer.name);
     setSelectedCustomerId(customer.id);
     void getCustomerHistory(customer.id)
       .then(setCustomerHistory)
@@ -1647,6 +1652,14 @@ export default function AppDashboardPage() {
         await assignOrderCustomer(currentOrder.id, customer.id);
         setActionStatus("Cliente vinculado à comanda.");
       });
+    }
+  }
+
+  function handlePosCustomerSearchChange(value: string) {
+    setCustomerSearch(value);
+    if (!value.trim()) {
+      setSelectedCustomerId("");
+      setCustomerHistory([]);
     }
   }
 
@@ -1678,7 +1691,10 @@ export default function AppDashboardPage() {
             </p>
           </div>
           <div className="billing-gate-actions">
-            <a className="button primary" href="mailto:comercial@giromesa.com.br">
+            <a className="button primary" href="/app/billing">
+              Ver assinatura
+            </a>
+            <a className="button secondary" href="mailto:comercial@giromesa.com.br">
               Falar com comercial
             </a>
             <a className="button secondary" href="/login">
@@ -1745,6 +1761,9 @@ export default function AppDashboardPage() {
                 customers={posCustomers}
                 selectedCustomerId={selectedCustomerId}
                 customerHistory={customerHistory}
+                customerDiscountPercent={customerDiscountPercent}
+                customerPreferences={customerPreferences}
+                orderNotes={orderNotes}
                 ticketItems={ticketItems}
                 orderTotalCents={orderTotalCents}
                 paidOrderTotalCents={paidOrderTotalCents}
@@ -1759,6 +1778,10 @@ export default function AppDashboardPage() {
                 currentOrder={currentOrder}
                 hasLastPaymentReceipt={Boolean(lastPaymentReceipt)}
                 onCustomerSearchChange={handlePosCustomerSearchChange}
+                onCustomerSelect={handlePosCustomerSelect}
+                onCustomerDiscountPercentChange={setCustomerDiscountPercent}
+                onCustomerPreferencesChange={setCustomerPreferences}
+                onOrderNotesChange={setOrderNotes}
                 onPaymentMethodChange={setPaymentMethod}
                 onPaymentAmountModeChange={setPaymentAmountMode}
                 onCustomPaymentAmountChange={setCustomPaymentAmount}

@@ -176,6 +176,16 @@ export default function BillingPage() {
             teste grátis com ambiente fictício.
           </p>
         </article>
+
+        <article className="panel billing-note">
+          <span className="section-kicker">Continuidade</span>
+          <h2>Sem cartão no teste. Sem surpresa depois.</h2>
+          <p>
+            Durante os 7 dias, o estabelecimento valida salão, PDV, KDS, QR, caixa e relatórios. Ao
+            final, o acesso operacional fica preservado e a ativação comercial libera a continuidade
+            com cobrança recorrente.
+          </p>
+        </article>
       </section>
     </main>
   );

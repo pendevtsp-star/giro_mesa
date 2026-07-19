@@ -133,6 +133,16 @@ function slugify(value: string) {
     .slice(0, 60);
 }
 
+function csvCell(value: unknown) {
+  const text = String(value ?? "");
+  const guarded = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${guarded.replace(/"/g, '""')}"`;
+}
+
+function buildCsv(rows: unknown[][]) {
+  return `\uFEFF${rows.map((row) => row.map(csvCell).join(";")).join("\n")}`;
+}
+
 export default function PlatformPage() {
   const [tenants, setTenants] = useState(initialTenants);
   const [communications, setCommunications] = useState<PlatformCommunicationEvent[]>([]);
@@ -357,7 +367,7 @@ export default function PlatformPage() {
         setTenants(rows.map(mapApiTenant));
         setSummary(await getPlatformSummary());
         setPlatformNote(
-          `${created.tenant.name} criado. Senha temporaria: ${created.temporaryPassword}`,
+          `${created.tenant.name} criado. Convite seguro enviado para ${created.owner.email}; a senha será definida pelo responsável no aceite.`,
         );
         return;
       } catch (error) {
@@ -437,7 +447,7 @@ export default function PlatformPage() {
         tenant.nextAction,
       ]),
     ];
-    const csv = rows.map((row) => row.join(";")).join("\n");
+    const csv = buildCsv(rows);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

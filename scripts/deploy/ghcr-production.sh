@@ -158,7 +158,7 @@ wait_container_healthy api
 wait_container_healthy web
 
 compose ps
-wait_http http://127.0.0.1:3333/health
+wait_http http://127.0.0.1:3333/health/ready
 wait_http http://127.0.0.1:3002/
 
 trap - ERR

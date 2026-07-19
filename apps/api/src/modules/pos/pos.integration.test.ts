@@ -65,7 +65,11 @@ async function createPosFixture(db: Db, name: string) {
     .insert(branches)
     .values({ tenantId: tenant.id, name: "Matriz" })
     .returning();
-  if (!branch) {
+  const [otherBranch] = await db
+    .insert(branches)
+    .values({ tenantId: tenant.id, name: "Filial Sul" })
+    .returning();
+  if (!branch || !otherBranch) {
     throw new Error("Failed to create POS test branch");
   }
 
@@ -185,7 +189,7 @@ async function createPosFixture(db: Db, name: string) {
     type: "kitchen",
   });
 
-  return { tenant, branch, user, table, order, burgerItem, brownieItem };
+  return { tenant, branch, otherBranch, user, table, order, burgerItem, brownieItem };
 }
 
 runIntegration("POS QR conference behavior", () => {
@@ -206,6 +210,25 @@ runIntegration("POS QR conference behavior", () => {
       await cleanupTenant(db, fixture.tenant.id);
     }
     await pool.end();
+  });
+
+  it("rejects opening an order with a table from another branch", async () => {
+    const context = {
+      tenantId: fixture.tenant.id,
+      branchId: fixture.otherBranch.id,
+      userId: fixture.user.id,
+      requestId: "pos-branch-table-scope",
+      permissions: ["pos:operate"],
+    };
+
+    await expect(
+      posService.openOrder(context, {
+        branchId: fixture.otherBranch.id,
+        tableId: fixture.table.id,
+        channel: "table",
+        peopleCount: 2,
+      }),
+    ).rejects.toThrow("Table does not belong to the selected branch");
   });
 
   it("cancels a single QR item, keeps the order pending and sends only active items to KDS", async () => {

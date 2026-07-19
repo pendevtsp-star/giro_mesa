@@ -12,6 +12,13 @@ const setupItems = [
   "Ativação de cobrança apenas para continuar após o teste",
 ] as const;
 
+const activationSteps = [
+  "Criamos seu ambiente isolado e a filial inicial.",
+  "Você entra direto no assistente de implantação.",
+  "Seu time testa PDV, salão, QR, KDS e fechamento.",
+  "A assinatura só é ativada se você decidir continuar.",
+] as const;
+
 export default function TrialSignupPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -220,6 +227,14 @@ export default function TrialSignupPage() {
           <a className="button ghost full" href="/login">
             Já tenho conta
           </a>
+          <aside className="trial-next-steps">
+            <strong>Depois do cadastro</strong>
+            {activationSteps.map((step, index) => (
+              <span key={step}>
+                {index + 1}. {step}
+              </span>
+            ))}
+          </aside>
         </form>
       </section>
     </main>

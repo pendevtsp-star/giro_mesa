@@ -1,6 +1,17 @@
 "use client";
 
-import { ArrowLeft, RotateCw, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  BadgeDollarSign,
+  ClipboardCheck,
+  Palette,
+  Printer,
+  QrCode,
+  RotateCw,
+  ShieldCheck,
+  Store,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
 import { OnboardingBlockers } from "../../../features/onboarding/OnboardingBlockers";
 import { OnboardingProgressCard } from "../../../features/onboarding/OnboardingProgressCard";
@@ -40,6 +51,51 @@ export default function OnboardingPage() {
       {onboarding.data ? (
         <>
           <OnboardingProgressCard status={onboarding.data} />
+          <section className="onboarding-welcome panel">
+            <div>
+              <span className="section-kicker">Primeiros 30 minutos</span>
+              <h2>Configure o mínimo para testar com uma mesa real.</h2>
+              <p>
+                O GiroMesa fica mais convincente quando o restaurante vê o próprio cardápio, uma
+                mesa aberta, um pedido na cozinha e o fechamento do caixa no mesmo roteiro.
+              </p>
+            </div>
+            <div className="onboarding-quick-grid">
+              <a href="/app/settings/branding">
+                <Palette size={18} />
+                <strong>Identidade</strong>
+                <span>Logo, tema e cor do estabelecimento.</span>
+              </a>
+              <a href="/app/salon">
+                <Store size={18} />
+                <strong>Salão</strong>
+                <span>Mesas, setores e mapa visual.</span>
+              </a>
+              <a href="/app?view=pos">
+                <ClipboardCheck size={18} />
+                <strong>Pedido teste</strong>
+                <span>Abrir comanda, enviar KDS e receber.</span>
+              </a>
+              <a href="/app/printing">
+                <Printer size={18} />
+                <strong>Impressão</strong>
+                <span>Rotas, conector e comprovantes.</span>
+              </a>
+              <a href="/app/team">
+                <Users size={18} />
+                <strong>Equipe</strong>
+                <span>Permissões para dono, caixa e garçom.</span>
+              </a>
+              <a href="/app/billing">
+                <BadgeDollarSign size={18} />
+                <strong>Assinatura</strong>
+                <span>Trial, ativação e continuidade.</span>
+              </a>
+            </div>
+            <a className="button primary compact" href="/q/M03">
+              <QrCode size={16} /> Ver QR de exemplo
+            </a>
+          </section>
           <section className="onboarding-progress" aria-label="Progresso da implantação">
             <span style={{ width: `${onboarding.data.progressPercent}%` }} />
           </section>

@@ -8,7 +8,7 @@ import {
   users,
 } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
@@ -32,6 +32,7 @@ export class ReportsService {
     if (!branchId) {
       throw new BadRequestException("branchId is required");
     }
+    this.assertBranchScope(context, branchId);
 
     let { from, to } = this.periodWindow(input);
     if (input.cashSessionId) {
@@ -412,6 +413,7 @@ export class ReportsService {
     if (!branchId) {
       throw new BadRequestException("branchId is required");
     }
+    this.assertBranchScope(context, branchId);
     const { from, to } = this.periodWindow(input);
     const rows = await this.database.db
       .select({
@@ -482,5 +484,11 @@ export class ReportsService {
     const previousTo = new Date(from.getTime() - 1);
     const previousFrom = new Date(previousTo.getTime() - durationMs);
     return { from: previousFrom, to: previousTo };
+  }
+
+  private assertBranchScope(context: TenantContext, branchId: string) {
+    if (context.branchId && context.branchId !== branchId) {
+      throw new ForbiddenException("branchId is outside the current user scope");
+    }
   }
 }
