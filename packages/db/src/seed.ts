@@ -1019,10 +1019,8 @@ async function upsertDemo() {
     tenant: tenant.slug,
     branch: branch.name,
     adminEmail: "admin@bar-aurora-demo.local",
-    adminPassword: "Demo@12345",
     platformEmail: "owner@giromesa.local",
-    platformPassword: "Platform@12345",
-    testUsers: seededUsers,
+    testUserCount: seededUsers.length,
     alreadyHadRole: Boolean(existingRole),
   };
 }
@@ -1069,8 +1067,14 @@ async function upsertPlatformOwner() {
 }
 
 Promise.all([upsertDemo(), upsertPlatformOwner()])
-  .then((result) => {
-    console.log("Seed complete", result);
+  .then(([demo, platformOwner]) => {
+    console.log("Seed complete", {
+      demo,
+      platformOwner: {
+        id: platformOwner?.id,
+        email: "owner@giromesa.local",
+      },
+    });
   })
   .finally(async () => {
     await pool.end();

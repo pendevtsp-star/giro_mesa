@@ -127,6 +127,13 @@
       "when": 1785266508721,
       "tag": "0017_backfill_canonical_role_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785273300000,
+      "tag": "0018_complete_dining_table_schema",
+      "breakpoints": true
     }
   ]
 }
