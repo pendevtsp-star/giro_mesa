@@ -230,6 +230,7 @@ jobs:
           {
             printf 'export GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
             printf 'export GHCR_TOKEN_GIRO_MESA=%q\n' "$GHCR_TOKEN_GIRO_MESA"
+            printf 'export QR_SIGNING_SECRET=%q\n' "$QR_SIGNING_SECRET"
             printf 'export API_IMAGE_SHA=%q\n' "$API_IMAGE_SHA"
             printf 'export WEB_IMAGE_SHA=%q\n' "$WEB_IMAGE_SHA"
             printf 'export WORKER_IMAGE_SHA=%q\n' "$WORKER_IMAGE_SHA"
@@ -241,6 +242,7 @@ jobs:
         env:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN_GIRO_MESA: ${{ secrets.GHCR_TOKEN_GIRO_MESA }}
+          QR_SIGNING_SECRET: ${{ secrets.QR_SIGNING_SECRET }}
           API_IMAGE_SHA: ${{ needs.publish-images.outputs.api_image }}
           WEB_IMAGE_SHA: ${{ needs.publish-images.outputs.web_image }}
           WORKER_IMAGE_SHA: ${{ needs.publish-images.outputs.worker_image }}

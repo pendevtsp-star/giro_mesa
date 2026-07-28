@@ -18,6 +18,7 @@ fi
 
 GHCR_USERNAME="${GHCR_USERNAME:?set GHCR_USERNAME}"
 GHCR_TOKEN_GIRO_MESA="${GHCR_TOKEN_GIRO_MESA:?set GHCR_TOKEN_GIRO_MESA}"
+QR_SIGNING_SECRET="${QR_SIGNING_SECRET:?set QR_SIGNING_SECRET}"
 API_IMAGE_SHA="${API_IMAGE_SHA:-${GIROMESA_API_IMAGE:-}}"
 WEB_IMAGE_SHA="${WEB_IMAGE_SHA:-${GIROMESA_WEB_IMAGE:-}}"
 WORKER_IMAGE_SHA="${WORKER_IMAGE_SHA:-${GIROMESA_WORKER_IMAGE:-}}"
@@ -30,6 +31,20 @@ DEPLOY_SHA="${DEPLOY_SHA:-${GIROMESA_DEPLOY_SHA:-manual}}"
 export GIROMESA_API_IMAGE="${API_IMAGE_SHA}"
 export GIROMESA_WEB_IMAGE="${WEB_IMAGE_SHA}"
 export GIROMESA_WORKER_IMAGE="${WORKER_IMAGE_SHA}"
+
+upsert_env_secret() {
+  local key="$1"
+  local value="$2"
+  local temp_file
+
+  temp_file="$(mktemp "${APP_DIR}/.env.XXXXXX")"
+  chmod 600 "${temp_file}"
+  awk -v key="${key}" 'index($0, key "=") != 1 { print }' .env > "${temp_file}"
+  printf '%s=%s\n' "${key}" "${value}" >> "${temp_file}"
+  mv "${temp_file}" .env
+}
+
+upsert_env_secret "QR_SIGNING_SECRET" "${QR_SIGNING_SECRET}"
 
 cat > .deploy-images.env <<DEPLOY_IMAGES
 GIROMESA_API_IMAGE=${GIROMESA_API_IMAGE}
