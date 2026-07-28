@@ -5,6 +5,7 @@ ENV PATH="$PNPM_HOME:$PATH"
 
 WORKDIR /app
 
+RUN apk add --no-cache python3 make g++ libusb-dev linux-headers eudev-dev
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 
 COPY . .
