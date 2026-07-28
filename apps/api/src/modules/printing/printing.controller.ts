@@ -94,6 +94,18 @@ export class PrintingController {
     return this.printingService.createDevice(context, createDeviceSchema.parse(body));
   }
 
+  @Post("devices/:deviceId/test")
+  async testDevice(@Headers() headers: HeaderRecord, @Param("deviceId") deviceId: string) {
+    const context = await this.context(headers, "hardware:manage");
+    return this.printingService.testDevice(context, deviceId);
+  }
+
+  @Get("devices/usb-discover")
+  async discoverUsbDevices(@Headers() headers: HeaderRecord) {
+    await this.context(headers, "hardware:manage");
+    return { data: await this.printingService.discoverUsbDevices() };
+  }
+
   @Get("routes")
   async listRoutes(@Headers() headers: HeaderRecord, @Query("branchId") branchId?: string) {
     const context = await this.context(headers, "hardware:manage");

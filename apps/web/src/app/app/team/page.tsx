@@ -9,6 +9,7 @@ import {
   changePassword,
   configureMfa,
   createInvitation,
+  getSession,
   type Invitation,
   listInvitations,
   listRoles,
@@ -38,28 +39,30 @@ export default function TeamPage() {
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState("");
-  const [invitationEmail, setInvitationEmail] = useState("gerente@bar.demo");
+  const [invitationEmail, setInvitationEmail] = useState("");
   const [invitationRoleId, setInvitationRoleId] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedUserRoleId, setSelectedUserRoleId] = useState("");
   const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "" });
   const [status, setStatus] = useState("Carregando equipe...");
   const [isBusy, setIsBusy] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
 
   const selectedRole = roles.find((role) => role.id === selectedRoleId) ?? roles[0] ?? null;
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0] ?? null;
-  const currentUser =
-    users.find((user) => user.email === "admin@bar-aurora-demo.local") ?? users[0];
+  const currentUser = users.find((user) => user.id === currentUserId) ?? users[0];
 
   const refreshTeam = useCallback(async () => {
-    const [apiRoles, apiUsers, apiInvitations] = await Promise.all([
+    const [apiRoles, apiUsers, apiInvitations, session] = await Promise.all([
       listRoles(),
       listUsers(),
       listInvitations(),
+      getSession(),
     ]);
     setRoles(apiRoles);
     setUsers(apiUsers);
     setInvitations(apiInvitations);
+    setCurrentUserId(session.userId ?? "");
     setSelectedRoleId((current) => current || apiRoles[0]?.id || "");
     setInvitationRoleId((current) => current || apiRoles[0]?.id || "");
     setSelectedUserId((current) => current || apiUsers[0]?.id || "");
@@ -113,7 +116,7 @@ export default function TeamPage() {
       await refreshTeam();
       setStatus(
         invitation.acceptUrl
-          ? `Convite criado. Link mock: ${invitation.acceptUrl}`
+          ? `Convite criado. Link de aceitação: ${invitation.acceptUrl}`
           : "Convite criado.",
       );
     });
@@ -125,7 +128,7 @@ export default function TeamPage() {
       await refreshTeam();
       setStatus(
         invitation.acceptUrl
-          ? `Convite reenviado. Link mock: ${invitation.acceptUrl}`
+          ? `Convite reenviado. Link de aceitação: ${invitation.acceptUrl}`
           : "Convite reenviado.",
       );
     });
@@ -332,7 +335,7 @@ export default function TeamPage() {
               <strong>{selectedUser?.name ?? "Usuário"}</strong>
               <span>
                 {selectedUser?.mfaEnabled
-                  ? "Segundo fator ativo no mock local."
+                  ? "Segundo fator ativo."
                   : "Segundo fator pendente para perfis sensíveis."}
               </span>
               <div className="team-row-actions">

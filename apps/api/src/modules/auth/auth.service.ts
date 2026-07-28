@@ -110,6 +110,12 @@ export type UpdateRoleInput = {
   permissions?: string[] | undefined;
 };
 
+export type CreateRoleInput = {
+  code: string;
+  name: string;
+  permissions: string[];
+};
+
 export type CreateInvitationInput = {
   email: string;
   roleId?: string | undefined;
@@ -681,6 +687,8 @@ export class AuthService {
             "print:operate",
             "inventory:manage",
             "reports:read",
+            "delivery:manage",
+            "approvals:manage",
           ],
         })
         .returning();
@@ -746,6 +754,30 @@ export class AuthService {
 
     const session = await this.createSessionForUser(created.owner, headers);
     const access = await this.accessForUser(created.owner.id);
+
+    const welcomeUrl = this.publicAppUrl("/app");
+    const welcomeBranding: DocumentBranding = {
+      displayName: created.tenant.name,
+      logoUrl: null,
+      accentPreset: "emerald",
+    };
+    try {
+      await createEmailProvider().send({
+        tenantId: created.tenant.id,
+        to: created.owner.email,
+        subject: `Bem-vindo ao ${created.tenant.name} no GiroMesa`,
+        text: `Seu ambiente ${created.tenant.name} foi criado com sucesso. Acesse: ${welcomeUrl}`,
+        html: renderBrandedEmail({
+          branding: welcomeBranding,
+          title: "Seu ambiente está pronto!",
+          body: `Olá ${created.owner.name}, seu ambiente ${created.tenant.name} foi criado com sucesso. Você tem ${TRIAL_DAYS} dias de teste grátis para explorar todas as funcionalidades.`,
+          actionLabel: "Acessar o painel",
+          actionUrl: welcomeUrl,
+        }),
+      });
+    } catch {
+      // Welcome email is best-effort; do not block trial activation
+    }
 
     return {
       token: session.token,
@@ -857,6 +889,7 @@ export class AuthService {
         isPlatformUser: users.isPlatformUser,
         mfaEnabled: users.mfaEnabled,
         tenantStatus: tenants.status,
+        isDemo: tenants.isDemo,
         currentPeriodEndsAt: subscriptions.currentPeriodEndsAt,
       })
       .from(sessions)
@@ -888,6 +921,7 @@ export class AuthService {
       userId: session.userId,
       requestId,
       permissions: access.permissions,
+      isDemo: session.isDemo ?? false,
       mfaRequired: this.isMfaRecommended(access.permissions, session.mfaEnabled),
       billing: {
         status: billingStatusForTenant(session.tenantStatus, session.currentPeriodEndsAt),
@@ -986,6 +1020,177 @@ export class AuthService {
       }
 
       return updatedRole;
+    });
+  }
+
+  async createRole(context: TenantContext, input: CreateRoleInput) {
+    return this.database.db.transaction(async (tx) => {
+      const [existingRole] = await tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(and(eq(roles.tenantId, context.tenantId), eq(roles.code, input.code)))
+        .limit(1);
+
+      if (existingRole) {
+        throw new BadRequestException("Role with this code already exists");
+      }
+
+      const [createdRole] = await tx
+        .insert(roles)
+        .values({
+          tenantId: context.tenantId,
+          code: input.code,
+          name: input.name,
+          permissions: [...new Set(input.permissions.map((p) => p.trim()).filter(Boolean))],
+        })
+        .returning({
+          id: roles.id,
+          code: roles.code,
+          name: roles.name,
+          permissions: roles.permissions,
+          createdAt: roles.createdAt,
+          updatedAt: roles.updatedAt,
+        });
+
+      if (!createdRole) {
+        throw new Error("Failed to create role");
+      }
+
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId: context.branchId,
+        userId: context.userId,
+        requestId: context.requestId,
+        action: "role.created",
+        entityType: "role",
+        entityId: createdRole.id,
+        metadata: {
+          code: createdRole.code,
+          name: createdRole.name,
+          permissions: createdRole.permissions,
+        },
+      });
+
+      return createdRole;
+    });
+  }
+
+  async deleteRole(context: TenantContext, roleId: string) {
+    return this.database.db.transaction(async (tx) => {
+      const [role] = await tx
+        .select()
+        .from(roles)
+        .where(and(eq(roles.tenantId, context.tenantId), eq(roles.id, roleId)))
+        .limit(1);
+
+      if (!role) {
+        throw new NotFoundException("Role not found");
+      }
+
+      if (role.code === "owner") {
+        throw new BadRequestException("Cannot delete the owner role");
+      }
+
+      const [userWithRole] = await tx
+        .select({ id: userRoles.id })
+        .from(userRoles)
+        .where(and(eq(userRoles.tenantId, context.tenantId), eq(userRoles.roleId, roleId)))
+        .limit(1);
+
+      if (userWithRole) {
+        throw new BadRequestException("Cannot delete a role that is assigned to users");
+      }
+
+      await tx.delete(roles).where(and(eq(roles.tenantId, context.tenantId), eq(roles.id, roleId)));
+
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId: context.branchId,
+        userId: context.userId,
+        requestId: context.requestId,
+        action: "role.deleted",
+        entityType: "role",
+        entityId: roleId,
+        metadata: {
+          code: role.code,
+          name: role.name,
+          permissions: role.permissions,
+        },
+      });
+
+      return { ok: true };
+    });
+  }
+
+  async deactivateUser(context: TenantContext, userId: string) {
+    if (!context.userId) {
+      throw new UnauthorizedException("Invalid session");
+    }
+
+    if (context.userId === userId) {
+      throw new BadRequestException("Cannot deactivate your own account");
+    }
+
+    return this.database.db.transaction(async (tx) => {
+      const [user] = await tx
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          isActive: users.isActive,
+          isPlatformUser: users.isPlatformUser,
+        })
+        .from(users)
+        .where(and(eq(users.tenantId, context.tenantId), eq(users.id, userId)))
+        .limit(1);
+
+      if (!user) {
+        throw new NotFoundException("User not found");
+      }
+
+      if (user.isPlatformUser) {
+        throw new BadRequestException("Cannot deactivate a platform user");
+      }
+
+      if (!user.isActive) {
+        throw new BadRequestException("User is already inactive");
+      }
+
+      const [updatedUser] = await tx
+        .update(users)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(eq(users.tenantId, context.tenantId), eq(users.id, userId)))
+        .returning({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          isActive: users.isActive,
+          mfaEnabled: users.mfaEnabled,
+          lastLoginAt: users.lastLoginAt,
+          createdAt: users.createdAt,
+        });
+
+      if (!updatedUser) {
+        throw new Error("Failed to deactivate user");
+      }
+
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId: context.branchId,
+        userId: context.userId,
+        requestId: context.requestId,
+        action: "user.deactivated",
+        entityType: "user",
+        entityId: userId,
+        metadata: {
+          email: user.email,
+          name: user.name,
+          previousIsActive: user.isActive,
+          nextIsActive: false,
+        },
+      });
+
+      return updatedUser;
     });
   }
 
@@ -1103,22 +1308,6 @@ export class AuthService {
       throw new Error("Failed to create invitation");
     }
 
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId ?? context.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "invitation.created",
-      entityType: "invitation",
-      entityId: invitation.id,
-      metadata: {
-        email: invitation.email,
-        roleId: role?.id ?? null,
-        roleCode: role?.code ?? null,
-        delivery: "email_provider_mock",
-      },
-    });
-
     const acceptUrl = this.publicAppUrl(`/invite/${token}`);
     const branding = await this.emailBranding(context.tenantId);
     const emailDelivery = await createEmailProvider().send({
@@ -1133,6 +1322,22 @@ export class AuthService {
         actionLabel: "Aceitar convite",
         actionUrl: acceptUrl,
       }),
+    });
+
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: input.branchId ?? context.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "invitation.created",
+      entityType: "invitation",
+      entityId: invitation.id,
+      metadata: {
+        email: invitation.email,
+        roleId: role?.id ?? null,
+        roleCode: role?.code ?? null,
+        delivery: emailDelivery.provider,
+      },
     });
 
     return {
@@ -1163,17 +1368,6 @@ export class AuthService {
       throw new NotFoundException("Invitation not found");
     }
 
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: context.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "invitation.resent",
-      entityType: "invitation",
-      entityId: invitation.id,
-      metadata: { email: invitation.email, delivery: "email_provider_mock" },
-    });
-
     const acceptUrl = this.publicAppUrl(`/invite/${token}`);
     const branding = await this.emailBranding(context.tenantId);
     const emailDelivery = await createEmailProvider().send({
@@ -1188,6 +1382,17 @@ export class AuthService {
         actionLabel: "Aceitar convite",
         actionUrl: acceptUrl,
       }),
+    });
+
+    await this.database.db.insert(auditLogs).values({
+      tenantId: context.tenantId,
+      branchId: context.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "invitation.resent",
+      entityType: "invitation",
+      entityId: invitation.id,
+      metadata: { email: invitation.email, delivery: emailDelivery.provider },
     });
 
     return {
@@ -1488,19 +1693,9 @@ export class AuthService {
         expiresAt: new Date(Date.now() + 1000 * 60 * 30),
       });
 
-      await this.database.db.insert(auditLogs).values({
-        tenantId: user.tenantId,
-        userId: user.id,
-        requestId: requestIdFromHeaders(headers),
-        action: "password.reset_requested",
-        entityType: "user",
-        entityId: user.id,
-        metadata: { email: user.email, delivery: "email_provider_mock" },
-      });
-
       const resetUrl = this.publicAppUrl(`/reset/${token}`);
       const branding = await this.emailBranding(user.tenantId);
-      await createEmailProvider().send({
+      const emailDelivery = await createEmailProvider().send({
         tenantId: user.tenantId,
         to: user.email,
         subject: `Reset de senha - ${branding.displayName}`,
@@ -1513,6 +1708,24 @@ export class AuthService {
           actionUrl: resetUrl,
         }),
       });
+
+      await this.database.db.insert(auditLogs).values({
+        tenantId: user.tenantId,
+        userId: user.id,
+        requestId: requestIdFromHeaders(headers),
+        action: "password.reset_requested",
+        entityType: "user",
+        entityId: user.id,
+        metadata: { email: user.email, delivery: emailDelivery.provider },
+      });
+
+      return {
+        requested: true,
+        delivery: emailDelivery.provider,
+        ...(token
+          ? { resetUrl: this.publicAppUrl(`/reset/${token}`), tokenReturnedOnce: token }
+          : {}),
+      };
     }
 
     return {

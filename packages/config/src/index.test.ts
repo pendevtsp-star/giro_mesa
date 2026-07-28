@@ -11,6 +11,7 @@ const productionEnv = {
   DATABASE_URL: "postgres://giromesa:secret@db:5432/giromesa",
   REDIS_URL: "redis://redis:6379",
   SESSION_SECRET: strongSecret,
+  QR_SIGNING_SECRET: `${strongSecret}-qr`,
   PASSWORD_PEPPER: `${strongSecret}-pepper`,
   MFA_SECRET_ENCRYPTION_KEY: `${strongSecret}-mfa`,
 } satisfies NodeJS.ProcessEnv;
@@ -45,6 +46,15 @@ describe("loadEnv production safety", () => {
         SESSION_SECRET: "sixteen-chars-key",
       }),
     ).toThrow(/SESSION_SECRET: must be at least 32 characters/);
+  });
+
+  it("requires an independent QR signing secret in production", () => {
+    expect(() =>
+      loadEnv({
+        ...productionEnv,
+        QR_SIGNING_SECRET: "short-qr-secret",
+      }),
+    ).toThrow(/QR_SIGNING_SECRET: must be at least 32 characters/);
   });
 
   it("accepts strong production configuration", () => {

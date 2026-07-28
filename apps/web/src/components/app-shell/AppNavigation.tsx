@@ -1,15 +1,24 @@
+"use client";
+
 import type { TenantBranding } from "../../lib/giromesa-api";
+import { type Locale, useTranslation } from "../../lib/i18n";
+import { LanguageSwitcher } from "../LanguageSwitcher";
 import { type AppNavigationItem, groupNavigationItems, isNavigationItemActive } from "./navigation";
 
 export function AppNavigation({
   branding,
   items,
   currentPath,
+  locale,
+  onLocaleChange,
 }: {
   branding: TenantBranding;
   items: readonly AppNavigationItem[];
   currentPath: string;
+  locale: Locale;
+  onLocaleChange: (locale: Locale) => void;
 }) {
+  const { t } = useTranslation();
   const groups = groupNavigationItems(items);
 
   return (
@@ -18,6 +27,7 @@ export function AppNavigation({
         <span className="brand-mark">G</span>
         <span>GiroMesa</span>
       </a>
+      <LanguageSwitcher currentLocale={locale} onLocaleChange={onLocaleChange} />
       <div className="tenant-chip">
         {branding.logoUrl ? (
           <span
@@ -32,20 +42,20 @@ export function AppNavigation({
         )}
         <span>{branding.displayName}</span>
       </div>
-      <nav aria-label="Módulos">
+      <nav aria-label={t("nav.modules")}>
         {groups.map((group) => (
           <div className="nav-group" key={group.group}>
-            <span className="nav-group-label">{group.group}</span>
+            <span className="nav-group-label">{t(`nav.${group.group}`)}</span>
             {group.items.map((item) => {
               const Icon = item.icon;
               return (
                 <a
                   className={isNavigationItemActive(item, currentPath) ? "active" : ""}
                   href={item.href}
-                  key={item.label}
+                  key={item.labelKey}
                 >
                   <Icon size={18} />
-                  {item.label}
+                  {t(item.labelKey)}
                 </a>
               );
             })}

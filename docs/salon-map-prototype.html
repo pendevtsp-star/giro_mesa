@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GiroMesa - Mapa do Salao (Prototipo v3)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root { --bg:#f5f5f0; --surface:#fff; --ink:#0d1b2a; --muted:#6b7280; --line:#e5e7eb; --accent:#f59e0b; --accent-strong:#d97706; --free:#10b981; --occupied:#f59e0b; --preparing:#3b82f6; --payment:#ef4444; --reserved:#6b7280; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--ink); overflow: hidden; height: 100vh; }
+
+  /* Topbar */
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 20px; background:var(--ink); color:#fff; z-index:100; }
+  .topbar .brand { font-size:1.2rem; font-weight:800; }
+  .topbar .brand span { color:var(--accent); }
+  .topbar-actions { display:flex; gap:8px; }
+  .btn { padding:8px 16px; border-radius:8px; border:none; cursor:pointer; font-weight:700; font-size:0.85rem; display:inline-flex; align-items:center; gap:6px; transition:all 150ms; }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-primary:hover { background:var(--accent-strong); }
+  .btn-secondary { background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.3); }
+  .btn-secondary:hover { background:rgba(255,255,255,0.1); }
+  .btn-ghost { background:none; border:none; color:var(--muted); padding:6px 10px; font-weight:600; }
+  .btn-ghost:hover { background:rgba(0,0,0,0.05); color:var(--ink); }
+
+  .page-header { padding:16px 24px 0; }
+  .kicker { font-size:0.8rem; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:0.05em; }
+  .page-header h1 { font-size:1.8rem; margin:4px 0; }
+  .page-header p { color:var(--muted); font-size:0.9rem; }
+
+  .toolbar { display:flex; align-items:center; gap:10px; padding:10px 24px; border-bottom:1px solid var(--line); background:#fff; }
+  .toolbar-left { display:flex; align-items:center; gap:10px; flex:1; }
+  .legend { display:flex; gap:12px; align-items:center; }
+  .legend span { display:flex; align-items:center; gap:4px; font-size:0.78rem; font-weight:600; }
+  .legend-dot { width:10px; height:10px; border-radius:3px; }
+
+  .merge-bar { display:none; align-items:center; gap:10px; padding:8px 24px; background:#fff7ed; border-bottom:1px solid #fed7aa; }
+  .merge-bar.active { display:flex; }
+  .merge-bar strong { font-size:0.85rem; color:#c2410c; }
+
+  .room-tabs { display:flex; gap:4px; padding:0 24px; background:#fff; border-bottom:1px solid var(--line); }
+  .room-tab { padding:10px 16px; font-size:0.85rem; font-weight:600; border:none; background:none; cursor:pointer; border-bottom:2px solid transparent; color:var(--muted); }
+  .room-tab.active { color:var(--ink); border-bottom-color:var(--accent); }
+  .room-tab:hover { color:var(--ink); }
+  .room-tab-add { font-size:1.1rem; padding:10px 12px; }
+
+  /* Canvas */
+  .canvas-container { position:relative; flex:1; overflow:hidden; background:var(--bg); cursor:grab; }
+  .canvas-container.panning { cursor:grabbing; }
+  .canvas-world { position:absolute; top:0; left:0; transform-origin:0 0; }
+  .canvas-grid { position:absolute; top:-2000px; left:-2000px; width:6000px; height:6000px; background-image:radial-gradient(circle,#d1d5db 1px,transparent 1px); background-size:30px 30px; pointer-events:none; }
+  .floor-plan-img { position:absolute; top:0; left:0; max-width:4000px; max-height:4000px; opacity:0.25; pointer-events:none; }
+
+  /* Group connector */
+  .group-connector { position:absolute; border:2px dashed; border-radius:14px; pointer-events:none; z-index:1; }
+  .group-label { position:absolute; font-size:0.65rem; font-weight:800; padding:2px 8px; border-radius:4px; color:#fff; z-index:2; pointer-events:none; text-transform:uppercase; }
+
+  /* Table tile */
+  .table-tile { position:absolute; width:150px; min-height:100px; background:var(--surface); border-radius:10px; border:2px solid var(--free); padding:12px; cursor:pointer; user-select:none; transition:box-shadow 150ms; z-index:10; }
+  .table-tile:hover { box-shadow:0 4px 16px rgba(0,0,0,0.12); z-index:20; }
+  .table-tile.dragging { opacity:0.5; }
+  .table-tile.status-occupied { border-color:var(--occupied); }
+  .table-tile.status-preparing { border-color:var(--preparing); }
+  .table-tile.status-payment { border-color:var(--payment); }
+  .table-tile.status-reserved { border-color:var(--reserved); }
+  .table-tile.drop-target { outline:3px dashed var(--accent); outline-offset:4px; }
+  .table-tile.merge-selected { outline:3px solid var(--accent); outline-offset:3px; }
+
+  .table-code { font-size:1.05rem; font-weight:800; }
+  .table-name { font-size:0.75rem; color:var(--muted); margin-top:2px; }
+  .table-seats { font-size:0.72rem; color:var(--muted); margin-top:4px; }
+  .table-order { font-size:0.7rem; color:var(--accent); font-weight:600; margin-top:4px; }
+
+  .status-badge { position:absolute; bottom:6px; right:6px; font-size:0.6rem; font-weight:700; padding:2px 6px; border-radius:4px; text-transform:uppercase; }
+  .status-badge.free { background:#d1fae5; color:#065f46; }
+  .status-badge.occupied { background:#fef3c7; color:#92400e; }
+  .status-badge.preparing { background:#dbeafe; color:#1e40af; }
+  .status-badge.payment { background:#fee2e2; color:#991b1b; }
+
+  .merge-cb { position:absolute; top:6px; right:6px; width:20px; height:20px; border-radius:50%; border:2px solid var(--line); background:#fff; z-index:25; }
+  .merge-cb.checked { background:var(--accent); border-color:var(--accent); }
+
+  /* Zoom */
+  .zoom-controls { position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column; gap:4px; z-index:50; background:#fff; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,0.1); overflow:hidden; }
+  .zoom-btn { width:36px; height:36px; display:flex; align-items:center; justify-content:center; border:none; background:#fff; cursor:pointer; font-size:1.1rem; font-weight:700; color:var(--ink); }
+  .zoom-btn:hover { background:#f3f4f6; }
+  .zoom-label { text-align:center; font-size:0.7rem; color:var(--muted); padding:2px 0; border-top:1px solid var(--line); }
+
+  .upload-area { position:fixed; bottom:20px; left:20px; z-index:50; }
+  .upload-btn { background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 14px; font-size:0.8rem; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+
+  /* Popup */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,0.15); z-index:500; display:none; }
+  .action-popup { position:fixed; z-index:1000; min-width:240px; background:#fff; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.15); border:1px solid var(--line); display:none; }
+  .popup-header { padding:12px 14px 8px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
+  .popup-header strong { font-size:1rem; }
+  .popup-header .popup-sub { display:block; font-size:0.78rem; color:var(--muted); margin-top:2px; }
+  .popup-close { width:24px; height:24px; border:none; background:none; border-radius:6px; cursor:pointer; color:var(--muted); font-size:1rem; }
+  .popup-close:hover { background:rgba(0,0,0,0.06); }
+  .popup-meta { padding:6px 14px 10px; font-size:0.8rem; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .popup-dot { width:8px; height:8px; border-radius:50%; }
+  .popup-actions { padding:4px 8px 8px; display:flex; flex-direction:column; gap:2px; }
+  .popup-action { display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; border:none; background:none; border-radius:8px; cursor:pointer; font-size:0.85rem; color:var(--ink); text-align:left; }
+  .popup-action:hover { background:#f3f4f6; }
+  .popup-action .icon { width:18px; text-align:center; font-size:0.9rem; }
+  .popup-action.destructive { color:#dc2626; }
+  .popup-action.destructive:hover { background:#fef2f2; }
+
+  /* Inline Panel */
+  .inline-panel { position:fixed; z-index:999; width:380px; max-height:80vh; background:#fff; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.15); border:1px solid var(--line); display:none; flex-direction:column; overflow:hidden; }
+  .inline-panel-header { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .inline-panel-header h3 { font-size:1rem; }
+  .inline-panel-body { flex:1; overflow-y:auto; padding:12px 16px; }
+  .inline-panel-footer { padding:10px 16px; border-top:1px solid var(--line); display:flex; gap:8px; }
+  .order-item { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #f3f4f6; }
+  .order-item-name { font-size:0.85rem; font-weight:600; }
+  .order-item-detail { font-size:0.75rem; color:var(--muted); }
+  .order-item-qty { font-size:0.85rem; font-weight:700; background:#f3f4f6; padding:2px 8px; border-radius:4px; }
+  .order-total { display:flex; justify-content:space-between; padding:10px 0; font-weight:800; font-size:1rem; }
+  .empty-state { text-align:center; padding:30px 0; color:var(--muted); }
+
+  /* Merge Dialog */
+  .merge-dialog { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:2000; background:#fff; border-radius:16px; box-shadow:0 16px 48px rgba(0,0,0,0.2); padding:24px; width:340px; text-align:center; display:none; }
+  .merge-dialog h3 { margin-bottom:8px; }
+  .merge-dialog p { color:var(--muted); font-size:0.9rem; margin-bottom:20px; }
+  .merge-preview { display:flex; gap:8px; justify-content:center; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+  .preview-tile { background:#f9fafb; border:2px solid var(--line); border-radius:8px; padding:8px 16px; font-weight:700; }
+  .merge-arrow { font-size:1.2rem; color:var(--accent); }
+  .merge-dialog-actions { display:flex; gap:8px; justify-content:center; }
+
+  .notification { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 20px; border-radius:8px; font-size:0.85rem; z-index:3000; box-shadow:0 4px 16px rgba(0,0,0,0.2); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">G<span>GiroMesa</span></div>
+  <div class="topbar-actions">
+    <button type="button" class="btn btn-primary" onclick="notify('Mapa salvo!')">Salvar mapa</button>
+    <a class="btn btn-secondary" href="/app?view=pos">Abrir PDV</a>
+  </div>
+</div>
+
+<div style="display:flex;flex-direction:column;height:calc(100vh - 52px)">
+  <div class="page-header">
+    <span class="kicker">Salao</span>
+    <h1>Mapa de mesas</h1>
+    <p id="hint">Arraste mesas para organizar. Scroll = zoom. Clique em area vazia e arraste = mover mapa.</p>
+  </div>
+
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button type="button" class="btn btn-ghost" id="mergeBtn" onclick="toggleMergeMode()">Juntar mesas</button>
+      <button type="button" class="btn btn-ghost" onclick="addNewTable()">+ Nova mesa</button>
+      <div class="legend">
+        <span><span class="legend-dot" style="background:var(--free)"></span> Livre</span>
+        <span><span class="legend-dot" style="background:var(--occupied)"></span> Ocupada</span>
+        <span><span class="legend-dot" style="background:var(--preparing)"></span> Preparo</span>
+        <span><span class="legend-dot" style="background:var(--payment)"></span> Pagamento</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="merge-bar" id="mergeBar">
+    <strong>Modo juncao</strong>
+    <span style="font-size:0.85rem;color:var(--muted)">Clique nas mesas para selecionar (min. 2)</span>
+    <span style="font-size:0.85rem;font-weight:700" id="mergeCount">0 mesas</span>
+    <button type="button" class="btn btn-primary" style="padding:6px 14px;font-size:0.8rem" onclick="confirmMergeGroup()" id="confirmMergeBtn" disabled>Confirmar</button>
+    <button type="button" class="btn btn-ghost" onclick="cancelMerge()">Cancelar</button>
+  </div>
+
+  <div class="room-tabs" id="roomTabs">
+    <button type="button" class="room-tab active" data-room="salao">Salao Principal</button>
+    <button type="button" class="room-tab" data-room="varanda">Varanda</button>
+    <button type="button" class="room-tab room-tab-add" onclick="addRoom()">+</button>
+  </div>
+
+  <div class="canvas-container" id="canvasContainer">
+    <div class="canvas-world" id="canvasWorld">
+      <div class="canvas-grid"></div>
+    </div>
+    <div class="zoom-controls">
+      <button type="button" class="zoom-btn" onclick="zoomIn()">+</button>
+      <div class="zoom-label" id="zoomLabel">100%</div>
+      <button type="button" class="zoom-btn" onclick="zoomOut()">&minus;</button>
+      <button type="button" class="zoom-btn" onclick="zoomFit()" style="font-size:0.8rem">[ ]</button>
+    </div>
+    <div class="upload-area">
+      <label class="upload-btn" for="fpInput">Planta de fundo</label>
+      <input type="file" id="fpInput" accept="image/*" style="display:none" onchange="uploadFloorPlan(event)">
+    </div>
+  </div>
+</div>
+
+<button type="button" class="overlay" id="overlay" aria-label="Fechar painel" onclick="closeAll()"></button>
+<div class="action-popup" id="actionPopup"></div>
+<div class="inline-panel" id="inlinePanel"></div>
+<button type="button" class="overlay" id="mergeOverlay" aria-label="Cancelar junção" onclick="cancelMergeConfirm()"></button>
+<div class="merge-dialog" id="mergeDialog">
+  <h3 id="mdTitle">Juntar mesas?</h3>
+  <p id="mdDesc"></p>
+  <div class="merge-preview" id="mdPreview"></div>
+  <div class="merge-dialog-actions">
+    <button type="button" class="btn btn-primary" id="mdConfirm">Confirmar</button>
+    <button type="button" class="btn btn-ghost" onclick="cancelMergeConfirm()">Cancelar</button>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let scale=1, panX=0, panY=0, isPanning=false, panSX, panSY;
+let mergeMode=false, mergeSelection=new Set();
+let dragging=null, dragSX=0, dragSY=0, wasDrag=false;
+let activeRoom='salao', nid=100;
+
+const TABLE_W=150, TABLE_H=100, TABLE_GAP=12;
+
+const rooms={
+  salao:{name:'Salao Principal',floorPlan:null,tables:[
+    {id:'t3',code:'M03',name:'Mesa 3',seats:4,status:'occupied',x:350,y:80,groupId:null,order:[{n:'Caipirinha',q:2,p:18},{n:'Porcao de frios',q:1,p:45}]},
+    {id:'t9',code:'M09',name:'Mesa 9',seats:4,status:'occupied',x:700,y:400,groupId:null,order:[{n:'Chopp',q:3,p:12}]},
+    {id:'t12',code:'M12',name:'Mesa 12',seats:4,status:'occupied',x:400,y:250,groupId:'g2',order:[{n:'Combo churrasco',q:2,p:89}]},
+    {id:'t13',code:'M13',name:'Mesa 13',seats:4,status:'free',x:0,y:0,groupId:'g2',order:[]},
+    {id:'t5',code:'M05',name:'Mesa 5',seats:6,status:'free',x:700,y:100,groupId:'g1'},
+    {id:'t10',code:'M10',name:'Mesa 10',seats:8,status:'free',x:0,y:0,groupId:'g1'},
+    {id:'t1',code:'M01',name:'Mesa 1',seats:4,status:'free',x:0,y:0,groupId:'g3'},
+    {id:'t11',code:'M11',name:'Mesa 11',seats:2,status:'free',x:0,y:0,groupId:'g3'},
+    {id:'t2',code:'M02',name:'Mesa 2',seats:2,status:'free',x:80,y:420,groupId:null},
+    {id:'t4',code:'M04',name:'Mesa 4',seats:4,status:'preparing',x:350,y:420,groupId:null},
+    {id:'t6',code:'M06',name:'Mesa 6',seats:5,status:'payment',x:700,y:560,groupId:null},
+    {id:'t7',code:'M07',name:'Mesa 7',seats:2,status:'free',x:80,y:560,groupId:null},
+    {id:'t8',code:'M08',name:'Mesa 8',seats:2,status:'reserved',x:980,y:560,groupId:null},
+  ]},
+  varanda:{name:'Varanda',floorPlan:null,tables:[
+    {id:'v1',code:'V01',name:'Varanda 1',seats:4,status:'free',x:120,y:120},
+    {id:'v2',code:'V02',name:'Varanda 2',seats:2,status:'occupied',x:500,y:120,order:[{n:'Suco',q:2,p:14}]},
+    {id:'v3',code:'V03',name:'Varanda 3',seats:6,status:'free',x:120,y:400},
+  ]}
+};
+
+const SL={free:'Livre',occupied:'Ocupada',preparing:'Preparo',payment:'Pagamento',reserved:'Reserva'};
+const SC={free:'var(--free)',occupied:'var(--occupied)',preparing:'var(--preparing)',payment:'var(--payment)',reserved:'var(--reserved)'};
+const GC=['#f97316','#8b5cf6','#06b6d4','#ec4899','#14b8a6','#f43f5e'];
+function gcolor(gid){let h=0;for(const c of gid)h=(h*31+c.charCodeAt(0))|0;return GC[Math.abs(h)%GC.length];}
+function getT(){return rooms[activeRoom]?.tables??[];}
+
+// ===== GROUP LAYOUT =====
+// When tables are in a group, position them side by side in a row
+function applyGroupLayout(){
+  const tables=getT();
+  const groups={};
+  tables.forEach(t=>{if(t.groupId){if(!groups[t.groupId])groups[t.groupId]=[];groups[t.groupId].push(t);}});
+
+  Object.entries(groups).forEach(([gid,gt])=>{
+    if(gt.length<2)return;
+    // Position tables in a horizontal row
+    const _totalWidth=gt.length*TABLE_W+(gt.length-1)*TABLE_GAP;
+    const startX=gt[0].x; // Use first table's position as anchor
+    const startY=gt[0].y;
+    gt.forEach((t,i)=>{
+      t.x=startX+i*(TABLE_W+TABLE_GAP);
+      t.y=startY;
+    });
+  });
+}
+
+// ===== RENDER =====
+function render(){
+  const w=document.getElementById('canvasWorld');
+  w.querySelectorAll('.table-tile,.group-connector,.group-label').forEach(e=>{e.remove();});
+  const tables=getT();
+
+  // Group connectors
+  const groups={};
+  tables.forEach(t=>{if(t.groupId){if(!groups[t.groupId])groups[t.groupId]=[];groups[t.groupId].push(t);}});
+
+  Object.entries(groups).forEach(([gid,gt])=>{
+    if(gt.length<2)return;
+    const c=gcolor(gid);
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    gt.forEach(t=>{minX=Math.min(minX,t.x);minY=Math.min(minY,t.y);maxX=Math.max(maxX,t.x+TABLE_W);maxY=Math.max(maxY,t.y+TABLE_H);});
+    const conn=document.createElement('div');
+    conn.className='group-connector';
+    conn.style.cssText=`left:${minX-10}px;top:${minY-10}px;width:${maxX-minX+20}px;height:${maxY-minY+20}px;border-color:${c};background:${c}06;`;
+    w.appendChild(conn);
+
+    const label=document.createElement('div');
+    label.className='group-label';
+    label.style.cssText=`left:${minX-10}px;top:${minY-24}px;background:${c};`;
+    label.textContent='Grupo';
+    w.appendChild(label);
+  });
+
+  tables.forEach(t=>{
+    const el=document.createElement('div');
+    el.className=`table-tile status-${t.status}`;
+    el.dataset.id=t.id;
+    el.style.left=`${t.x}px`;
+    el.style.top=`${t.y}px`;
+    if(t.groupId){const c=gcolor(t.groupId);el.style.borderColor=c;}
+    if(mergeSelection.has(t.id)){el.classList.add('merge-selected');}
+
+    el.innerHTML=`
+      <div class="table-code">${t.code}</div>
+      <div class="table-name">${t.name}</div>
+      <div class="table-seats">${t.seats} lugares</div>
+      ${t.order&&t.order.length>0?`<div class="table-order">${t.order.length} item(ns)</div>`:''}
+      <span class="status-badge ${t.status}">${SL[t.status]||t.status}</span>
+      ${mergeMode?`<span class="merge-cb${mergeSelection.has(t.id)?' checked':''}"></span>`:''}
+    `;
+    w.appendChild(el);
+  });
+
+  document.getElementById('mergeCount').textContent=`${mergeSelection.size} mesa${mergeSelection.size!==1?'s':''}`;
+  document.getElementById('confirmMergeBtn').disabled=mergeSelection.size<2;
+}
+
+// Initialize group positions
+applyGroupLayout();
+
+// ===== TABLE INTERACTION =====
+let mouseDownTarget=null;
+let mouseDownX=0, mouseDownY=0;
+const CLICK_THRESHOLD=5;
+let closestTableId=null; // table nearest to dragged table during drag
+
+const world=document.getElementById('canvasWorld');
+
+world.addEventListener('mousedown',e=>{
+  const tile=e.target.closest('.table-tile');
+  if(!tile)return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  mouseDownTarget=tile.dataset.id;
+  mouseDownX=e.clientX;
+  mouseDownY=e.clientY;
+  wasDrag=false;
+  closestTableId=null;
+  dragging=new Set([mouseDownTarget]);
+
+  // Include all tables in same group
+  const t=getT().find(x=>x.id===mouseDownTarget);
+  if(t?.groupId){
+    getT().forEach(x=>{if(x.groupId===t.groupId)dragging.add(x.id);});
+  }
+
+  dragSX=e.clientX; dragSY=e.clientY;
+});
+
+document.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const dx=Math.abs(e.clientX-mouseDownX);
+  const dy=Math.abs(e.clientY-mouseDownY);
+  if(dx>CLICK_THRESHOLD||dy>CLICK_THRESHOLD)wasDrag=true;
+
+  if(!wasDrag)return;
+
+  const dx2=e.clientX-dragSX;
+  const dy2=e.clientY-dragSY;
+  dragSX=e.clientX; dragSY=e.clientY;
+
+  getT().forEach(t=>{
+    if(dragging.has(t.id)){t.x+=dx2/scale; t.y+=dy2/scale; t.x=Math.max(-50,t.x); t.y=Math.max(-50,t.y);}
+  });
+
+  // Detect closest table for drop target
+  closestTableId=null;
+  const dragged=getT().find(t=>dragging.has(t.id));
+  if(dragged){
+    let minDist=Infinity;
+    getT().forEach(t=>{
+      if(dragging.has(t.id))return;
+      const cx=t.x+TABLE_W/2, cy=t.y+TABLE_H/2;
+      const dx3=cx-(dragged.x+TABLE_W/2), dy3=cy-(dragged.y+TABLE_H/2);
+      const dist=Math.sqrt(dx3*dx3+dy3*dy3);
+      if(dist<150&&dist<minDist){minDist=dist;closestTableId=t.id;}
+    });
+  }
+
+  // Visual feedback: highlight closest table
+  document.querySelectorAll('.table-tile').forEach(el=>{
+    el.classList.remove('drop-target');
+    if(closestTableId&&el.dataset.id===closestTableId)el.classList.add('drop-target');
+  });
+});
+
+document.addEventListener('mouseup',e=>{
+  if(!dragging)return;
+  const wasClick=!wasDrag;
+  const tableId=mouseDownTarget;
+
+  // If dragged and dropped on another table, show merge dialog
+  if(wasDrag&&closestTableId&&tableId){
+    const dragId=tableId;
+    const targetId=closestTableId;
+    dragging=null; mouseDownTarget=null; wasDrag=false; closestTableId=null;
+    document.querySelectorAll('.table-tile').forEach(el=>{el.classList.remove('drop-target');});
+    render();
+    showMergeConfirmDialog(dragId,targetId);
+    return;
+  }
+
+  dragging=null; mouseDownTarget=null; wasDrag=false; closestTableId=null;
+  document.querySelectorAll('.table-tile').forEach(el=>{el.classList.remove('drop-target');});
+
+  if(wasClick&&tableId){
+    const tile=document.querySelector(`[data-id="${tableId}"]`);
+    if(tile){
+      const rect=tile.getBoundingClientRect();
+      showPopup(tableId,{x:rect.right+8,y:rect.top});
+    }
+  }
+  render();
+});
+
+// ===== ZOOM + PAN =====
+const container=document.getElementById('canvasContainer');
+container.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const d=e.deltaY>0?-0.1:0.1;
+  const ns=Math.max(0.2,Math.min(4,scale+d));
+  const r=container.getBoundingClientRect();
+  const cx=e.clientX-r.left,cy=e.clientY-r.top;
+  panX-=cx*(ns-scale);panY-=cy*(ns-scale);scale=ns;
+  updateTransform();
+},{passive:false});
+
+container.addEventListener('mousedown',e=>{
+  if(e.target.closest('.table-tile')||e.target.closest('.zoom-btn')||e.target.closest('.upload-btn'))return;
+  isPanning=true;panSX=e.clientX-panX;panSY=e.clientY-panY;
+  container.classList.add('panning');
+});
+container.addEventListener('mousemove',e=>{if(!isPanning)return;panX=e.clientX-panSX;panY=e.clientY-panSY;updateTransform();});
+container.addEventListener('mouseup',()=>{isPanning=false;container.classList.remove('panning');});
+container.addEventListener('mouseleave',()=>{isPanning=false;container.classList.remove('panning');});
+
+function updateTransform(){
+  document.getElementById('canvasWorld').style.transform=`translate(${panX}px,${panY}px) scale(${scale})`;
+  document.getElementById('zoomLabel').textContent=`${Math.round(scale*100)}%`;
+}
+function _zoomIn(){scale=Math.min(4,scale+0.2);updateTransform();}
+function _zoomOut(){scale=Math.max(0.2,scale-0.2);updateTransform();}
+function zoomFit(){scale=1;panX=0;panY=0;updateTransform();}
+
+// ===== POPUP =====
+function showPopup(tableId,pos){
+  closeAll();
+  const t=getT().find(x=>x.id===tableId);
+  if(!t)return;
+
+  let actions=[];
+  switch(t.status){
+    case 'free':
+      actions=[{id:'new-order',icon:'+',label:'Novo pedido'},{id:'reserve',icon:'|',label:'Reservar'}];
+      break;
+    case 'occupied':case 'preparing':case 'served':case 'order_sent':
+      actions=[
+        {id:'view-order',icon:'>',label:'Ver pedido'},
+        {id:'add-item',icon:'+',label:'Adicionar item'},
+        {id:'send-kitchen',icon:'~',label:'Enviar cozinha'},
+        {id:'preview-bill',icon:'=',label:'Previa da conta'},
+        {id:'close-account',icon:'$',label:'Fechar conta'},
+      ];
+      break;
+    case 'payment':
+      actions=[{id:'view-order',icon:'>',label:'Ver pedido'},{id:'preview-bill',icon:'=',label:'Previa'},{id:'close-account',icon:'$',label:'Fechar conta'}];
+      break;
+    case 'reserved':
+      actions=[{id:'cancel-reserve',icon:'x',label:'Cancelar reserva'}];
+      break;
+  }
+
+  // For grouped tables, show the group info and unmerge option
+  if(t.groupId){
+    const groupTables=getT().filter(x=>x.groupId===t.groupId);
+    const groupInfo=groupTables.map(x=>x.code).join(' + ');
+    actions.push({id:'unmerge',icon:'<>',label:`Separar mesas (${groupInfo})`,destructive:true});
+  }
+
+  actions.push({id:'goto-pos',icon:'>',label:'Abrir PDV completo'});
+
+  // Build header with group info
+  let headerExtra='';
+  if(t.groupId){
+    const groupTables=getT().filter(x=>x.groupId===t.groupId);
+    headerExtra=`<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">`+
+      groupTables.map(gt=>`<span style="padding:2px 8px;border-radius:4px;background:${gcolor(t.groupId)}22;color:${gcolor(t.groupId)};font-size:0.72rem;font-weight:700;border:1px solid ${gcolor(t.groupId)}44">${gt.code}</span>`).join('')+
+      `</div>`;
+  }
+
+  const popup=document.getElementById('actionPopup');
+  popup.innerHTML=`
+    <div class="popup-header">
+      <div><strong>${t.code}</strong><span class="popup-sub">${t.name} - ${t.seats} lugares</span>${headerExtra}</div>
+      <button class="popup-close" id="popupCloseBtn">&times;</button>
+    </div>
+    <div class="popup-meta"><span class="popup-dot" style="background:${SC[t.status]}"></span>${SL[t.status]||t.status}</div>
+    <div class="popup-actions">
+      ${actions.map(a=>`<button class="popup-action${a.destructive?' destructive':''}" data-action="${a.id}" data-tid="${t.id}"><span class="icon">${a.icon}</span><span>${a.label}</span></button>`).join('')}
+    </div>
+  `;
+
+  popup.style.display='block';
+  document.getElementById('overlay').style.display='block';
+  let x=pos.x,y=pos.y;
+  popup.style.display='block'; // force layout calc
+  const pr=popup.getBoundingClientRect();
+  if(x+pr.width>window.innerWidth-16)x=window.innerWidth-pr.width-16;
+  if(y+pr.height>window.innerHeight-16)y=window.innerHeight-pr.height-16;
+  popup.style.left=`${Math.max(16,x)}px`;
+  popup.style.top=`${Math.max(16,y)}px`;
+
+  document.getElementById('popupCloseBtn').addEventListener('click',e=>{e.stopPropagation();closeAll();});
+
+  popup.addEventListener('click',function handler(e){
+    const btn=e.target.closest('.popup-action');
+    if(!btn)return;
+    e.stopPropagation();
+    closeAll();
+    executeAction(btn.dataset.action,btn.dataset.tid);
+    popup.removeEventListener('click',handler);
+  });
+}
+
+function closeAll(){
+  document.getElementById('actionPopup').style.display='none';
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('inlinePanel').style.display='none';
+  document.getElementById('mergeOverlay').style.display='none';
+  document.getElementById('mergeDialog').style.display='none';
+}
+
+// ===== ACTIONS =====
+function executeAction(actionId,tableId){
+  const t=getT().find(x=>x.id===tableId);
+  if(!t)return;
+  switch(actionId){
+    case 'view-order':case 'add-item':case 'preview-bill':case 'close-account':case 'new-order':
+      showOrderPanel(t,actionId);break;
+    case 'send-kitchen':notify(`Pedido da mesa ${t.code} enviado para cozinha`);break;
+    case 'reserve':t.status='reserved';render();notify(`Mesa ${t.code} reservada`);break;
+    case 'cancel-reserve':t.status='free';render();notify('Reserva cancelada');break;
+    case 'unmerge':unmergeTable(t);break;
+    case 'goto-pos':notify(`Abrindo PDV para ${t.code}...`);break;
+  }
+}
+
+function showOrderPanel(t,mode){
+  const panel=document.getElementById('inlinePanel');
+  const items=t.order||[];
+  const _total=items.reduce((s,i)=>s+i.p*i.q,0);
+  const titles={'view-order':`Pedido - ${t.code}`,'add-item':`Adicionar item - ${t.code}`,'preview-bill':`Previa - ${t.code}`,'close-account':`Fechar conta - ${t.code}`,'new-order':`Novo pedido - ${t.code}`};
+
+  // For grouped tables, show ALL items from ALL tables in the group
+  let allItems=items;
+  if(t.groupId){
+    const gt=getT().filter(x=>x.groupId===t.groupId);
+    allItems=[];
+    gt.forEach(table=>{
+      (table.order||[]).forEach(item=>{allItems.push({...item,from:table.code});});
+    });
+  }
+  const allTotal=allItems.reduce((s,i)=>s+i.p*i.q,0);
+
+  let body='';
+  if(mode==='new-order')body=`<div class="empty-state"><p style="font-size:1.5rem;margin-bottom:8px">+</p><p>Abrindo novo pedido para <strong>${t.code}</strong></p></div>`;
+  else if(allItems.length===0)body='<div class="empty-state"><p>Nenhum item no pedido</p></div>';
+  else{
+    body=allItems.map(i=>`<div class="order-item"><div><div class="order-item-name">${i.n}${i.from?` <span style="color:var(--muted);font-weight:400;font-size:0.75rem">(${i.from})</span>`:''}</div><div class="order-item-detail">R$ ${i.p.toFixed(2)}</div></div><div class="order-item-qty">x${i.q}</div></div>`).join('');
+    body+=`<div class="order-total"><span>Total</span><span>R$ ${allTotal.toFixed(2)}</span></div>`;
+  }
+
+  let footer='';
+  if(mode==='add-item')footer='<button class="btn btn-primary" id="panelConfirm">Adicionar item</button>';
+  else if(mode==='close-account')footer='<button class="btn btn-primary" id="panelConfirm">Confirmar pagamento</button>';
+  else if(mode==='preview-bill')footer='<button class="btn btn-primary" id="panelConfirm">Imprimir</button>';
+  else if(mode==='new-order')footer='<button class="btn btn-primary" id="panelConfirm">Abrir pedido</button>';
+  footer+='<button class="btn btn-ghost" id="panelClose">Fechar</button>';
+
+  panel.innerHTML=`<div class="inline-panel-header"><h3>${titles[mode]||'Pedido'}</h3><button class="popup-close" id="panelCloseX">&times;</button></div><div class="inline-panel-body">${body}</div><div class="inline-panel-footer">${footer}</div>`;
+  panel.style.display='flex';panel.style.right='20px';panel.style.top='180px';
+  document.getElementById('overlay').style.display='block';
+
+  document.getElementById('panelCloseX').addEventListener('click',e=>{e.stopPropagation();closeAll();});
+  document.getElementById('panelClose').addEventListener('click',e=>{e.stopPropagation();closeAll();});
+  const confirmBtn=document.getElementById('panelConfirm');
+  if(confirmBtn)confirmBtn.addEventListener('click',e=>{e.stopPropagation();closeAll();notify(mode==='close-account'?'Conta fechada!':mode==='preview-bill'?'Previa enviada':mode==='new-order'?'Pedido aberto':'Item adicionado');});
+}
+
+// ===== MERGE =====
+function _toggleMergeMode(){
+  mergeMode=!mergeMode;mergeSelection.clear();
+  document.getElementById('mergeBar').classList.toggle('active',mergeMode);
+  document.getElementById('mergeBtn').textContent=mergeMode?'Sair do modo juncao':'Juntar mesas';
+  document.getElementById('hint').textContent=mergeMode?'Clique nas mesas para selecionar (minimo 2).':'Arraste mesas para organizar. Scroll = zoom. Clique em area vazia e arraste = mover mapa.';
+  render();
+}
+function _confirmMergeGroup(){
+  if(mergeSelection.size<2)return;
+  const tables=getT().filter(t=>mergeSelection.has(t.id));
+  document.getElementById('mdPreview').innerHTML=`${tables.map(t=>`<span class="preview-tile">${t.code}</span>`).join('<span class="merge-arrow">+</span>')}<span class="merge-arrow">&rarr;</span><span class="preview-tile" style="border-color:var(--accent);color:var(--accent)">Grupo</span>`;
+  document.getElementById('mdTitle').textContent='Juntar mesas?';
+  document.getElementById('mdDesc').textContent=`${tables.length} mesas serao agrupadas lado a lado.`;
+  document.getElementById('mdConfirm').onclick=executeGroupMerge;
+  document.getElementById('mergeOverlay').style.display='block';
+  document.getElementById('mergeDialog').style.display='block';
+}
+function executeGroupMerge(){
+  const gid=`g${nid++}`;
+  const selectedIds=[...mergeSelection];
+  // Position tables side by side starting from the first table's position
+  const tables=getT();
+  const firstTable=tables.find(t=>t.id===selectedIds[0]);
+  const startX=firstTable?firstTable.x:100;
+  const startY=firstTable?firstTable.y:100;
+
+  selectedIds.forEach((id,i)=>{
+    const t=tables.find(x=>x.id===id);
+    if(t){
+      t.groupId=gid;
+      t.x=startX+i*(TABLE_W+TABLE_GAP);
+      t.y=startY;
+    }
+  });
+
+  cancelMergeConfirm();cancelMerge();render();
+  notify(`${selectedIds.length} mesas juntadas!`);
+}
+function cancelMergeConfirm(){document.getElementById('mergeOverlay').style.display='none';document.getElementById('mergeDialog').style.display='none';}
+function cancelMerge(){mergeMode=false;mergeSelection.clear();document.getElementById('mergeBar').classList.remove('active');document.getElementById('mergeBtn').textContent='Juntar mesas';document.getElementById('hint').textContent='Arraste mesas para organizar. Scroll = zoom. Clique em area vazia e arraste = mover mapa.';render();}
+
+function unmergeTable(t){
+  if(!t.groupId)return;
+  const gid=t.groupId;
+  const groupTables=getT().filter(x=>x.groupId===gid);
+  getT().forEach(x=>{if(x.groupId===gid)x.groupId=null;});
+  render();
+  notify(`${groupTables.length} mesas separadas`);
+}
+
+// ===== ROOMS =====
+document.getElementById('roomTabs').addEventListener('click',e=>{
+  const tab=e.target.closest('.room-tab');
+  if(!tab||tab.classList.contains('room-tab-add'))return;
+  document.querySelectorAll('.room-tab').forEach(t=>{t.classList.remove('active');});
+  tab.classList.add('active');activeRoom=tab.dataset.room;
+  applyGroupLayout();zoomFit();render();
+});
+function _addRoom(){
+  const name=prompt('Nome da nova area:');if(!name)return;
+  const id=name.toLowerCase().replace(/\s+/g,'-');
+  rooms[id]={name,floorPlan:null,tables:[]};
+  const tab=document.createElement('button');tab.className='room-tab';tab.dataset.room=id;tab.textContent=name;
+  document.getElementById('roomTabs').insertBefore(tab,document.querySelector('.room-tab-add'));
+  tab.click();
+}
+
+// ===== NEW TABLE =====
+function _addNewTable(){
+  const code=prompt('Codigo da mesa (ex: M14):');if(!code)return;
+  const name=prompt('Nome:')||code;
+  const seats=parseInt(prompt('Lugares:','4'), 10)||4;
+  getT().push({id:`t${nid++}`,code:code.toUpperCase(),name,seats,status:'free',x:100+Math.random()*500,y:100+Math.random()*400,groupId:null});
+  render();
+}
+
+// ===== FLOOR PLAN =====
+function _uploadFloorPlan(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    rooms[activeRoom].floorPlan=ev.target.result;
+    let bg=document.getElementById('fpBg');
+    if(!bg){bg=document.createElement('img');bg.id='fpBg';bg.className='floor-plan-img';document.getElementById('canvasWorld').insertBefore(bg,document.getElementById('canvasWorld').firstChild.nextSibling);}
+    bg.src=ev.target.result;bg.style.display='block';notify('Planta de fundo adicionada');
+  };
+  reader.readAsDataURL(file);
+}
+
+function notify(msg){const n=document.createElement('div');n.className='notification';n.textContent=msg;document.body.appendChild(n);setTimeout(()=>n.remove(),2500);}
+
+render();
+</script>
+</body>
+</html>

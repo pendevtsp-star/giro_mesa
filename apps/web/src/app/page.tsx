@@ -3,8 +3,8 @@ import {
   BarChart3,
   Check,
   ChefHat,
-  CircleDollarSign,
   Clock3,
+  Menu,
   QrCode,
   ShieldCheck,
   Store,
@@ -31,277 +31,394 @@ const benefits = [
   },
 ] as const;
 
-const proof = [
-  "PDV para balcão, mesa e comanda",
-  "KDS, cardápio QR e impressão por rota",
-  "Caixa, estoque e relatórios executivos",
-  "Usuários por função, MFA e auditoria",
-] as const;
-
 const modules = [
-  [
-    "PDV e salão",
-    "Abra mesas, lance pedidos e faça pagamentos parciais sem perder contexto.",
-    Store,
-  ],
-  ["Cozinha e bar", "Envie tickets ao KDS e acompanhe o preparo em tempo real.", ChefHat],
-  ["Gestão financeira", "Leia recebimentos, divergências de caixa e alertas do turno.", BarChart3],
-  [
-    "Cardápio digital",
-    "Ofereça QR por mesa com pedido assistido e chamada de atendimento.",
-    QrCode,
-  ],
+  {
+    icon: Store,
+    title: "PDV e salão",
+    body: "Abra mesas, lance pedidos e faça pagamentos parciais sem perder contexto.",
+  },
+  {
+    icon: ChefHat,
+    title: "Cozinha e bar",
+    body: "Envie tickets ao KDS e acompanhe o preparo em tempo real.",
+  },
+  {
+    icon: BarChart3,
+    title: "Gestão financeira",
+    body: "Leia recebimentos, divergências de caixa e alertas do turno.",
+  },
+  {
+    icon: QrCode,
+    title: "Cardápio digital",
+    body: "Ofereça QR por mesa com pedido assistido e chamada de atendimento.",
+    href: "/m/bar-aurora-demo",
+    cta: "Abrir cardápio de demonstração",
+  },
 ] as const;
 
 const plans = [
   {
     name: "Starter",
-    price: "R$ 149/mês",
+    price: "R$ 149",
     body: "Para casas começando a organizar PDV, mesas e caixa.",
     bullets: ["1 unidade", "Até 5 usuários", "Cardápio, PDV e caixa"],
     featured: false,
   },
   {
     name: "Professional",
-    price: "R$ 299/mês",
+    price: "R$ 299",
     body: "Para operação completa com salão, KDS, estoque e relatórios.",
     bullets: ["2 unidades", "Até 15 usuários", "KDS, estoque e relatórios"],
     featured: true,
   },
   {
     name: "Premium",
-    price: "R$ 499/mês",
+    price: "R$ 499",
     body: "Para multiunidade e operação com acompanhamento prioritário.",
     bullets: ["5 unidades", "Até 40 usuários", "Gestão avançada e suporte"],
     featured: false,
   },
 ] as const;
 
+const photos = ["bar", "drink", "kitchen", "counter", "dining"] as const;
+const photoLoop = [
+  ...photos.map((photo) => ({ id: `${photo}-first`, photo })),
+  ...photos.map((photo) => ({ id: `${photo}-second`, photo })),
+] as const;
+
+function Brand() {
+  return (
+    <span className="landing-brand">
+      <span className="landing-brand-mark" aria-hidden="true">
+        G
+      </span>
+      <span>
+        Giro<strong>Mesa</strong>
+      </span>
+    </span>
+  );
+}
+
+function DashboardPreview() {
+  return (
+    <div className="landing-dashboard-wrap">
+      <div className="landing-dashboard-photo" aria-hidden="true" />
+      <figure className="landing-dashboard">
+        <div className="landing-window-bar">
+          <span className="landing-window-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>
+            <Clock3 size={15} /> Visão do turno
+          </span>
+        </div>
+        <Image
+          src="/images/giro-mesa-dashboard.png"
+          alt="Painel do GiroMesa com mesas, pedidos e caixa do turno"
+          width={1280}
+          height={800}
+          priority
+        />
+      </figure>
+      <aside className="landing-cash-card" aria-label="Resumo de caixa de demonstração">
+        <span className="landing-cash-label">Caixa do turno</span>
+        <strong>R$ 2.184,00</strong>
+        <small>
+          <i aria-hidden="true" /> conferência em andamento
+        </small>
+      </aside>
+    </div>
+  );
+}
+
 export default function HomePage() {
   return (
-    <main className="sales-page">
-      <header className="sales-topbar">
-        <a className="brand" href="/" aria-label="GiroMesa">
-          <span className="brand-mark">G</span>
-          <span>GiroMesa</span>
-        </a>
-        <nav className="sales-nav" aria-label="Navegação principal">
-          <a href="#produto">Produto</a>
-          <a href="#operacao">Operação</a>
-          <a href="#seguranca">Segurança</a>
-          <a href="/manual">Manual</a>
-        </nav>
-        <div className="sales-actions">
-          <a className="button ghost" href="/login">
-            Entrar
+    <div className="landing-page">
+      <a className="landing-skip-link" href="#conteudo">
+        Ir para o conteúdo
+      </a>
+
+      <header className="landing-header">
+        <div className="landing-container landing-header-inner">
+          <a href="/" aria-label="GiroMesa — página inicial">
+            <Brand />
           </a>
-          <a className="button primary" href="/teste-gratis">
-            Começar teste grátis <ArrowRight size={16} />
-          </a>
+
+          <nav className="landing-nav" aria-label="Navegação principal">
+            <a href="#produto">Produto</a>
+            <a href="#operacao">Operação</a>
+            <a href="#seguranca">Segurança</a>
+            <a href="#planos">Planos</a>
+            <a href="/manual">Manual</a>
+          </nav>
+
+          <div className="landing-header-actions">
+            <a className="landing-login-link" href="/login">
+              Entrar
+            </a>
+            <a
+              className="landing-button landing-button-primary landing-button-small"
+              href="/teste-gratis"
+            >
+              Começar teste grátis <ArrowRight size={16} />
+            </a>
+          </div>
+
+          <details className="landing-mobile-menu">
+            <summary aria-label="Abrir menu">
+              <Menu size={24} />
+            </summary>
+            <nav aria-label="Navegação para celular">
+              <a href="#produto">Produto</a>
+              <a href="#operacao">Operação</a>
+              <a href="#seguranca">Segurança</a>
+              <a href="#planos">Planos</a>
+              <a href="/manual">Manual</a>
+              <a href="/login">Entrar</a>
+              <a className="landing-button landing-button-primary" href="/teste-gratis">
+                Começar teste grátis
+              </a>
+            </nav>
+          </details>
         </div>
       </header>
 
-      <section className="sales-hero" id="produto">
-        <div className="sales-hero-copy">
-          <span className="sales-eyebrow">
-            <CircleDollarSign size={16} /> Gestão food service
-          </span>
-          <h1>Gestão que gira. Resultados que ficam.</h1>
-          <p>
-            GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação
-            inteligente, prática e confiável para a equipe e para quem toma decisões.
-          </p>
-          <div className="sales-hero-actions">
-            <a className="button primary" href="/teste-gratis">
-              Testar grátis por 7 dias <ArrowRight size={18} />
-            </a>
-            <a className="button secondary" href="/m/bar-aurora-demo">
-              Explorar cardápio QR
-            </a>
-          </div>
-          <ul className="sales-proof-list">
-            {proof.map((item) => (
-              <li key={item}>
-                <Check size={16} /> {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <figure className="sales-product-frame">
-          <div className="sales-window-bar">
-            <span /> <span /> <span />
-            <strong>Visão do turno</strong>
-            <Clock3 size={16} />
-          </div>
-          <Image
-            src="/images/giro-mesa-dashboard.png"
-            alt="Painel do GiroMesa com mesas, pedidos e caixa"
-            width={1280}
-            height={800}
-            priority
-          />
-          <div className="sales-float-card">
-            <span>Caixa do turno</span>
-            <strong>R$ 2.184,00</strong>
-            <small>conferência em andamento</small>
-          </div>
-        </figure>
-      </section>
-
-      <section className="sales-band" id="operacao">
-        <div>
-          <span className="section-kicker">Da chegada ao fechamento</span>
-          <h2>Uma rotina operacional sem troca de contexto.</h2>
-        </div>
-        <p>
-          Cada função enxerga o que precisa fazer: garçom atende, cozinha produz, caixa recebe e a
-          gestão acompanha o que exige atenção.
-        </p>
-      </section>
-
-      <section className="sales-benefits">
-        {benefits.map(({ icon: Icon, title, body }) => (
-          <article key={title}>
-            <span>
-              <Icon size={22} />
-            </span>
-            <h3>{title}</h3>
-            <p>{body}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="sales-modules">
-        <div className="sales-section-heading">
-          <span className="section-kicker">Uma base que evolui com a casa</span>
-          <h2>Comece pelo que faz diferença em um turno de verdade.</h2>
-          <p>
-            O GiroMesa é cloud-first e deixa a operação pronta para crescer com integrações
-            controladas.
-          </p>
-        </div>
-        <div className="sales-module-grid">
-          {modules.map(([title, body, Icon]) => (
-            <article key={title}>
-              <Icon size={24} />
-              <h3>{title}</h3>
-              <p>{body}</p>
-              <a href="/teste-gratis">
-                Ativar no meu ambiente <ArrowRight size={15} />
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="sales-security" id="seguranca">
-        <div>
-          <span className="sales-eyebrow">
-            <ShieldCheck size={16} /> Operação com controle
-          </span>
-          <h2>Cada ação importante deixa rastro.</h2>
-          <p>
-            Permissões por perfil, MFA para acessos sensíveis, auditoria e isolamento entre
-            estabelecimentos fazem parte da base, não de um complemento.
-          </p>
-        </div>
-        <dl>
-          <div>
-            <dt>Multi-tenant</dt>
-            <dd>Dados isolados por estabelecimento.</dd>
-          </div>
-          <div>
-            <dt>Perfis de acesso</dt>
-            <dd>Equipe com apenas as permissões necessárias.</dd>
-          </div>
-          <div>
-            <dt>Auditoria</dt>
-            <dd>Cancelamentos e ajustes ficam rastreáveis.</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section className="sales-plans" id="planos">
-        <div className="sales-section-heading">
-          <span className="section-kicker">Teste grátis sem cartão</span>
-          <h2>Planos claros antes da ativação.</h2>
-          <p>
-            O cliente testa por 7 dias e só escolhe a continuidade quando a operação fizer sentido.
-          </p>
-        </div>
-        <div className="sales-plan-grid">
-          {plans.map((plan) => (
-            <article className={plan.featured ? "featured" : ""} key={plan.name}>
-              {plan.featured ? <span className="gm-badge gm-badge-good">Mais indicado</span> : null}
-              <h3>{plan.name}</h3>
-              <strong>{plan.price}</strong>
-              <p>{plan.body}</p>
-              <ul>
-                {plan.bullets.map((bullet) => (
-                  <li key={bullet}>
-                    <Check size={15} /> {bullet}
+      <main id="conteudo">
+        <section className="landing-hero" id="produto">
+          <div className="landing-ambient landing-ambient-blue" aria-hidden="true" />
+          <div className="landing-ambient landing-ambient-yellow" aria-hidden="true" />
+          <div className="landing-container landing-hero-grid">
+            <div className="landing-hero-copy">
+              <h1>
+                Gestão que gira.
+                <span>Resultados que ficam.</span>
+              </h1>
+              <p>
+                GiroMesa reúne salão, cozinha, caixa, estoque e cardápio digital em uma operação
+                inteligente e prática para a equipe do seu bar ou restaurante.
+              </p>
+              <div className="landing-hero-actions">
+                <a className="landing-button landing-button-primary" href="/teste-gratis">
+                  Testar grátis por 7 dias <ArrowRight size={18} />
+                </a>
+                <a className="landing-button landing-button-secondary" href="/m/bar-aurora-demo">
+                  <QrCode size={18} /> Explorar cardápio QR
+                </a>
+              </div>
+              <ul className="landing-proof-list">
+                {[
+                  "PDV para balcão, mesa e comanda",
+                  "KDS, cardápio QR e impressão por rota",
+                  "Caixa, estoque e relatórios executivos",
+                  "Usuários por função, MFA e auditoria",
+                ].map((item) => (
+                  <li key={item}>
+                    <Check size={16} /> {item}
                   </li>
                 ))}
               </ul>
-              <a className={plan.featured ? "button primary" : "button ghost"} href="/teste-gratis">
-                Testar este plano
-              </a>
-            </article>
-          ))}
-        </div>
-      </section>
+            </div>
+            <DashboardPreview />
+          </div>
+        </section>
 
-      <section className="sales-implementation">
-        <div className="sales-section-heading">
-          <span className="section-kicker">Implantação sem improviso</span>
-          <h2>Uma casa preparada para rodar com processo, equipe e acompanhamento.</h2>
-          <p>
-            O GiroMesa organiza a entrada do cliente por etapas operacionais que a equipe consegue
-            validar.
-          </p>
-        </div>
-        <ol>
-          <li>
-            <strong>1. Configuração</strong>
-            <span>Unidade, cardápio, mesas, equipe e permissões.</span>
-          </li>
-          <li>
-            <strong>2. Treino assistido</strong>
-            <span>Garçom, cozinha, caixa e impressão em fluxo controlado.</span>
-          </li>
-          <li>
-            <strong>3. Primeiro turno</strong>
-            <span>Acompanhamento de pedidos, recebimentos e fechamento.</span>
-          </li>
-          <li>
-            <strong>4. Evolução</strong>
-            <span>Relatórios, estoque, integrações e novas unidades por fase.</span>
-          </li>
-        </ol>
-      </section>
+        <section className="landing-vibe" aria-labelledby="ritmo-title">
+          <p id="ritmo-title">Feito para o ritmo do seu salão</p>
+          <div className="landing-photo-rail">
+            <div className="landing-photo-track">
+              {photoLoop.map(({ id, photo }) => (
+                <div
+                  className={`landing-photo landing-photo-${photo}`}
+                  key={id}
+                  role="img"
+                  aria-label="Ambiente de bar e restaurante em operação"
+                />
+              ))}
+            </div>
+          </div>
+        </section>
 
-      <section className="sales-cta">
-        <div>
-          <span className="section-kicker">Próximo passo</span>
-          <h2>Veja o GiroMesa no ritmo de um estabelecimento.</h2>
-          <p>
-            Comece sem cartão e valide a rotina com mesas, pedidos, caixa, relatórios e equipe em um
-            ambiente próprio.
-          </p>
-        </div>
-        <a className="button primary" href="/teste-gratis">
-          Começar teste grátis <ArrowRight size={18} />
-        </a>
-      </section>
+        <section className="landing-operation" id="operacao">
+          <div className="landing-container">
+            <header className="landing-section-heading landing-section-heading-centered">
+              <span className="landing-section-kicker">Da chegada ao fechamento</span>
+              <h2>Uma rotina operacional sem troca de contexto.</h2>
+              <p>
+                Cada função enxerga o que precisa fazer: garçom atende, cozinha produz, caixa recebe
+                e a gestão acompanha o que exige atenção.
+              </p>
+            </header>
+            <div className="landing-benefit-grid">
+              {benefits.map(({ icon: Icon, title, body }) => (
+                <article key={title}>
+                  <span className="landing-icon-tile">
+                    <Icon size={28} />
+                  </span>
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
 
-      <footer className="sales-footer">
-        <span>GiroMesa</span>
-        <div>
-          <a href="/manual">Manual</a>
-          <a href="/login">Acessar sistema</a>
-          <a href="/status">Status</a>
+        <section className="landing-modules">
+          <div className="landing-container">
+            <header className="landing-section-heading">
+              <span className="landing-section-kicker">Uma base que evolui com a casa</span>
+              <h2>Comece pelo que faz diferença em um turno de verdade.</h2>
+              <p>
+                O GiroMesa é cloud-first e deixa a operação pronta para crescer com integrações
+                controladas.
+              </p>
+            </header>
+            <div className="landing-module-grid">
+              {modules.map(({ icon: Icon, title, body, ...module }) => (
+                <article key={title}>
+                  <Icon size={28} strokeWidth={1.6} />
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                  <a href={"href" in module ? module.href : "/teste-gratis"}>
+                    {"cta" in module ? module.cta : "Ativar no meu ambiente"}
+                    <ArrowRight size={15} />
+                  </a>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="landing-security" id="seguranca">
+          <div className="landing-container landing-security-grid">
+            <div>
+              <span className="landing-eyebrow">
+                <ShieldCheck size={16} /> Operação com controle
+              </span>
+              <h2>Cada ação importante deixa rastro.</h2>
+              <p>
+                Permissões por perfil, MFA para acessos sensíveis, auditoria e isolamento entre
+                estabelecimentos fazem parte da base, não de um complemento.
+              </p>
+            </div>
+            <dl>
+              <div>
+                <dt>Multi-tenant</dt>
+                <dd>Dados isolados por estabelecimento.</dd>
+              </div>
+              <div>
+                <dt>Perfis de acesso</dt>
+                <dd>Equipe com apenas as permissões necessárias.</dd>
+              </div>
+              <div>
+                <dt>Auditoria</dt>
+                <dd>Cancelamentos e ajustes ficam rastreáveis.</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <section className="landing-pricing" id="planos">
+          <div className="landing-container">
+            <header className="landing-section-heading landing-section-heading-centered">
+              <span className="landing-section-kicker">Teste grátis sem cartão</span>
+              <h2>Planos claros antes da ativação.</h2>
+              <p>
+                Você testa por 7 dias e só escolhe a continuidade quando a operação fizer sentido.
+              </p>
+            </header>
+            <div className="landing-plan-grid">
+              {plans.map((plan) => (
+                <article className={plan.featured ? "is-featured" : ""} key={plan.name}>
+                  {plan.featured ? <span className="landing-plan-label">Mais indicado</span> : null}
+                  <h3>{plan.name}</h3>
+                  <div className="landing-price">
+                    <strong>{plan.price}</strong>
+                    <span className="landing-price-period">/mês</span>
+                  </div>
+                  <p>{plan.body}</p>
+                  <ul>
+                    {plan.bullets.map((bullet) => (
+                      <li key={bullet}>
+                        <Check size={16} /> {bullet}
+                      </li>
+                    ))}
+                  </ul>
+                  <a
+                    className={`landing-button ${
+                      plan.featured ? "landing-button-primary" : "landing-button-secondary"
+                    }`}
+                    href="/teste-gratis"
+                  >
+                    Testar este plano
+                  </a>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="landing-implementation">
+          <div className="landing-container landing-implementation-grid">
+            <header className="landing-section-heading">
+              <span className="landing-section-kicker">Implantação sem improviso</span>
+              <h2>Processo, equipe e acompanhamento desde o primeiro turno.</h2>
+              <p>
+                O GiroMesa organiza a entrada do cliente em etapas que a equipe consegue validar.
+              </p>
+            </header>
+            <ol>
+              {[
+                ["01", "Configuração", "Unidade, cardápio, mesas, equipe e permissões."],
+                [
+                  "02",
+                  "Treino assistido",
+                  "Garçom, cozinha, caixa e impressão em fluxo controlado.",
+                ],
+                ["03", "Primeiro turno", "Pedidos, recebimentos e fechamento acompanhados."],
+                ["04", "Evolução", "Relatórios, estoque, integrações e novas unidades por fase."],
+              ].map(([number, title, body]) => (
+                <li key={number}>
+                  <span>{number}</span>
+                  <div>
+                    <strong>{title}</strong>
+                    <p>{body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section className="landing-cta">
+          <div className="landing-ambient landing-ambient-blue" aria-hidden="true" />
+          <div className="landing-container">
+            <span className="landing-section-kicker">Próximo passo</span>
+            <h2>Pronto para acelerar sua operação?</h2>
+            <p>
+              Comece sem cartão e valide mesas, pedidos, caixa, relatórios e equipe em um ambiente
+              próprio.
+            </p>
+            <a className="landing-button landing-button-primary" href="/teste-gratis">
+              Começar teste grátis agora <ArrowRight size={20} />
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer className="landing-footer">
+        <div className="landing-container">
+          <a href="/" aria-label="GiroMesa — página inicial">
+            <Brand />
+          </a>
+          <nav aria-label="Links institucionais">
+            <a href="/manual">Manual</a>
+            <a href="/login">Acessar sistema</a>
+            <a href="/status">Status</a>
+          </nav>
         </div>
       </footer>
-    </main>
+    </div>
   );
 }

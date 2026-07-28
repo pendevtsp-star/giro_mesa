@@ -408,6 +408,8 @@ export class PlatformService {
             "print:operate",
             "inventory:manage",
             "reports:read",
+            "delivery:manage",
+            "approvals:manage",
           ],
         })
         .returning();

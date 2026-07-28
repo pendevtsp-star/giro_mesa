@@ -1,9 +1,13 @@
 import type {
+  ApprovalStatus,
+  CashHandoverStatus,
   CashSessionStatus,
   FiscalStatus,
   OrderItemStatus,
   OrderStatus,
   PaymentStatus,
+  ReservationStatus,
+  WaitlistStatus,
 } from "./enums";
 
 const orderTransitions: Record<OrderStatus, OrderStatus[]> = {
@@ -57,6 +61,36 @@ const fiscalTransitions: Record<FiscalStatus, FiscalStatus[]> = {
   error: ["pending"],
 };
 
+const approvalTransitions: Record<ApprovalStatus, ApprovalStatus[]> = {
+  pending: ["approved", "rejected", "expired"],
+  approved: [],
+  rejected: [],
+  expired: [],
+};
+
+const cashHandoverTransitions: Record<CashHandoverStatus, CashHandoverStatus[]> = {
+  not_required: [],
+  pending: ["received", "disputed"],
+  received: [],
+  disputed: ["received"],
+};
+
+const reservationTransitions: Record<ReservationStatus, ReservationStatus[]> = {
+  booked: ["arrived", "no_show", "canceled"],
+  arrived: ["seated", "no_show", "canceled"],
+  seated: [],
+  no_show: [],
+  canceled: [],
+};
+
+const waitlistTransitions: Record<WaitlistStatus, WaitlistStatus[]> = {
+  waiting: ["notified", "seated", "left", "canceled"],
+  notified: ["seated", "left", "canceled"],
+  seated: [],
+  left: [],
+  canceled: [],
+};
+
 function assertTransition<TStatus extends string>(
   transitions: Record<TStatus, TStatus[]>,
   from: TStatus,
@@ -78,4 +112,12 @@ export const stateMachines = {
     assertTransition(cashSessionTransitions, from, to),
   assertFiscalTransition: (from: FiscalStatus, to: FiscalStatus) =>
     assertTransition(fiscalTransitions, from, to),
+  assertApprovalTransition: (from: ApprovalStatus, to: ApprovalStatus) =>
+    assertTransition(approvalTransitions, from, to),
+  assertCashHandoverTransition: (from: CashHandoverStatus, to: CashHandoverStatus) =>
+    assertTransition(cashHandoverTransitions, from, to),
+  assertReservationTransition: (from: ReservationStatus, to: ReservationStatus) =>
+    assertTransition(reservationTransitions, from, to),
+  assertWaitlistTransition: (from: WaitlistStatus, to: WaitlistStatus) =>
+    assertTransition(waitlistTransitions, from, to),
 };

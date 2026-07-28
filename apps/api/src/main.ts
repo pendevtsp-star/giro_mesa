@@ -6,17 +6,25 @@ import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fa
 import { AppModule } from "./app.module";
 import { verifyCsrfToken } from "./common/csrf";
 import { firstHeader, parseCookies } from "./common/http";
+import { metricsMiddleware } from "./common/metrics.middleware";
 
 const env = loadEnv();
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: env.NODE_ENV !== "test" }),
+    new FastifyAdapter({
+      logger: env.NODE_ENV !== "test",
+      maxParamLength: 1024,
+    }),
     { rawBody: true },
   );
 
   const fastify = app.getHttpAdapter().getInstance();
+
+  // Metrics middleware - track all requests
+  fastify.addHook("preHandler", metricsMiddleware);
+
   fastify.addHook("preHandler", async (request, reply) => {
     if (!requiresCsrfProtection(request.method, request.url)) {
       return;
@@ -66,6 +74,9 @@ async function bootstrap() {
     exclude: [
       { path: "health", method: RequestMethod.GET },
       { path: "health/ready", method: RequestMethod.GET },
+      { path: "health/detailed", method: RequestMethod.GET },
+      { path: "health/metrics", method: RequestMethod.GET },
+      { path: "health/alerts", method: RequestMethod.GET },
       { path: "webhooks/asaas", method: RequestMethod.POST },
       { path: "webhooks/meta", method: RequestMethod.POST },
       { path: "webhooks/ifood", method: RequestMethod.POST },
@@ -73,8 +84,8 @@ async function bootstrap() {
     ],
   });
 
-  await app.listen(3333, "0.0.0.0");
-  Logger.log("API ready on http://localhost:3333", "Bootstrap");
+  await app.listen(env.API_PORT, "0.0.0.0");
+  Logger.log(`API ready on http://localhost:${env.API_PORT}`, "Bootstrap");
 }
 
 void bootstrap();

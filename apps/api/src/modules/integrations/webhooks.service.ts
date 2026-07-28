@@ -1,7 +1,9 @@
-import { subscriptions, tenants, webhookEvents } from "@giromesa/db";
-import { Inject, Injectable } from "@nestjs/common";
+import { deliveryOrders, subscriptions, tenants, webhookEvents } from "@giromesa/db";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { eq } from "drizzle-orm";
+import { createWhatsAppProvider } from "../../common/whatsapp-provider";
 import { DatabaseService } from "../database/database.service";
+import { IfoodProvider } from "./ifood-provider";
 
 export type WebhookInput = {
   provider: string;
@@ -12,7 +14,12 @@ export type WebhookInput = {
 
 @Injectable()
 export class WebhooksService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  private readonly logger = new Logger(WebhooksService.name);
+
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(IfoodProvider) readonly _ifoodProvider: IfoodProvider,
+  ) {}
 
   async accept(input: WebhookInput) {
     const [event] = await this.database.db
@@ -31,6 +38,14 @@ export class WebhooksService {
       await this.processAsaasEvent(event.id, input.payload);
     }
 
+    if (event && input.provider === "meta_whatsapp") {
+      await this.processMetaWhatsAppEvent(event.id, input.payload);
+    }
+
+    if (event && input.provider === "ifood") {
+      await this.processIfoodEvent(event.id, input.payload);
+    }
+
     return {
       accepted: true,
       duplicate: !event,
@@ -41,9 +56,32 @@ export class WebhooksService {
           ? "asaas-webhooks"
           : input.provider === "meta_whatsapp"
             ? "messaging-events"
-            : "outbox-events",
+            : input.provider === "ifood"
+              ? "delivery-events"
+              : "outbox-events",
       idempotency: "provider_external_event_id",
     };
+  }
+
+  private async processMetaWhatsAppEvent(webhookEventId: string, payload: Record<string, unknown>) {
+    const provider = createWhatsAppProvider();
+    const incomingMessages = provider.parseIncomingPayload(payload);
+
+    if (incomingMessages.length === 0) {
+      await this.markWebhookProcessed(webhookEventId, "ignored");
+      return;
+    }
+
+    for (const message of incomingMessages) {
+      console.log("whatsapp incoming message", {
+        webhookEventId,
+        from: message.from,
+        type: message.type,
+        messageId: message.messageId,
+      });
+    }
+
+    await this.markWebhookProcessed(webhookEventId, "processed");
   }
 
   private async processAsaasEvent(webhookEventId: string, payload: Record<string, unknown>) {
@@ -82,6 +120,67 @@ export class WebhooksService {
       .update(subscriptions)
       .set({ status: nextStatus, updatedAt: new Date() })
       .where(eq(subscriptions.tenantId, tenant.id));
+
+    await this.markWebhookProcessed(webhookEventId, "processed");
+  }
+
+  private async processIfoodEvent(webhookEventId: string, payload: Record<string, unknown>) {
+    const eventType = payload.event as string | undefined;
+    const orderId = payload.orderId as string | undefined;
+
+    if (!eventType || !orderId) {
+      this.logger.warn("iFood webhook missing eventType or orderId", { webhookEventId });
+      await this.markWebhookProcessed(webhookEventId, "ignored");
+      return;
+    }
+
+    const statusMap: Record<string, string> = {
+      PLACED: "confirmed",
+      CONFIRMED: "confirmed",
+      STARTED: "preparing",
+      READY_TO_WITHDRAW: "ready_for_pickup",
+      DISPATCHED: "out_for_delivery",
+      CONCLUDED: "delivered",
+      CANCELED: "canceled",
+    };
+
+    const mappedStatus = statusMap[eventType];
+    if (!mappedStatus) {
+      this.logger.debug(`iFood event type "${eventType}" not mapped to delivery status`, {
+        webhookEventId,
+      });
+      await this.markWebhookProcessed(webhookEventId, "processed");
+      return;
+    }
+
+    const [delivery] = await this.database.db
+      .select()
+      .from(deliveryOrders)
+      .where(eq(deliveryOrders.orderId, orderId))
+      .limit(1);
+
+    if (!delivery) {
+      this.logger.debug(`No delivery order found for iFood orderId ${orderId}`, {
+        webhookEventId,
+      });
+      await this.markWebhookProcessed(webhookEventId, "ignored");
+      return;
+    }
+
+    await this.database.db
+      .update(deliveryOrders)
+      .set({
+        status: mappedStatus as
+          | "pending"
+          | "confirmed"
+          | "preparing"
+          | "ready_for_pickup"
+          | "out_for_delivery"
+          | "delivered"
+          | "canceled",
+        updatedAt: new Date(),
+      })
+      .where(eq(deliveryOrders.id, delivery.id));
 
     await this.markWebhookProcessed(webhookEventId, "processed");
   }

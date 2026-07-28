@@ -65,6 +65,7 @@ export function PrintingPanel({
   onPrinterFormChange,
   onPrintRouteFormChange,
   onCreatePrinterDevice,
+  onTestPrinterDevice,
   onCreatePrintRoute,
   onCopyConnectorKey,
   onConfigureConnector,
@@ -95,6 +96,7 @@ export function PrintingPanel({
   onPrinterFormChange: (updater: (current: PrinterForm) => PrinterForm) => void;
   onPrintRouteFormChange: (updater: (current: PrintRouteForm) => PrintRouteForm) => void;
   onCreatePrinterDevice: () => void;
+  onTestPrinterDevice: (deviceId: string) => void;
   onCreatePrintRoute: () => void;
   onCopyConnectorKey: () => void;
   onConfigureConnector: (rotateKey: boolean) => void;
@@ -195,6 +197,21 @@ export function PrintingPanel({
                 <option value="cashier">Caixa</option>
                 <option value="conference">Conferência</option>
                 <option value="fiscal">Fiscal</option>
+              </select>
+            </label>
+            <label>
+              Conexão
+              <select
+                value={printerForm.connectionType}
+                onChange={(event) =>
+                  onPrinterFormChange((current) => ({
+                    ...current,
+                    connectionType: event.target.value,
+                  }))
+                }
+              >
+                <option value="tcp">Rede TCP/IP</option>
+                <option value="usb">USB</option>
               </select>
             </label>
             <label>
@@ -397,6 +414,30 @@ export function PrintingPanel({
             <ClipboardList size={17} /> Cadastrar rota
           </button>
         </form>
+      </div>
+      <div className="status-list">
+        {printerDevices.map((device) => (
+          <div className="status-row rich" key={device.id}>
+            <div>
+              <strong>{device.name}</strong>
+              <span>
+                {device.role} · {device.connectionType}
+                {device.address ? ` · ${device.address}:${device.port ?? 9100}` : ""}
+              </span>
+            </div>
+            <Badge tone={device.isActive ? "good" : "neutral"}>
+              {device.isActive ? "ativa" : "inativa"}
+            </Badge>
+            <button
+              className="button secondary compact"
+              type="button"
+              onClick={() => onTestPrinterDevice(device.id)}
+              disabled={isBusy || !device.isActive}
+            >
+              <Printer size={15} /> Testar
+            </button>
+          </div>
+        ))}
       </div>
       <div className="status-list">
         {printJobs.slice(0, 3).map((job) => (

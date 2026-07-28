@@ -1,54 +1,45 @@
 import {
   auditLogs,
-  branches,
-  cashMovements,
-  cashSessions,
-  customers,
   diningTables,
-  floorPlans,
-  kdsStations,
+  inventoryItems,
   kdsTickets,
-  modifierGroups,
-  modifierOptions,
-  operationalShifts,
   orderItems,
   orders,
   outboxEvents,
-  payments,
-  printerDevices,
   printJobs,
   printRoutes,
-  products,
-  recipeItems,
-  recipes,
-  stockLocations,
   stockMovements,
-  tenants,
-  users,
 } from "@giromesa/db";
 import {
   calculateOrderTotal,
   type PaymentMethod,
-  splitAmount,
-  stateMachines,
+  type TableStatus,
   type TenantContext,
 } from "@giromesa/domain";
 import {
   BadRequestException,
-  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
+  type OnModuleInit,
+  Optional,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
-import { DatabaseService } from "../database/database.service";
-import { FiscalService } from "../fiscal/fiscal.service";
-import { createPrintProvider } from "../printing/print-provider";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { createCounter, createHistogram } from "../../common/metrics";
 import {
-  renderBillPreview,
-  renderCashSummary,
-  renderPaymentReceipt,
-} from "../printing/print-renderer";
+  type ApprovalApplicator,
+  ApprovalApplicatorRegistry,
+  type ApprovalRecord,
+  ApprovalsService,
+} from "../approvals/approvals.service";
+import { DatabaseService } from "../database/database.service";
+import { appendCancellationNotice, buildStockReversals } from "./cancellation-propagation";
+import { CashService } from "./cash.service";
+import { decideDiscountFlow, requiresCancellationApproval } from "./operational-exceptions";
+import { OrdersService } from "./orders.service";
+import { PaymentsService } from "./payments.service";
+import { PosRepository } from "./pos.repository";
+import { ShiftService } from "./shift.service";
 
 type OpenOrderInput = {
   channel: "counter" | "table" | "tab" | "delivery" | "qr";
@@ -69,6 +60,8 @@ type RegisterPaymentInput = {
   amountCents: number;
   method: PaymentMethod;
   idempotencyKey: string;
+  registeredVia?: "waiter" | "cashier" | undefined;
+  reference?: string | undefined;
 };
 
 type UpdateQrOrderItemInput = {
@@ -109,6 +102,14 @@ type CloseShiftInput = {
   notes?: string | undefined;
 };
 
+// Business metrics
+const orderCount = createCounter("giromesa_orders_total", "Total number of orders created");
+const revenueTotal = createCounter("giromesa_revenue_total", "Total revenue in cents");
+const orderValueHistogram = createHistogram(
+  "giromesa_order_value_cents",
+  "Order value distribution in cents",
+);
+
 export type CashSessionSummary = {
   branchId: string;
   session: {
@@ -140,18 +141,124 @@ export type CashSessionSummary = {
 };
 
 @Injectable()
-export class PosService {
+export class PosService implements OnModuleInit, ApprovalApplicator {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(FiscalService) private readonly fiscalService: FiscalService,
+    @Inject(PosRepository) private readonly posRepository: PosRepository,
+    @Inject(OrdersService) private readonly ordersService: OrdersService,
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(CashService) private readonly cashService: CashService,
+    @Inject(ShiftService) private readonly shiftService: ShiftService,
+    @Optional()
+    @Inject(ApprovalsService)
+    private readonly approvalsService?: ApprovalsService,
+    @Optional()
+    @Inject(ApprovalApplicatorRegistry)
+    private readonly approvalApplicatorRegistry?: ApprovalApplicatorRegistry,
   ) {}
 
-  async listTables(context: TenantContext, branchId: string) {
-    return this.database.db
-      .select()
-      .from(diningTables)
-      .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.branchId, branchId)));
+  onModuleInit() {
+    this.approvalApplicatorRegistry?.register(this);
   }
+
+  // --- Table / Floor Plan (delegates to PosRepository) ---
+
+  async listTables(context: TenantContext, branchId: string) {
+    return this.posRepository.listTables(context, branchId);
+  }
+
+  async createTable(
+    context: TenantContext,
+    input: { branchId: string; code: string; name: string; seats: number },
+  ) {
+    return this.posRepository.createTable(context, input);
+  }
+
+  async getFloorPlan(context: TenantContext, branchId: string) {
+    return this.posRepository.getFloorPlan(context, branchId);
+  }
+
+  async saveFloorPlan(
+    context: TenantContext,
+    input: {
+      branchId: string;
+      expectedVersion: number;
+      layout: Record<string, { x: number; y: number }>;
+    },
+  ) {
+    return this.posRepository.saveFloorPlan(context, input);
+  }
+
+  async listTableHistory(context: TenantContext, tableId: string, limit = 24) {
+    return this.posRepository.listTableHistory(context, tableId, limit);
+  }
+
+  async updateTable(
+    context: TenantContext,
+    tableId: string,
+    data: Partial<{ status: TableStatus; reservedName: string | null }>,
+  ) {
+    return this.posRepository.updateTable(context, tableId, data);
+  }
+
+  async mergeTables(context: TenantContext, branchId: string, tableIds: string[]) {
+    return this.posRepository.mergeTables(context, branchId, tableIds);
+  }
+
+  async unmergeTables(context: TenantContext, tableId: string) {
+    return this.posRepository.unmergeTables(context, tableId);
+  }
+
+  // --- Dashboard ---
+
+  async getDashboardSummary(context: TenantContext, branchId: string) {
+    const [tables, cashSummary, shift, inventoryAlerts] = await Promise.all([
+      this.posRepository.listTables(context, branchId),
+      this.cashService.getCashSessionSummary(context, branchId),
+      this.shiftService.getCurrentShift(context, branchId),
+      this.getInventoryAlertCount(context, branchId),
+    ]);
+
+    const occupiedCount = tables.filter((t) => t.status !== "free").length;
+
+    return {
+      salesToday: cashSummary.payments.totalCents,
+      activeOrders: cashSummary.openOrders.count,
+      occupiedTables: `${occupiedCount}/${tables.length}`,
+      cashBalance: cashSummary.session?.expectedAmountCents ?? 0,
+      shiftOpen: !!shift.shift,
+      cashOpen: !!cashSummary.session,
+      inventoryAlerts,
+    };
+  }
+
+  private async getInventoryAlertCount(context: TenantContext, branchId: string) {
+    const summary = await this.database.db
+      .select({
+        id: inventoryItems.id,
+        minQuantity: inventoryItems.minQuantity,
+        quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)`,
+      })
+      .from(inventoryItems)
+      .leftJoin(
+        stockMovements,
+        and(
+          eq(stockMovements.tenantId, inventoryItems.tenantId),
+          eq(stockMovements.inventoryItemId, inventoryItems.id),
+          eq(stockMovements.branchId, branchId),
+        ),
+      )
+      .where(eq(inventoryItems.tenantId, context.tenantId))
+      .groupBy(inventoryItems.id);
+
+    return summary.filter((item) => {
+      const quantity = Number(item.quantity);
+      const minQuantity = Number(item.minQuantity);
+      return quantity < minQuantity;
+    }).length;
+  }
+
+  // --- QR-specific (stays here) ---
 
   async listQrPendingOrders(context: TenantContext, branchId: string) {
     if (!branchId) {
@@ -221,126 +328,6 @@ export class PosService {
       ...order,
       items: itemsByOrder.get(order.id) ?? [],
     }));
-  }
-
-  async getOperationalEventSnapshot(context: TenantContext, branchId: string) {
-    if (!branchId) {
-      throw new BadRequestException("branchId is required");
-    }
-
-    const [latestAudit] = await this.database.db
-      .select({
-        id: auditLogs.id,
-        action: auditLogs.action,
-        createdAt: auditLogs.createdAt,
-      })
-      .from(auditLogs)
-      .where(and(eq(auditLogs.tenantId, context.tenantId), eq(auditLogs.branchId, branchId)))
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(1);
-
-    const [latestTicket] = await this.database.db
-      .select({
-        id: kdsTickets.id,
-        status: kdsTickets.status,
-        updatedAt: kdsTickets.updatedAt,
-        createdAt: kdsTickets.createdAt,
-      })
-      .from(kdsTickets)
-      .where(and(eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.branchId, branchId)))
-      .orderBy(desc(kdsTickets.updatedAt))
-      .limit(1);
-
-    const [latestOutbox] = await this.database.db
-      .select({
-        id: outboxEvents.id,
-        topic: outboxEvents.topic,
-        updatedAt: outboxEvents.updatedAt,
-        createdAt: outboxEvents.createdAt,
-      })
-      .from(outboxEvents)
-      .where(eq(outboxEvents.tenantId, context.tenantId))
-      .orderBy(desc(outboxEvents.updatedAt))
-      .limit(1);
-
-    const signature = [
-      latestAudit ? `${latestAudit.id}:${latestAudit.createdAt.toISOString()}` : "audit:none",
-      latestTicket ? `${latestTicket.id}:${latestTicket.updatedAt.toISOString()}` : "kds:none",
-      latestOutbox ? `${latestOutbox.id}:${latestOutbox.updatedAt.toISOString()}` : "outbox:none",
-    ].join("|");
-
-    return {
-      tenantId: context.tenantId,
-      branchId,
-      signature,
-      emittedAt: new Date().toISOString(),
-      latestAudit: latestAudit
-        ? {
-            id: latestAudit.id,
-            action: latestAudit.action,
-            createdAt: latestAudit.createdAt.toISOString(),
-          }
-        : null,
-      latestTicket: latestTicket
-        ? {
-            id: latestTicket.id,
-            status: latestTicket.status,
-            updatedAt: latestTicket.updatedAt.toISOString(),
-          }
-        : null,
-      latestOutbox: latestOutbox
-        ? {
-            id: latestOutbox.id,
-            topic: latestOutbox.topic,
-            updatedAt: latestOutbox.updatedAt.toISOString(),
-          }
-        : null,
-    };
-  }
-
-  async listTableHistory(context: TenantContext, tableId: string, limit = 24) {
-    const [table] = await this.database.db
-      .select()
-      .from(diningTables)
-      .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
-      .limit(1);
-
-    if (!table) {
-      throw new NotFoundException("Table not found");
-    }
-
-    const tableOrders = await this.database.db
-      .select({ id: orders.id })
-      .from(orders)
-      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.tableId, tableId)))
-      .orderBy(desc(orders.createdAt))
-      .limit(40);
-
-    const orderIds = tableOrders.map((order) => order.id);
-    const entityFilters = [
-      and(eq(auditLogs.entityType, "dining_table"), eq(auditLogs.entityId, tableId)),
-      ...(orderIds.length > 0
-        ? [and(eq(auditLogs.entityType, "order"), inArray(auditLogs.entityId, orderIds))]
-        : []),
-    ];
-
-    return this.database.db
-      .select({
-        id: auditLogs.id,
-        action: auditLogs.action,
-        entityType: auditLogs.entityType,
-        entityId: auditLogs.entityId,
-        metadata: auditLogs.metadata,
-        createdAt: auditLogs.createdAt,
-        userId: auditLogs.userId,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(auditLogs)
-      .leftJoin(users, and(eq(users.tenantId, context.tenantId), eq(users.id, auditLogs.userId)))
-      .where(and(eq(auditLogs.tenantId, context.tenantId), or(...entityFilters)))
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(Math.min(Math.max(limit, 1), 50));
   }
 
   async updateQrOrderItem(
@@ -628,1045 +615,506 @@ export class PosService {
     });
   }
 
-  async openOrder(context: TenantContext, input: OpenOrderInput) {
-    return this.database.db.transaction(async (tx) => {
-      if (input.tableId) {
-        const [table] = await tx
-          .select()
-          .from(diningTables)
-          .where(
-            and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, input.tableId)),
-          )
-          .limit(1);
+  // --- Observability (stays here) ---
 
-        if (!table) {
-          throw new NotFoundException("Table not found");
-        }
-        if (table.branchId !== input.branchId) {
-          throw new BadRequestException("Table does not belong to the selected branch");
-        }
+  async getOperationalEventSnapshot(context: TenantContext, branchId: string) {
+    if (!branchId) {
+      throw new BadRequestException("branchId is required");
+    }
 
-        await tx
-          .update(diningTables)
-          .set({ status: "occupied", updatedAt: new Date() })
-          .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, table.id)));
-      }
-
-      if (input.customerId) {
-        const [customer] = await tx
-          .select({ id: customers.id })
-          .from(customers)
-          .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, input.customerId)))
-          .limit(1);
-        if (!customer) throw new NotFoundException("Customer not found");
-      }
-      const [order] = await tx
-        .insert(orders)
-        .values({
-          tenantId: context.tenantId,
-          branchId: input.branchId,
-          tableId: input.tableId,
-          ...(input.customerId ? { customerId: input.customerId } : {}),
-          channel: input.channel,
-          status: "opened",
-          peopleCount: input.peopleCount ?? 1,
-          openedAt: new Date(),
-        })
-        .returning();
-
-      if (!order) {
-        throw new Error("Failed to open order");
-      }
-
-      return {
-        ...order,
-        audit: "order.opened",
-      };
-    });
-  }
-
-  async createTable(
-    context: TenantContext,
-    input: { branchId: string; code: string; name: string; seats: number },
-  ) {
-    const [table] = await this.database.db
-      .insert(diningTables)
-      .values({
-        tenantId: context.tenantId,
-        branchId: input.branchId,
-        code: input.code.trim().toUpperCase(),
-        name: input.name.trim(),
-        seats: input.seats,
+    const [latestAudit] = await this.database.db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        createdAt: auditLogs.createdAt,
       })
-      .returning();
-    if (!table) throw new Error("Failed to create table");
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "dining_table.created",
-      entityType: "dining_table",
-      entityId: table.id,
-      metadata: { code: table.code, seats: table.seats },
-    });
-    return table;
-  }
-
-  async getFloorPlan(context: TenantContext, branchId: string) {
-    const [plan] = await this.database.db
-      .select()
-      .from(floorPlans)
-      .where(and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, branchId)))
+      .from(auditLogs)
+      .where(and(eq(auditLogs.tenantId, context.tenantId), eq(auditLogs.branchId, branchId)))
+      .orderBy(desc(auditLogs.createdAt))
       .limit(1);
+
+    const [latestTicket] = await this.database.db
+      .select({
+        id: kdsTickets.id,
+        status: kdsTickets.status,
+        updatedAt: kdsTickets.updatedAt,
+        createdAt: kdsTickets.createdAt,
+      })
+      .from(kdsTickets)
+      .where(and(eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.branchId, branchId)))
+      .orderBy(desc(kdsTickets.updatedAt))
+      .limit(1);
+
+    const [latestOutbox] = await this.database.db
+      .select({
+        id: outboxEvents.id,
+        topic: outboxEvents.topic,
+        updatedAt: outboxEvents.updatedAt,
+        createdAt: outboxEvents.createdAt,
+      })
+      .from(outboxEvents)
+      .where(eq(outboxEvents.tenantId, context.tenantId))
+      .orderBy(desc(outboxEvents.updatedAt))
+      .limit(1);
+
+    const signature = [
+      latestAudit ? `${latestAudit.id}:${latestAudit.createdAt.toISOString()}` : "audit:none",
+      latestTicket ? `${latestTicket.id}:${latestTicket.updatedAt.toISOString()}` : "kds:none",
+      latestOutbox ? `${latestOutbox.id}:${latestOutbox.updatedAt.toISOString()}` : "outbox:none",
+    ].join("|");
+
     return {
-      id: plan?.id ?? null,
+      tenantId: context.tenantId,
       branchId,
-      name: plan?.name ?? "Salão principal",
-      layout: plan?.layout ?? {},
+      signature,
+      emittedAt: new Date().toISOString(),
+      latestAudit: latestAudit
+        ? {
+            id: latestAudit.id,
+            action: latestAudit.action,
+            createdAt: latestAudit.createdAt.toISOString(),
+          }
+        : null,
+      latestTicket: latestTicket
+        ? {
+            id: latestTicket.id,
+            status: latestTicket.status,
+            updatedAt: latestTicket.updatedAt.toISOString(),
+          }
+        : null,
+      latestOutbox: latestOutbox
+        ? {
+            id: latestOutbox.id,
+            topic: latestOutbox.topic,
+            updatedAt: latestOutbox.updatedAt.toISOString(),
+          }
+        : null,
     };
   }
 
-  async saveFloorPlan(
-    context: TenantContext,
-    input: { branchId: string; layout: Record<string, { x: number; y: number }> },
-  ) {
-    const [branch] = await this.database.db
-      .select({ id: branches.id })
-      .from(branches)
-      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId)))
-      .limit(1);
-    if (!branch) throw new NotFoundException("Branch not found");
-    const [existing] = await this.database.db
-      .select({ id: floorPlans.id })
-      .from(floorPlans)
-      .where(
-        and(
-          eq(floorPlans.tenantId, context.tenantId),
-          eq(floorPlans.branchId, input.branchId),
-          eq(floorPlans.name, "Salão principal"),
-        ),
-      )
-      .limit(1);
-    const [plan] = existing
-      ? await this.database.db
-          .update(floorPlans)
-          .set({ layout: input.layout, updatedAt: new Date() })
-          .where(eq(floorPlans.id, existing.id))
-          .returning()
-      : await this.database.db
-          .insert(floorPlans)
-          .values({
-            tenantId: context.tenantId,
-            branchId: input.branchId,
-            name: "Salão principal",
-            layout: input.layout,
-          })
-          .returning();
-    if (!plan) throw new Error("Failed to save floor plan");
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "floor_plan.updated",
-      entityType: "floor_plan",
-      entityId: plan.id,
-      metadata: { tableCount: Object.keys(input.layout).length },
-    });
-    return plan;
+  // --- Orders (delegates to OrdersService) ---
+
+  async openOrder(context: TenantContext, input: OpenOrderInput) {
+    const result = await this.ordersService.openOrder(context, input);
+    orderCount.inc({ tenant_id: context.tenantId, channel: input.channel });
+    return result;
   }
 
   async assignCustomer(context: TenantContext, orderId: string, customerId: string) {
-    const [customer] = await this.database.db
-      .select({ id: customers.id })
-      .from(customers)
-      .where(and(eq(customers.tenantId, context.tenantId), eq(customers.id, customerId)))
-      .limit(1);
-    if (!customer) throw new NotFoundException("Customer not found");
-    const [order] = await this.database.db
-      .update(orders)
-      .set({ customerId, updatedAt: new Date() })
-      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
-      .returning();
-    if (!order) throw new NotFoundException("Order not found");
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: order.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "order.customer_assigned",
-      entityType: "order",
-      entityId: order.id,
-      metadata: { customerId },
-    });
-    return { ...order, audit: "order.customer_assigned" };
+    return this.ordersService.assignCustomer(context, orderId, customerId);
   }
 
   async addItem(context: TenantContext, orderId: string, input: AddItemInput) {
-    return this.database.db.transaction(async (tx) => {
-      const [order] = await tx
-        .select()
-        .from(orders)
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
-        .limit(1);
-
-      if (!order) {
-        throw new NotFoundException("Order not found");
-      }
-
-      const [product] = await tx
-        .select()
-        .from(products)
-        .where(and(eq(products.tenantId, context.tenantId), eq(products.id, input.productId)))
-        .limit(1);
-
-      if (!product?.isAvailable) {
-        throw new NotFoundException("Product not found or unavailable");
-      }
-
-      const selectedOptionIds = (input.modifiers ?? [])
-        .map((modifier) => (typeof modifier.optionId === "string" ? modifier.optionId : null))
-        .filter((optionId): optionId is string => Boolean(optionId));
-      const selectedOptions = selectedOptionIds.length
-        ? await tx
-            .select()
-            .from(modifierOptions)
-            .where(
-              and(
-                eq(modifierOptions.tenantId, context.tenantId),
-                inArray(modifierOptions.id, selectedOptionIds),
-                eq(modifierOptions.isAvailable, true),
-              ),
-            )
-        : [];
-      if (selectedOptions.length !== selectedOptionIds.length)
-        throw new BadRequestException("One or more modifiers are unavailable");
-      const groups = selectedOptions.length
-        ? await tx
-            .select()
-            .from(modifierGroups)
-            .where(
-              and(
-                eq(modifierGroups.tenantId, context.tenantId),
-                eq(modifierGroups.productId, product.id),
-              ),
-            )
-        : [];
-      const selectedByGroup = new Map<string, number>();
-      for (const option of selectedOptions)
-        selectedByGroup.set(option.groupId, (selectedByGroup.get(option.groupId) ?? 0) + 1);
-      for (const group of groups) {
-        const selected = selectedByGroup.get(group.id) ?? 0;
-        if (
-          (group.isRequired && selected < group.minChoices) ||
-          selected < group.minChoices ||
-          selected > group.maxChoices
-        )
-          throw new BadRequestException(`Invalid choices for modifier group ${group.name}`);
-      }
-      const modifierDeltaCents = selectedOptions.reduce(
-        (sum, option) => sum + option.priceDeltaCents,
-        0,
-      );
-      const total = calculateOrderTotal({
-        lines: [
-          { quantity: input.quantity, unitPriceCents: product.priceCents + modifierDeltaCents },
-        ],
-      });
-
-      const [item] = await tx
-        .insert(orderItems)
-        .values({
-          tenantId: context.tenantId,
-          orderId,
-          productId: product.id,
-          nameSnapshot: product.name,
-          quantity: String(input.quantity),
-          unitPriceCents: product.priceCents + modifierDeltaCents,
-          totalCents: total.totalCents,
-          notes: input.notes,
-          modifiers: selectedOptions.map((option) => ({
-            optionId: option.id,
-            groupId: option.groupId,
-            name: option.name,
-            priceDeltaCents: option.priceDeltaCents,
-          })),
-        })
-        .returning();
-
-      const nextSubtotal = order.subtotalCents + total.totalCents;
-      await tx
-        .update(orders)
-        .set({
-          subtotalCents: nextSubtotal,
-          totalCents:
-            nextSubtotal - order.discountCents + order.serviceChargeCents + order.deliveryFeeCents,
-          version: order.version + 1,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, order.id)));
-
-      return {
-        ...item,
-        audit: "order.item_added",
-      };
-    });
+    return this.ordersService.addItem(context, orderId, input);
   }
 
   async sendToKitchen(context: TenantContext, orderId: string) {
-    return this.database.db.transaction(async (tx) => {
-      const [order] = await tx
-        .select()
-        .from(orders)
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
-        .limit(1);
-
-      if (!order) {
-        throw new NotFoundException("Order not found");
-      }
-
-      stateMachines.assertOrderTransition(order.status, "sent_to_kitchen");
-
-      const pendingItems = await tx
-        .select({ id: orderItems.id })
-        .from(orderItems)
-        .where(
-          and(
-            eq(orderItems.tenantId, context.tenantId),
-            eq(orderItems.orderId, orderId),
-            eq(orderItems.status, "pending"),
-          ),
-        );
-
-      if (pendingItems.length === 0) {
-        throw new BadRequestException("Order has no pending items to send");
-      }
-
-      const stations = await tx
-        .select()
-        .from(kdsStations)
-        .where(
-          and(eq(kdsStations.tenantId, context.tenantId), eq(kdsStations.branchId, order.branchId)),
-        );
-
-      await tx
-        .update(orderItems)
-        .set({ status: "sent", sentToKitchenAt: new Date(), updatedAt: new Date() })
-        .where(
-          and(
-            eq(orderItems.tenantId, context.tenantId),
-            eq(orderItems.orderId, orderId),
-            eq(orderItems.status, "pending"),
-          ),
-        );
-
-      const tickets =
-        stations.length > 0
-          ? await tx
-              .insert(kdsTickets)
-              .values(
-                stations.map((station) => ({
-                  tenantId: context.tenantId,
-                  branchId: order.branchId,
-                  stationId: station.id,
-                  orderId,
-                  status: "sent" as const,
-                  payload: { source: order.channel, tableId: order.tableId },
-                })),
-              )
-              .returning()
-          : [];
-
-      const printJobsCreated =
-        tickets.length > 0
-          ? await this.createKitchenPrintJobs(tx, context, {
-              order,
-              tickets,
-              stationIds: stations.map((station) => station.id),
-            })
-          : [];
-
-      await tx
-        .update(orders)
-        .set({ status: "sent_to_kitchen", version: order.version + 1, updatedAt: new Date() })
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, order.id)));
-
-      if (order.tableId) {
-        await tx
-          .update(diningTables)
-          .set({ status: "order_sent", updatedAt: new Date() })
-          .where(
-            and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, order.tableId)),
-          );
-      }
-
-      await tx.insert(auditLogs).values({
-        tenantId: context.tenantId,
-        branchId: order.branchId,
-        userId: context.userId,
-        requestId: context.requestId,
-        action: "order.sent_to_kitchen",
-        entityType: "order",
-        entityId: order.id,
-        metadata: {
-          channel: order.channel,
-          tableId: order.tableId,
-          ticketsCreated: tickets.length,
-          printJobsCreated: printJobsCreated.length,
-        },
-      });
-
-      return {
-        orderId,
-        status: "sent_to_kitchen",
-        ticketsCreated: tickets,
-        printJobsCreated,
-        audit: "order.sent_to_kitchen",
-      };
-    });
+    return this.ordersService.sendToKitchen(context, orderId);
   }
 
-  private async createKitchenPrintJobs(
-    tx: Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0],
+  async closeOrder(context: TenantContext, orderId: string) {
+    return this.ordersService.closeOrder(context, orderId);
+  }
+
+  async requestDiscount(
     context: TenantContext,
-    input: {
-      order: typeof orders.$inferSelect;
-      tickets: (typeof kdsTickets.$inferSelect)[];
-      stationIds: string[];
-    },
+    orderId: string,
+    input: { amountCents: number; reason: string },
   ) {
-    const routes = await tx
-      .select({
-        id: printRoutes.id,
-        branchId: printRoutes.branchId,
-        stationId: printRoutes.stationId,
-        targetType: printRoutes.targetType,
-        copies: printRoutes.copies,
-        printerDeviceId: printRoutes.printerDeviceId,
-        printerName: printerDevices.name,
-        printerAddress: printerDevices.address,
-        printerPort: printerDevices.port,
-        printerConnectionType: printerDevices.connectionType,
-        printerConfig: printerDevices.config,
-        charactersPerLine: printerDevices.charactersPerLine,
-        stationName: kdsStations.name,
-      })
-      .from(printRoutes)
-      .innerJoin(printerDevices, eq(printerDevices.id, printRoutes.printerDeviceId))
-      .leftJoin(kdsStations, eq(kdsStations.id, printRoutes.stationId))
-      .where(
-        and(
-          eq(printRoutes.tenantId, context.tenantId),
-          eq(printRoutes.branchId, input.order.branchId),
-          eq(printRoutes.trigger, "kds_ticket_created"),
-          eq(printRoutes.isActive, true),
-          eq(printerDevices.isActive, true),
-        ),
-      );
-
-    const activeRoutes = routes.filter(
-      (route) => !route.stationId || input.stationIds.includes(route.stationId),
-    );
-
-    if (activeRoutes.length === 0) {
-      return [];
+    const [order] = await this.database.db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+      .limit(1);
+    if (!order) throw new NotFoundException("Order not found");
+    const approvals = this.requireApprovalsService();
+    const policy = await approvals.getEffectivePolicy(context);
+    const flow = decideDiscountFlow({
+      subtotalCents: order.subtotalCents,
+      amountCents: input.amountCents,
+      maxDiscountWithoutApprovalBps: policy.maxDiscountWithoutApprovalBps,
+    });
+    if (flow === "invalid") {
+      throw new BadRequestException("Discount must be positive and cannot exceed subtotal");
     }
+    if (flow === "request_approval") {
+      const approval = await approvals.createRequest(context, {
+        branchId: order.branchId,
+        entityType: "order",
+        entityId: order.id,
+        action: "order.discount",
+        requestedValueCents: input.amountCents,
+        reason: input.reason,
+        metadata: { orderId: order.id, amountCents: input.amountCents },
+      });
+      return {
+        orderId,
+        amountCents: input.amountCents,
+        status: "pending_approval",
+        approval,
+      };
+    }
+    const updated = await this.applyDiscount(
+      context,
+      orderId,
+      input.amountCents,
+      input.reason,
+      null,
+    );
+    return {
+      orderId,
+      amountCents: input.amountCents,
+      status: "applied",
+      order: updated,
+    };
+  }
 
-    const items = await tx
-      .select({
-        name: orderItems.nameSnapshot,
-        quantity: orderItems.quantity,
-        notes: orderItems.notes,
-      })
+  async requestItemCancellation(
+    context: TenantContext,
+    orderId: string,
+    itemId: string,
+    input: { reason: string },
+  ) {
+    const [item] = await this.database.db
+      .select()
       .from(orderItems)
       .where(
         and(
           eq(orderItems.tenantId, context.tenantId),
-          eq(orderItems.orderId, input.order.id),
-          inArray(orderItems.status, ["pending", "sent", "preparing", "ready", "served"]),
+          eq(orderItems.orderId, orderId),
+          eq(orderItems.id, itemId),
         ),
-      );
-
-    const [table] = input.order.tableId
-      ? await tx
-          .select({ code: diningTables.code })
-          .from(diningTables)
-          .where(
-            and(
-              eq(diningTables.tenantId, context.tenantId),
-              eq(diningTables.id, input.order.tableId),
-            ),
-          )
-          .limit(1)
-      : [];
-
-    const printProvider = createPrintProvider();
-    const createdJobs = [];
-    const [tenant] = await tx
-      .select({ name: tenants.name, settings: tenants.settings })
-      .from(tenants)
-      .where(eq(tenants.id, context.tenantId))
+      )
       .limit(1);
-    const tenantName = readTenantDisplayName(tenant?.settings, tenant?.name ?? "GiroMesa");
-
-    for (const ticket of input.tickets) {
-      const matchingRoutes = activeRoutes.filter(
-        (route) => !route.stationId || route.stationId === ticket.stationId,
-      );
-
-      for (const route of matchingRoutes) {
-        const rendered = printProvider.renderKitchenTicket({
-          tenantName,
-          stationName: route.stationName ?? route.targetType,
-          orderCode: input.order.id.slice(0, 8),
-          orderChannel: input.order.channel,
-          ...(table?.code ? { tableCode: table.code } : {}),
-          items,
-          createdAt: new Date().toISOString(),
-          copies: route.copies,
-          charactersPerLine: route.charactersPerLine,
-        });
-
-        if (!rendered.ok || !rendered.data) {
-          continue;
-        }
-
-        const [job] = await tx
-          .insert(printJobs)
-          .values({
-            tenantId: context.tenantId,
-            branchId: input.order.branchId,
-            printerDeviceId: route.printerDeviceId,
-            printRouteId: route.id,
-            kdsTicketId: ticket.id,
-            orderId: input.order.id,
-            requestedByUserId: context.userId,
-            kind: route.targetType,
-            status: "pending",
-            idempotencyKey: `kds:${ticket.id}:route:${route.id}`,
-            copies: route.copies,
-            payload: {
-              source: "kds_ticket_created",
-              stationId: ticket.stationId,
-              printerName: route.printerName,
-              printerHost: route.printerAddress,
-              printerPort: route.printerPort,
-              printerConnectionType: route.printerConnectionType,
-              printerConfig: route.printerConfig,
-            },
-            renderedText: rendered.data.renderedText,
-          })
-          .onConflictDoNothing()
-          .returning();
-
-        if (job) {
-          createdJobs.push(job);
-        }
-      }
+    if (!item) throw new NotFoundException("Order item not found");
+    if (item.status === "canceled" || item.status === "refunded") {
+      throw new BadRequestException("Order item is already canceled");
     }
-
-    return createdJobs;
+    const approvals = this.requireApprovalsService();
+    const policy = await approvals.getEffectivePolicy(context);
+    if (requiresCancellationApproval(item.status, policy.requireApprovalAfterKitchen)) {
+      const approval = await approvals.createRequest(context, {
+        branchId: context.branchId ?? null,
+        entityType: "order_item",
+        entityId: item.id,
+        action: "order_item.cancel",
+        reason: input.reason,
+        metadata: {
+          orderId,
+          itemId,
+          previousStatus: item.status,
+          sentToKitchenAt: item.sentToKitchenAt?.toISOString() ?? null,
+        },
+      });
+      return { orderId, itemId, status: "pending_approval", approval };
+    }
+    const updated = await this.applyItemCancellation(context, orderId, itemId, input.reason, null);
+    return { orderId, itemId, status: "canceled", order: updated };
   }
 
-  splitBill(orderId: string, totalCents: number, people: number) {
-    return {
-      orderId,
-      parts: splitAmount(totalCents, people).map((amountCents, index) => ({
-        person: index + 1,
+  async applyApproval(context: TenantContext, approval: ApprovalRecord) {
+    if (approval.action === "order.discount") {
+      const amountCents =
+        approval.requestedValueCents ??
+        (typeof approval.metadata.amountCents === "number" ? approval.metadata.amountCents : null);
+      if (!amountCents) throw new BadRequestException("Approval discount amount is missing");
+      await this.applyDiscount(
+        context,
+        approval.entityId,
         amountCents,
-      })),
-    };
+        approval.reason ?? "Approved operational discount",
+        approval.id,
+      );
+      return;
+    }
+    if (approval.action === "order_item.cancel") {
+      const orderId =
+        typeof approval.metadata.orderId === "string" ? approval.metadata.orderId : null;
+      if (!orderId) throw new BadRequestException("Approval order is missing");
+      await this.applyItemCancellation(
+        context,
+        orderId,
+        approval.entityId,
+        approval.reason ?? "Approved item cancellation",
+        approval.id,
+      );
+      return;
+    }
+    throw new BadRequestException(`Unsupported approval action: ${approval.action}`);
   }
 
-  async registerPayment(context: TenantContext, orderId: string, input: RegisterPaymentInput) {
+  private async applyDiscount(
+    context: TenantContext,
+    orderId: string,
+    amountCents: number,
+    reason: string,
+    approvalId: string | null,
+  ) {
     return this.database.db.transaction(async (tx) => {
       const [order] = await tx
         .select()
         .from(orders)
         .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
         .limit(1);
-
-      if (!order) {
-        throw new NotFoundException("Order not found");
+      if (!order) throw new NotFoundException("Order not found");
+      if (amountCents > order.subtotalCents) {
+        throw new BadRequestException("Discount cannot exceed subtotal");
       }
-
-      const [payment] = await tx
-        .insert(payments)
-        .values({
-          tenantId: context.tenantId,
-          orderId,
-          provider: "manual",
-          method: input.method,
-          status: "confirmed",
-          amountCents: input.amountCents,
-          idempotencyKey: input.idempotencyKey,
-          confirmedAt: new Date(),
-        })
-        .onConflictDoNothing({
-          target: [payments.tenantId, payments.idempotencyKey],
-        })
-        .returning();
-
-      const resolvedPayment =
-        payment ??
-        (
-          await tx
-            .select()
-            .from(payments)
-            .where(
-              and(
-                eq(payments.tenantId, context.tenantId),
-                eq(payments.idempotencyKey, input.idempotencyKey),
-              ),
-            )
-            .limit(1)
-        )[0];
-
-      if (!resolvedPayment) {
-        throw new Error("Failed to register payment");
-      }
-
-      if (resolvedPayment.orderId !== orderId) {
-        throw new ConflictException("Idempotency key already used for another order");
-      }
-
-      const confirmedPayments = await tx
-        .select()
-        .from(payments)
-        .where(and(eq(payments.tenantId, context.tenantId), eq(payments.orderId, orderId)));
-      const paidCents = confirmedPayments
-        .filter((row) => row.status === "confirmed")
-        .reduce((sum, row) => sum + row.amountCents, 0);
-      const nextStatus = paidCents >= order.totalCents ? "paid" : "partially_paid";
-
-      await tx
+      if (approvalId && order.discountCents === amountCents) return order;
+      const [updated] = await tx
         .update(orders)
-        .set({ status: nextStatus, version: order.version + 1, updatedAt: new Date() })
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, order.id)));
-
-      if (payment) {
-        const [openCashSession] = await tx
-          .select({ id: cashSessions.id, expectedAmountCents: cashSessions.expectedAmountCents })
-          .from(cashSessions)
-          .where(
-            and(
-              eq(cashSessions.tenantId, context.tenantId),
-              eq(cashSessions.branchId, order.branchId),
-              eq(cashSessions.status, "open"),
-            ),
-          )
-          .orderBy(desc(cashSessions.openedAt))
-          .limit(1);
-
-        if (openCashSession) {
-          await tx
-            .update(cashSessions)
-            .set({
-              expectedAmountCents:
-                openCashSession.expectedAmountCents + resolvedPayment.amountCents,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(cashSessions.tenantId, context.tenantId),
-                eq(cashSessions.id, openCashSession.id),
-              ),
-            );
-        }
-
-        await tx.insert(auditLogs).values({
-          tenantId: context.tenantId,
-          branchId: order.branchId,
-          userId: context.userId,
-          requestId: context.requestId,
-          action: "payment.confirmed",
-          entityType: "order",
-          entityId: order.id,
-          metadata: {
-            paymentId: resolvedPayment.id,
-            method: resolvedPayment.method,
-            amountCents: resolvedPayment.amountCents,
-            orderStatus: nextStatus,
-          },
-        });
-
-        await tx.insert(outboxEvents).values({
-          tenantId: context.tenantId,
-          topic: "payment.confirmed",
-          payload: {
-            paymentId: resolvedPayment.id,
-            orderId: order.id,
-            branchId: order.branchId,
-            amountCents: resolvedPayment.amountCents,
-            method: resolvedPayment.method,
-            status: resolvedPayment.status,
-            orderStatus: nextStatus,
-          },
-        });
-      }
-
-      return {
-        ...resolvedPayment,
-        orderStatus: nextStatus,
-        audit: "payment.confirmed",
-      };
+        .set({
+          discountCents: amountCents,
+          totalCents: Math.max(
+            0,
+            order.subtotalCents - amountCents + order.serviceChargeCents + order.deliveryFeeCents,
+          ),
+          version: order.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, order.id)))
+        .returning();
+      if (!updated) throw new NotFoundException("Order not found");
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId: order.branchId,
+        userId: context.userId,
+        requestId: context.requestId,
+        action: "order.discount_applied",
+        entityType: "order",
+        entityId: order.id,
+        metadata: { amountCents, reason, approvalId },
+      });
+      return updated;
     });
   }
 
-  async listOrderPayments(context: TenantContext, orderId: string) {
-    const [order] = await this.database.db
-      .select({ id: orders.id })
-      .from(orders)
-      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
-      .limit(1);
-
-    if (!order) {
-      throw new NotFoundException("Order not found");
-    }
-
-    const rows = await this.database.db
-      .select({
-        id: payments.id,
-        amountCents: payments.amountCents,
-        method: payments.method,
-        status: payments.status,
-        confirmedAt: payments.confirmedAt,
-        createdAt: payments.createdAt,
-      })
-      .from(payments)
-      .where(and(eq(payments.tenantId, context.tenantId), eq(payments.orderId, orderId)))
-      .orderBy(desc(payments.confirmedAt), desc(payments.createdAt));
-
-    return rows.map((row) => ({
-      ...row,
-      audit: row.status === "confirmed" ? "payment.confirmed" : "payment.recorded",
-    }));
-  }
-
-  async closeOrder(context: TenantContext, orderId: string) {
-    const closedOrder = await this.database.db.transaction(async (tx) => {
+  private async applyItemCancellation(
+    context: TenantContext,
+    orderId: string,
+    itemId: string,
+    reason: string,
+    approvalId: string | null,
+  ) {
+    return this.database.db.transaction(async (tx) => {
       const [order] = await tx
         .select()
         .from(orders)
         .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
         .limit(1);
-
-      if (!order) {
-        throw new NotFoundException("Order not found");
-      }
-
-      if (order.status !== "paid") {
-        throw new BadRequestException("Order must be paid before close");
-      }
-
-      const items = await tx
+      const [item] = await tx
         .select()
         .from(orderItems)
         .where(
           and(
             eq(orderItems.tenantId, context.tenantId),
             eq(orderItems.orderId, orderId),
-            inArray(orderItems.status, ["pending", "sent", "preparing", "ready", "served"]),
-          ),
-        );
-      const productIds = [...new Set(items.map((item) => item.productId))];
-
-      const productRecipes =
-        productIds.length > 0
-          ? await tx
-              .select()
-              .from(recipes)
-              .where(
-                and(eq(recipes.tenantId, context.tenantId), inArray(recipes.productId, productIds)),
-              )
-          : [];
-      const recipeIds = productRecipes.map((recipe) => recipe.id);
-      const ingredients =
-        recipeIds.length > 0
-          ? await tx
-              .select()
-              .from(recipeItems)
-              .where(
-                and(
-                  eq(recipeItems.tenantId, context.tenantId),
-                  inArray(recipeItems.recipeId, recipeIds),
-                ),
-              )
-          : [];
-      const [defaultLocation] = await tx
-        .select()
-        .from(stockLocations)
-        .where(
-          and(
-            eq(stockLocations.tenantId, context.tenantId),
-            eq(stockLocations.branchId, order.branchId),
+            eq(orderItems.id, itemId),
           ),
         )
         .limit(1);
-
-      let stockMovementsCreated = 0;
-      for (const item of items) {
-        const recipe = productRecipes.find((entry) => entry.productId === item.productId);
-        if (!recipe) {
-          continue;
-        }
-
-        const itemQuantity = Number(item.quantity);
-        for (const ingredient of ingredients.filter((entry) => entry.recipeId === recipe.id)) {
-          await tx.insert(stockMovements).values({
-            tenantId: context.tenantId,
-            branchId: order.branchId,
-            inventoryItemId: ingredient.inventoryItemId,
-            stockLocationId: defaultLocation?.id,
-            type: "sale",
-            quantity: String(-Number(ingredient.quantity) * itemQuantity),
-            sourceType: "order",
-            sourceId: order.id,
-            reason: `Baixa automatica do pedido ${order.id}`,
-          });
-          stockMovementsCreated += 1;
-        }
-      }
-
+      if (!order || !item) throw new NotFoundException("Order item not found");
+      if (item.status === "canceled") return order;
       await tx
+        .update(orderItems)
+        .set({ status: "canceled", updatedAt: new Date() })
+        .where(and(eq(orderItems.tenantId, context.tenantId), eq(orderItems.id, item.id)));
+      const remaining = await tx
+        .select({ totalCents: orderItems.totalCents, status: orderItems.status })
+        .from(orderItems)
+        .where(and(eq(orderItems.tenantId, context.tenantId), eq(orderItems.orderId, order.id)));
+      const subtotalCents = remaining
+        .filter((row) => !["canceled", "refunded"].includes(row.status))
+        .reduce((sum, row) => sum + row.totalCents, 0);
+      const discountCents = Math.min(order.discountCents, subtotalCents);
+      const [updated] = await tx
         .update(orders)
-        .set({ status: "paid", closedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, order.id)));
-
-      if (order.tableId) {
-        await tx
-          .update(diningTables)
-          .set({ status: "free", updatedAt: new Date() })
-          .where(
-            and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, order.tableId)),
-          );
-      }
-
+        .set({
+          subtotalCents,
+          discountCents,
+          totalCents: Math.max(
+            0,
+            subtotalCents - discountCents + order.serviceChargeCents + order.deliveryFeeCents,
+          ),
+          version: order.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, order.id)))
+        .returning();
+      if (!updated) throw new NotFoundException("Order not found");
       await tx.insert(auditLogs).values({
         tenantId: context.tenantId,
         branchId: order.branchId,
         userId: context.userId,
         requestId: context.requestId,
-        action: "order.closed",
-        entityType: "order",
-        entityId: order.id,
-        metadata: {
-          tableId: order.tableId,
-          totalCents: order.totalCents,
-          stockMovementsCreated,
-        },
+        action: "order.item_canceled",
+        entityType: "order_item",
+        entityId: item.id,
+        metadata: { orderId, reason, approvalId, previousStatus: item.status },
       });
+      if (item.sentToKitchenAt) {
+        const tickets = await tx
+          .select()
+          .from(kdsTickets)
+          .where(
+            and(
+              eq(kdsTickets.tenantId, context.tenantId),
+              eq(kdsTickets.branchId, order.branchId),
+              eq(kdsTickets.orderId, order.id),
+            ),
+          );
+        for (const ticket of tickets) {
+          await tx
+            .update(kdsTickets)
+            .set({
+              priority: Math.max(ticket.priority, 100),
+              payload: appendCancellationNotice(ticket.payload, {
+                itemId: item.id,
+                name: item.nameSnapshot,
+                reason,
+              }),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.id, ticket.id)));
+        }
 
-      await tx.insert(outboxEvents).values({
-        tenantId: context.tenantId,
-        topic: "order.closed",
-        payload: {
-          orderId: order.id,
-          branchId: order.branchId,
-          tableId: order.tableId,
-          channel: order.channel,
-          totalCents: order.totalCents,
-          closedAt: new Date().toISOString(),
-        },
-      });
+        const cancellationRoutes = await tx
+          .select()
+          .from(printRoutes)
+          .where(
+            and(
+              eq(printRoutes.tenantId, context.tenantId),
+              eq(printRoutes.branchId, order.branchId),
+              eq(printRoutes.trigger, "order_item_canceled"),
+              eq(printRoutes.isActive, true),
+            ),
+          );
+        for (const route of cancellationRoutes) {
+          await tx
+            .insert(printJobs)
+            .values({
+              tenantId: context.tenantId,
+              branchId: order.branchId,
+              printerDeviceId: route.printerDeviceId,
+              printRouteId: route.id,
+              orderId: order.id,
+              requestedByUserId: context.userId,
+              kind: "order_item_canceled",
+              idempotencyKey: `cancel:${item.id}:route:${route.id}`,
+              copies: route.copies,
+              payload: {
+                source: "order_item_canceled",
+                itemId: item.id,
+                approvalId,
+              },
+              renderedText: [
+                "*** CANCELAMENTO ***",
+                `Pedido: ${order.id.slice(0, 8)}`,
+                `Item: ${item.nameSnapshot}`,
+                `Quantidade: ${item.quantity}`,
+                `Motivo: ${reason}`,
+              ].join("\n"),
+            })
+            .onConflictDoNothing();
+        }
 
-      return {
-        orderId,
-        status: "paid",
-        fiscalStatus: "pending",
-        audit: "order.closed",
-      };
+        const existingReversal = await tx
+          .select({ id: stockMovements.id })
+          .from(stockMovements)
+          .where(
+            and(
+              eq(stockMovements.tenantId, context.tenantId),
+              eq(stockMovements.branchId, order.branchId),
+              eq(stockMovements.sourceType, "order_item_reversal"),
+              eq(stockMovements.sourceId, item.id),
+            ),
+          )
+          .limit(1);
+        if (!existingReversal[0]) {
+          const originalMovements = await tx
+            .select()
+            .from(stockMovements)
+            .where(
+              and(
+                eq(stockMovements.tenantId, context.tenantId),
+                eq(stockMovements.branchId, order.branchId),
+                eq(stockMovements.sourceType, "order_item"),
+                eq(stockMovements.sourceId, item.id),
+                eq(stockMovements.type, "sale"),
+              ),
+            );
+          const reversals = buildStockReversals(originalMovements);
+          if (reversals.length > 0) {
+            await tx.insert(stockMovements).values(
+              reversals.map((reversal, index) => ({
+                tenantId: context.tenantId,
+                branchId: order.branchId,
+                inventoryItemId: reversal.inventoryItemId,
+                stockLocationId: originalMovements[index]?.stockLocationId ?? null,
+                type: "sale_reversal",
+                quantity: reversal.quantity,
+                unitCostCents: reversal.unitCostCents,
+                sourceType: "order_item_reversal",
+                sourceId: item.id,
+                reason: `Estorno do item cancelado ${item.id}`,
+              })),
+            );
+          }
+        }
+
+        await tx.insert(outboxEvents).values({
+          tenantId: context.tenantId,
+          topic: "order.item_canceled",
+          payload: {
+            orderId,
+            itemId,
+            branchId: order.branchId,
+            approvalId,
+            previousStatus: item.status,
+            sentToKitchenAt: item.sentToKitchenAt?.toISOString() ?? null,
+          },
+        });
+      }
+      return updated;
     });
-
-    try {
-      const fiscalDocument = await this.fiscalService.createPendingOrderDocument(context, orderId);
-      return {
-        ...closedOrder,
-        fiscalDocumentId: fiscalDocument.id,
-        fiscalStatus: fiscalDocument.status,
-      };
-    } catch (error) {
-      return {
-        ...closedOrder,
-        fiscalStatus: "error",
-        fiscalError: error instanceof Error ? error.message : "Fiscal pending creation failed",
-      };
-    }
   }
 
-  async getCurrentShift(context: TenantContext, branchId: string) {
-    await this.ensureBranchBelongsToTenant(context, branchId);
-    const [shift] = await this.database.db
-      .select()
-      .from(operationalShifts)
-      .where(
-        and(
-          eq(operationalShifts.tenantId, context.tenantId),
-          eq(operationalShifts.branchId, branchId),
-          eq(operationalShifts.status, "open"),
-        ),
-      )
-      .limit(1);
-    return { branchId, shift: shift ?? null };
+  private requireApprovalsService() {
+    if (!this.approvalsService) {
+      throw new BadRequestException("Approval service is unavailable");
+    }
+    return this.approvalsService;
   }
 
-  async openShift(context: TenantContext, input: OpenShiftInput) {
-    await this.ensureBranchBelongsToTenant(context, input.branchId);
-    const [existing] = await this.database.db
-      .select({ id: operationalShifts.id })
-      .from(operationalShifts)
-      .where(
-        and(
-          eq(operationalShifts.tenantId, context.tenantId),
-          eq(operationalShifts.branchId, input.branchId),
-          eq(operationalShifts.status, "open"),
-        ),
-      )
-      .limit(1);
-    if (existing) {
-      throw new ConflictException("There is already an open shift for this branch");
-    }
+  // --- Payments (delegates to PaymentsService) ---
 
-    const [shift] = await this.database.db
-      .insert(operationalShifts)
-      .values({
-        tenantId: context.tenantId,
-        branchId: input.branchId,
-        openedByUserId: context.userId ?? "",
-        notes: input.notes ?? null,
-        openingContext: { source: "pos" },
-      })
-      .returning();
-
-    if (!shift) {
-      throw new BadRequestException("Unable to open shift");
-    }
-
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "shift.opened",
-      entityType: "operational_shift",
-      entityId: shift.id,
-      metadata: { notes: input.notes ?? null },
-    });
-
-    return { ...shift, audit: "shift.opened" };
+  splitBill(orderId: string, totalCents: number, people: number) {
+    return this.paymentsService.splitBill(orderId, totalCents, people);
   }
 
-  async closeShift(context: TenantContext, input: CloseShiftInput) {
-    await this.ensureBranchBelongsToTenant(context, input.branchId);
-    const [shift] = await this.database.db
-      .select()
-      .from(operationalShifts)
-      .where(
-        and(
-          eq(operationalShifts.tenantId, context.tenantId),
-          eq(operationalShifts.branchId, input.branchId),
-          eq(operationalShifts.status, "open"),
-        ),
-      )
-      .limit(1);
-    if (!shift) {
-      throw new NotFoundException("Open shift not found");
-    }
-
-    const [openCash] = await this.database.db
-      .select({ id: cashSessions.id })
-      .from(cashSessions)
-      .where(
-        and(
-          eq(cashSessions.tenantId, context.tenantId),
-          eq(cashSessions.branchId, input.branchId),
-          eq(cashSessions.status, "open"),
-        ),
-      )
-      .limit(1);
-    if (openCash) {
-      throw new BadRequestException("Close the cash session before closing the shift");
-    }
-
-    const [closed] = await this.database.db
-      .update(operationalShifts)
-      .set({
-        status: "closed",
-        closedByUserId: context.userId,
-        closedAt: new Date(),
-        notes: input.notes ?? shift.notes,
-        closingSummary: { source: "pos", closedAt: new Date().toISOString() },
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(operationalShifts.tenantId, context.tenantId), eq(operationalShifts.id, shift.id)),
-      )
-      .returning();
-
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "shift.closed",
-      entityType: "operational_shift",
-      entityId: shift.id,
-      metadata: { notes: input.notes ?? null },
-    });
-
-    return { ...closed, audit: "shift.closed" };
+  async registerPayment(context: TenantContext, orderId: string, input: RegisterPaymentInput) {
+    const result = await this.paymentsService.registerPayment(context, orderId, input);
+    revenueTotal.inc({ tenant_id: context.tenantId, method: input.method }, input.amountCents);
+    orderValueHistogram.observe({ tenant_id: context.tenantId }, input.amountCents);
+    return result;
   }
+
+  async listOrderPayments(context: TenantContext, orderId: string) {
+    return this.paymentsService.listOrderPayments(context, orderId);
+  }
+
+  async receiveCashHandover(context: TenantContext, paymentId: string) {
+    return this.paymentsService.receiveCashHandover(context, paymentId);
+  }
+
+  // --- Cash (delegates to CashService) ---
 
   async getCurrentCashSession(context: TenantContext, branchId: string) {
-    const summary = await this.getCashSessionSummary(context, branchId);
-    return { branchId, session: summary.session, movements: summary.movements };
+    return this.cashService.getCurrentCashSession(context, branchId);
   }
 
   async openCashSession(context: TenantContext, input: OpenCashSessionInput) {
-    await this.ensureBranchBelongsToTenant(context, input.branchId);
-    const [existing] = await this.database.db
-      .select({ id: cashSessions.id })
-      .from(cashSessions)
-      .where(
-        and(
-          eq(cashSessions.tenantId, context.tenantId),
-          eq(cashSessions.branchId, input.branchId),
-          eq(cashSessions.status, "open"),
-        ),
-      )
-      .limit(1);
-    if (existing) {
-      throw new ConflictException("There is already an open cash session for this branch");
-    }
-
-    const [session] = await this.database.db
-      .insert(cashSessions)
-      .values({
-        tenantId: context.tenantId,
-        branchId: input.branchId,
-        operatorId: context.userId ?? "",
-        openingAmountCents: input.openingAmountCents,
-        expectedAmountCents: input.openingAmountCents,
-      })
-      .returning();
-
-    if (!session) {
-      throw new BadRequestException("Unable to open cash session");
-    }
-
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "cash_session.opened",
-      entityType: "cash_session",
-      entityId: session.id,
-      metadata: { openingAmountCents: input.openingAmountCents },
-    });
-
-    return session;
+    return this.cashService.openCashSession(context, input);
   }
 
   async registerCashMovement(
@@ -1674,190 +1122,14 @@ export class PosService {
     type: "supply" | "withdrawal",
     input: CashMovementInput,
   ) {
-    if (input.amountCents <= 0) {
-      throw new BadRequestException("Movement amount must be positive");
-    }
-    if (!input.reason.trim()) {
-      throw new BadRequestException("Movement reason is required");
-    }
-    await this.ensureBranchBelongsToTenant(context, input.branchId);
-    const [session] = await this.database.db
-      .select()
-      .from(cashSessions)
-      .where(
-        and(
-          eq(cashSessions.tenantId, context.tenantId),
-          eq(cashSessions.branchId, input.branchId),
-          eq(cashSessions.status, "open"),
-        ),
-      )
-      .limit(1);
-    if (!session) {
-      throw new BadRequestException("Open cash session is required");
-    }
-
-    const signedAmount = type === "supply" ? input.amountCents : -input.amountCents;
-    const [movement] = await this.database.db
-      .insert(cashMovements)
-      .values({
-        tenantId: context.tenantId,
-        branchId: input.branchId,
-        cashSessionId: session.id,
-        type,
-        amountCents: input.amountCents,
-        reason: input.reason.trim(),
-        createdByUserId: context.userId ?? "",
-      })
-      .returning();
-
-    await this.database.db
-      .update(cashSessions)
-      .set({
-        expectedAmountCents: session.expectedAmountCents + signedAmount,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, session.id)));
-
-    if (!movement) {
-      throw new BadRequestException("Unable to register cash movement");
-    }
-
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "cash_movement.created",
-      entityType: "cash_movement",
-      entityId: movement.id,
-      metadata: {
-        cashSessionId: session.id,
-        type,
-        amountCents: input.amountCents,
-        reason: input.reason.trim(),
-      },
-    });
-
-    return { ...movement, audit: "cash_movement.created" };
+    return this.cashService.registerCashMovement(context, type, input);
   }
 
   async getCashSessionSummary(
     context: TenantContext,
     branchId: string,
   ): Promise<CashSessionSummary> {
-    await this.ensureBranchBelongsToTenant(context, branchId);
-    const [session] = await this.database.db
-      .select()
-      .from(cashSessions)
-      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.branchId, branchId)))
-      .orderBy(desc(cashSessions.openedAt))
-      .limit(1);
-
-    const movements = session
-      ? await this.database.db
-          .select({
-            id: cashMovements.id,
-            type: cashMovements.type,
-            amountCents: cashMovements.amountCents,
-            reason: cashMovements.reason,
-            createdAt: cashMovements.createdAt,
-          })
-          .from(cashMovements)
-          .where(
-            and(
-              eq(cashMovements.tenantId, context.tenantId),
-              eq(cashMovements.cashSessionId, session.id),
-            ),
-          )
-      : [];
-
-    const [paymentsTotal] = await this.database.db
-      .select({
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)`,
-        count: sql<number>`count(${payments.id})`,
-      })
-      .from(payments)
-      .innerJoin(orders, eq(orders.id, payments.orderId))
-      .where(
-        and(
-          eq(payments.tenantId, context.tenantId),
-          eq(payments.status, "confirmed"),
-          eq(orders.branchId, branchId),
-          session ? sql`${payments.confirmedAt} >= ${session.openedAt}` : sql`true`,
-          session?.closedAt ? sql`${payments.confirmedAt} <= ${session.closedAt}` : sql`true`,
-        ),
-      );
-
-    const paymentRows = await this.database.db
-      .select({
-        method: payments.method,
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)`,
-      })
-      .from(payments)
-      .innerJoin(orders, eq(orders.id, payments.orderId))
-      .where(
-        and(
-          eq(payments.tenantId, context.tenantId),
-          eq(payments.status, "confirmed"),
-          eq(orders.branchId, branchId),
-          session ? sql`${payments.confirmedAt} >= ${session.openedAt}` : sql`true`,
-          session?.closedAt ? sql`${payments.confirmedAt} <= ${session.closedAt}` : sql`true`,
-        ),
-      )
-      .groupBy(payments.method);
-
-    const [openOrders] = await this.database.db
-      .select({
-        count: sql<number>`count(${orders.id})`,
-        totalCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)`,
-      })
-      .from(orders)
-      .where(
-        and(
-          eq(orders.tenantId, context.tenantId),
-          eq(orders.branchId, branchId),
-          inArray(orders.status, [
-            "opened",
-            "sent_to_kitchen",
-            "preparing",
-            "ready",
-            "served",
-            "waiting_payment",
-            "partially_paid",
-          ]),
-        ),
-      );
-
-    return {
-      branchId,
-      session: session
-        ? {
-            id: session.id,
-            status: session.status,
-            openingAmountCents: session.openingAmountCents,
-            expectedAmountCents: session.expectedAmountCents,
-            countedAmountCents: session.countedAmountCents,
-            differenceCents:
-              session.countedAmountCents === null
-                ? null
-                : session.countedAmountCents - session.expectedAmountCents,
-            openedAt: session.openedAt,
-            closedAt: session.closedAt,
-          }
-        : null,
-      payments: {
-        totalCents: Number(paymentsTotal?.totalCents ?? 0),
-        count: Number(paymentsTotal?.count ?? 0),
-        byMethod: Object.fromEntries(
-          paymentRows.map((row) => [row.method, Number(row.totalCents ?? 0)]),
-        ),
-      },
-      movements,
-      openOrders: {
-        count: Number(openOrders?.count ?? 0),
-        totalCents: Number(openOrders?.totalCents ?? 0),
-      },
-    };
+    return this.cashService.getCashSessionSummary(context, branchId);
   }
 
   async closeCashSession(
@@ -1865,120 +1137,41 @@ export class PosService {
     cashSessionId: string,
     input: CloseCashSessionInput,
   ) {
-    const [session] = await this.database.db
-      .select()
-      .from(cashSessions)
-      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, cashSessionId)))
-      .limit(1);
-
-    if (!session) {
-      throw new NotFoundException("Cash session not found");
-    }
-    await this.ensureBranchBelongsToTenant(context, session.branchId);
-
-    if (session.status !== "open") {
-      throw new BadRequestException("Cash session is no longer open");
-    }
-
-    const [openOrders] = await this.database.db
-      .select({
-        count: sql<number>`count(${orders.id})::int`,
-        totalCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
-      })
-      .from(orders)
-      .where(
-        and(
-          eq(orders.tenantId, context.tenantId),
-          eq(orders.branchId, session.branchId),
-          inArray(orders.status, [
-            "opened",
-            "sent_to_kitchen",
-            "preparing",
-            "ready",
-            "served",
-            "waiting_payment",
-            "partially_paid",
-          ]),
-        ),
-      );
-
-    if (Number(openOrders?.count ?? 0) > 0) {
-      throw new BadRequestException("Close or settle open orders before closing the cash session");
-    }
-
-    const nextStatus =
-      input.countedAmountCents === session.expectedAmountCents ? "closed" : "disputed";
-    stateMachines.assertCashSessionTransition(session.status, nextStatus);
-    const differenceCents = input.countedAmountCents - session.expectedAmountCents;
-
-    const [closed] = await this.database.db
-      .update(cashSessions)
-      .set({
-        status: nextStatus,
-        countedAmountCents: input.countedAmountCents,
-        closedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, session.id)))
-      .returning();
-
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: session.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: nextStatus === "disputed" ? "cash_session.disputed" : "cash_session.closed",
-      entityType: "cash_session",
-      entityId: session.id,
-      metadata: {
-        openingAmountCents: session.openingAmountCents,
-        expectedAmountCents: session.expectedAmountCents,
-        countedAmountCents: input.countedAmountCents,
-        differenceCents,
-      },
-    });
-
-    await this.database.db.insert(outboxEvents).values({
-      tenantId: context.tenantId,
-      topic: "cash_session.closed",
-      payload: {
-        cashSessionId: session.id,
-        branchId: session.branchId,
-        status: nextStatus,
-        expectedAmountCents: session.expectedAmountCents,
-        countedAmountCents: input.countedAmountCents,
-        differenceCents,
-        closedAt: new Date().toISOString(),
-      },
-    });
-
-    return {
-      ...closed,
-      differenceCents,
-      audit: nextStatus === "disputed" ? "cash_session.disputed" : "cash_session.closed",
-    };
+    return this.cashService.closeCashSession(context, cashSessionId, input);
   }
 
-  private async ensureBranchBelongsToTenant(context: TenantContext, branchId: string) {
-    if (!branchId) {
-      throw new BadRequestException("branchId is required");
-    }
-    const [branch] = await this.database.db
-      .select({ id: branches.id })
-      .from(branches)
-      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, branchId)))
-      .limit(1);
-    if (!branch) {
-      throw new NotFoundException("Branch not found");
-    }
+  // --- Shifts (delegates to ShiftService) ---
+
+  async getCurrentShift(context: TenantContext, branchId: string) {
+    return this.shiftService.getCurrentShift(context, branchId);
   }
+
+  async openShift(context: TenantContext, input: OpenShiftInput) {
+    return this.shiftService.openShift(context, input);
+  }
+
+  async closeShift(context: TenantContext, input: CloseShiftInput) {
+    return this.shiftService.closeShift(context, input);
+  }
+
+  // --- Printing (stays here for now) ---
 
   async printBillPreview(context: TenantContext, orderId: string) {
     return this.database.db.transaction(async (tx) => {
+      const {
+        orders: ordersTable,
+        orderItems: orderItemsTable,
+        printRoutes: printRoutesTable,
+        printerDevices: printerDevicesTable,
+        tenants: tenantsTable,
+        diningTables: diningTablesTable,
+        printJobs: printJobsTable,
+      } = await import("@giromesa/db");
+
       const [order] = await tx
         .select()
-        .from(orders)
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+        .from(ordersTable)
+        .where(and(eq(ordersTable.tenantId, context.tenantId), eq(ordersTable.id, orderId)))
         .limit(1);
 
       if (!order) {
@@ -1987,25 +1180,28 @@ export class PosService {
 
       const [route] = await tx
         .select({
-          id: printRoutes.id,
-          printerDeviceId: printRoutes.printerDeviceId,
-          copies: printRoutes.copies,
-          printerName: printerDevices.name,
-          charactersPerLine: printerDevices.charactersPerLine,
-          printerAddress: printerDevices.address,
-          printerPort: printerDevices.port,
-          printerConnectionType: printerDevices.connectionType,
-          printerConfig: printerDevices.config,
+          id: printRoutesTable.id,
+          printerDeviceId: printRoutesTable.printerDeviceId,
+          copies: printRoutesTable.copies,
+          printerName: printerDevicesTable.name,
+          charactersPerLine: printerDevicesTable.charactersPerLine,
+          printerAddress: printerDevicesTable.address,
+          printerPort: printerDevicesTable.port,
+          printerConnectionType: printerDevicesTable.connectionType,
+          printerConfig: printerDevicesTable.config,
         })
-        .from(printRoutes)
-        .innerJoin(printerDevices, eq(printerDevices.id, printRoutes.printerDeviceId))
+        .from(printRoutesTable)
+        .innerJoin(
+          printerDevicesTable,
+          eq(printerDevicesTable.id, printRoutesTable.printerDeviceId),
+        )
         .where(
           and(
-            eq(printRoutes.tenantId, context.tenantId),
-            eq(printRoutes.branchId, order.branchId),
-            eq(printRoutes.targetType, "bill_preview"),
-            eq(printRoutes.isActive, true),
-            eq(printerDevices.isActive, true),
+            eq(printRoutesTable.tenantId, context.tenantId),
+            eq(printRoutesTable.branchId, order.branchId),
+            eq(printRoutesTable.targetType, "bill_preview"),
+            eq(printRoutesTable.isActive, true),
+            eq(printerDevicesTable.isActive, true),
           ),
         )
         .limit(1);
@@ -2015,28 +1211,37 @@ export class PosService {
       }
 
       const [tenant] = await tx
-        .select({ name: tenants.name, settings: tenants.settings })
-        .from(tenants)
-        .where(eq(tenants.id, context.tenantId))
+        .select({ name: tenantsTable.name, settings: tenantsTable.settings })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, context.tenantId))
         .limit(1);
       const [table] = order.tableId
         ? await tx
-            .select({ code: diningTables.code })
-            .from(diningTables)
+            .select({ code: diningTablesTable.code })
+            .from(diningTablesTable)
             .where(
-              and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, order.tableId)),
+              and(
+                eq(diningTablesTable.tenantId, context.tenantId),
+                eq(diningTablesTable.id, order.tableId),
+              ),
             )
             .limit(1)
         : [];
       const items = await tx
         .select({
-          name: orderItems.nameSnapshot,
-          quantity: orderItems.quantity,
-          totalCents: orderItems.totalCents,
+          name: orderItemsTable.nameSnapshot,
+          quantity: orderItemsTable.quantity,
+          totalCents: orderItemsTable.totalCents,
         })
-        .from(orderItems)
-        .where(and(eq(orderItems.tenantId, context.tenantId), eq(orderItems.orderId, order.id)));
+        .from(orderItemsTable)
+        .where(
+          and(
+            eq(orderItemsTable.tenantId, context.tenantId),
+            eq(orderItemsTable.orderId, order.id),
+          ),
+        );
 
+      const { renderBillPreview } = await import("../printing/print-renderer");
       const renderedText = renderBillPreview({
         tenantName: readTenantDisplayName(tenant?.settings, tenant?.name ?? "GiroMesa"),
         orderCode: order.id.slice(0, 8),
@@ -2051,7 +1256,7 @@ export class PosService {
       });
 
       const [job] = await tx
-        .insert(printJobs)
+        .insert(printJobsTable)
         .values({
           tenantId: context.tenantId,
           branchId: order.branchId,
@@ -2096,10 +1301,21 @@ export class PosService {
 
   async printPaymentReceipt(context: TenantContext, orderId: string) {
     return this.database.db.transaction(async (tx) => {
+      const {
+        orders: ordersTable,
+        payments: paymentsTable,
+        printRoutes: printRoutesTable,
+        printerDevices: printerDevicesTable,
+        tenants: tenantsTable,
+        diningTables: diningTablesTable,
+        printJobs: printJobsTable,
+        users: usersTable,
+      } = await import("@giromesa/db");
+
       const [order] = await tx
         .select()
-        .from(orders)
-        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+        .from(ordersTable)
+        .where(and(eq(ordersTable.tenantId, context.tenantId), eq(ordersTable.id, orderId)))
         .limit(1);
 
       if (!order) {
@@ -2108,15 +1324,15 @@ export class PosService {
 
       const [payment] = await tx
         .select()
-        .from(payments)
+        .from(paymentsTable)
         .where(
           and(
-            eq(payments.tenantId, context.tenantId),
-            eq(payments.orderId, order.id),
-            eq(payments.status, "confirmed"),
+            eq(paymentsTable.tenantId, context.tenantId),
+            eq(paymentsTable.orderId, order.id),
+            eq(paymentsTable.status, "confirmed"),
           ),
         )
-        .orderBy(desc(payments.confirmedAt), desc(payments.createdAt))
+        .orderBy(desc(paymentsTable.confirmedAt), desc(paymentsTable.createdAt))
         .limit(1);
 
       if (!payment) {
@@ -2125,25 +1341,28 @@ export class PosService {
 
       const [route] = await tx
         .select({
-          id: printRoutes.id,
-          printerDeviceId: printRoutes.printerDeviceId,
-          copies: printRoutes.copies,
-          printerName: printerDevices.name,
-          charactersPerLine: printerDevices.charactersPerLine,
-          printerAddress: printerDevices.address,
-          printerPort: printerDevices.port,
-          printerConnectionType: printerDevices.connectionType,
-          printerConfig: printerDevices.config,
+          id: printRoutesTable.id,
+          printerDeviceId: printRoutesTable.printerDeviceId,
+          copies: printRoutesTable.copies,
+          printerName: printerDevicesTable.name,
+          charactersPerLine: printerDevicesTable.charactersPerLine,
+          printerAddress: printerDevicesTable.address,
+          printerPort: printerDevicesTable.port,
+          printerConnectionType: printerDevicesTable.connectionType,
+          printerConfig: printerDevicesTable.config,
         })
-        .from(printRoutes)
-        .innerJoin(printerDevices, eq(printerDevices.id, printRoutes.printerDeviceId))
+        .from(printRoutesTable)
+        .innerJoin(
+          printerDevicesTable,
+          eq(printerDevicesTable.id, printRoutesTable.printerDeviceId),
+        )
         .where(
           and(
-            eq(printRoutes.tenantId, context.tenantId),
-            eq(printRoutes.branchId, order.branchId),
-            eq(printRoutes.targetType, "payment_receipt"),
-            eq(printRoutes.isActive, true),
-            eq(printerDevices.isActive, true),
+            eq(printRoutesTable.tenantId, context.tenantId),
+            eq(printRoutesTable.branchId, order.branchId),
+            eq(printRoutesTable.targetType, "payment_receipt"),
+            eq(printRoutesTable.isActive, true),
+            eq(printerDevicesTable.isActive, true),
           ),
         )
         .limit(1);
@@ -2153,27 +1372,33 @@ export class PosService {
       }
 
       const [tenant] = await tx
-        .select({ name: tenants.name, settings: tenants.settings })
-        .from(tenants)
-        .where(eq(tenants.id, context.tenantId))
+        .select({ name: tenantsTable.name, settings: tenantsTable.settings })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, context.tenantId))
         .limit(1);
       const [table] = order.tableId
         ? await tx
-            .select({ code: diningTables.code })
-            .from(diningTables)
+            .select({ code: diningTablesTable.code })
+            .from(diningTablesTable)
             .where(
-              and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, order.tableId)),
+              and(
+                eq(diningTablesTable.tenantId, context.tenantId),
+                eq(diningTablesTable.id, order.tableId),
+              ),
             )
             .limit(1)
         : [];
       const [operator] = context.userId
         ? await tx
-            .select({ name: users.name })
-            .from(users)
-            .where(and(eq(users.tenantId, context.tenantId), eq(users.id, context.userId)))
+            .select({ name: usersTable.name })
+            .from(usersTable)
+            .where(
+              and(eq(usersTable.tenantId, context.tenantId), eq(usersTable.id, context.userId)),
+            )
             .limit(1)
         : [];
 
+      const { renderPaymentReceipt } = await import("../printing/print-renderer");
       const renderedText = renderPaymentReceipt({
         tenantName: readTenantDisplayName(tenant?.settings, tenant?.name ?? "GiroMesa"),
         orderCode: order.id.slice(0, 8),
@@ -2186,7 +1411,7 @@ export class PosService {
       });
 
       const [job] = await tx
-        .insert(printJobs)
+        .insert(printJobsTable)
         .values({
           tenantId: context.tenantId,
           branchId: order.branchId,
@@ -2232,10 +1457,26 @@ export class PosService {
 
   async printCashSummary(context: TenantContext, cashSessionId: string) {
     return this.database.db.transaction(async (tx) => {
+      const {
+        cashSessions: cashSessionsTable,
+        printRoutes: printRoutesTable,
+        printerDevices: printerDevicesTable,
+        tenants: tenantsTable,
+        users: usersTable,
+        printJobs: printJobsTable,
+        payments: paymentsTable,
+        orders: ordersTable,
+      } = await import("@giromesa/db");
+
       const [session] = await tx
         .select()
-        .from(cashSessions)
-        .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, cashSessionId)))
+        .from(cashSessionsTable)
+        .where(
+          and(
+            eq(cashSessionsTable.tenantId, context.tenantId),
+            eq(cashSessionsTable.id, cashSessionId),
+          ),
+        )
         .limit(1);
 
       if (!session) {
@@ -2244,25 +1485,28 @@ export class PosService {
 
       const [route] = await tx
         .select({
-          id: printRoutes.id,
-          printerDeviceId: printRoutes.printerDeviceId,
-          copies: printRoutes.copies,
-          printerName: printerDevices.name,
-          charactersPerLine: printerDevices.charactersPerLine,
-          printerAddress: printerDevices.address,
-          printerPort: printerDevices.port,
-          printerConnectionType: printerDevices.connectionType,
-          printerConfig: printerDevices.config,
+          id: printRoutesTable.id,
+          printerDeviceId: printRoutesTable.printerDeviceId,
+          copies: printRoutesTable.copies,
+          printerName: printerDevicesTable.name,
+          charactersPerLine: printerDevicesTable.charactersPerLine,
+          printerAddress: printerDevicesTable.address,
+          printerPort: printerDevicesTable.port,
+          printerConnectionType: printerDevicesTable.connectionType,
+          printerConfig: printerDevicesTable.config,
         })
-        .from(printRoutes)
-        .innerJoin(printerDevices, eq(printerDevices.id, printRoutes.printerDeviceId))
+        .from(printRoutesTable)
+        .innerJoin(
+          printerDevicesTable,
+          eq(printerDevicesTable.id, printRoutesTable.printerDeviceId),
+        )
         .where(
           and(
-            eq(printRoutes.tenantId, context.tenantId),
-            eq(printRoutes.branchId, session.branchId),
-            eq(printRoutes.targetType, "cash_summary"),
-            eq(printRoutes.isActive, true),
-            eq(printerDevices.isActive, true),
+            eq(printRoutesTable.tenantId, context.tenantId),
+            eq(printRoutesTable.branchId, session.branchId),
+            eq(printRoutesTable.targetType, "cash_summary"),
+            eq(printRoutesTable.isActive, true),
+            eq(printerDevicesTable.isActive, true),
           ),
         )
         .limit(1);
@@ -2272,32 +1516,36 @@ export class PosService {
       }
 
       const [tenant] = await tx
-        .select({ name: tenants.name, settings: tenants.settings })
-        .from(tenants)
-        .where(eq(tenants.id, context.tenantId))
+        .select({ name: tenantsTable.name, settings: tenantsTable.settings })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, context.tenantId))
         .limit(1);
       const [operator] = await tx
-        .select({ name: users.name })
-        .from(users)
-        .where(and(eq(users.tenantId, context.tenantId), eq(users.id, session.operatorId)))
+        .select({ name: usersTable.name })
+        .from(usersTable)
+        .where(
+          and(eq(usersTable.tenantId, context.tenantId), eq(usersTable.id, session.operatorId)),
+        )
         .limit(1);
+      const { sql } = await import("drizzle-orm");
       const paymentRows = await tx
         .select({
-          method: payments.method,
-          amountCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+          method: paymentsTable.method,
+          amountCents: sql<number>`coalesce(sum(${paymentsTable.amountCents}), 0)::int`,
         })
-        .from(payments)
-        .innerJoin(orders, eq(orders.id, payments.orderId))
+        .from(paymentsTable)
+        .innerJoin(ordersTable, eq(ordersTable.id, paymentsTable.orderId))
         .where(
           and(
-            eq(payments.tenantId, context.tenantId),
-            eq(orders.branchId, session.branchId),
-            eq(payments.status, "confirmed"),
-            sql`${payments.createdAt} >= ${session.openedAt}`,
+            eq(paymentsTable.tenantId, context.tenantId),
+            eq(ordersTable.branchId, session.branchId),
+            eq(paymentsTable.status, "confirmed"),
+            sql`${paymentsTable.createdAt} >= ${session.openedAt}`,
           ),
         )
-        .groupBy(payments.method);
+        .groupBy(paymentsTable.method);
 
+      const { renderCashSummary } = await import("../printing/print-renderer");
       const renderedText = renderCashSummary({
         tenantName: readTenantDisplayName(tenant?.settings, tenant?.name ?? "GiroMesa"),
         operatorName: operator?.name ?? null,
@@ -2314,7 +1562,7 @@ export class PosService {
       });
 
       const [job] = await tx
-        .insert(printJobs)
+        .insert(printJobsTable)
         .values({
           tenantId: context.tenantId,
           branchId: session.branchId,

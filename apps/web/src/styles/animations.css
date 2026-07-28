@@ -1,0 +1,270 @@
+/* ── Page transitions ─────────────────────────────────── */
+
+@keyframes gm-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gm-animate-in,
+.workspace,
+.hero,
+.sales-hero,
+.onboarding-hero,
+.status-card,
+.kds-page,
+.salon-page,
+.workspace-page {
+  animation: gm-fade-in 220ms ease-out both;
+}
+
+/* ── Card hover lift ─────────────────────────────────── */
+
+.gm-card,
+.gm-metric-card,
+.sales-benefits article,
+.sales-plan-grid article,
+.sales-module-grid article,
+.feature,
+.plan,
+.metric,
+.gm-stat-card,
+.product-tile,
+.table-tile,
+.onboarding-step,
+.onboarding-quick-grid a,
+.salon-table,
+.inventory-metrics article {
+  transition:
+    transform 180ms ease-out,
+    box-shadow 180ms ease-out,
+    border-color 180ms ease-out;
+}
+
+.gm-card:hover,
+.gm-metric-card:hover,
+.sales-benefits article:hover,
+.sales-plan-grid article:hover,
+.sales-module-grid article:hover,
+.feature:hover,
+.plan:hover,
+.metric:hover,
+.gm-stat-card:hover,
+.onboarding-step:hover,
+.salon-table:hover,
+.inventory-metrics article:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(13, 27, 42, 0.08),
+    var(--tight-shadow);
+}
+
+/* ── Button press feedback ───────────────────────────── */
+
+.button:active:not(:disabled),
+.gm-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* ── Modal slide-in ──────────────────────────────────── */
+
+@keyframes gm-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes gm-modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.gm-modal,
+[role="dialog"] {
+  animation: gm-modal-in 200ms ease-out both;
+}
+
+.gm-modal-overlay,
+[role="dialog"]::backdrop,
+.gm-dialog-backdrop {
+  animation: gm-modal-overlay-in 180ms ease-out both;
+}
+
+/* ── Tab switching ───────────────────────────────────── */
+
+.gm-tab-content,
+.workspace > div {
+  animation: gm-fade-in 160ms ease-out both;
+}
+
+/* ── Sidebar expand/collapse ─────────────────────────── */
+
+.sidebar {
+  transition:
+    width 240ms ease-out,
+    padding 240ms ease-out,
+    opacity 180ms ease-out;
+}
+
+.sidebar[data-collapsed="true"],
+.sidebar.collapsed {
+  width: 64px;
+  padding: 22px 12px;
+  overflow: hidden;
+}
+
+.sidebar[data-collapsed="true"] nav span,
+.sidebar.collapsed nav span,
+.sidebar[data-collapsed="true"] .tenant-chip span,
+.sidebar.collapsed .tenant-chip span {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity 140ms ease-out;
+}
+
+.sidebar:not([data-collapsed="true"]):not(.collapsed) nav span,
+.sidebar:not([data-collapsed="true"]):not(.collapsed) .tenant-chip span {
+  opacity: 1;
+  width: auto;
+  transition: opacity 180ms ease-in 80ms;
+}
+
+/* ── Toast notification ──────────────────────────────── */
+
+@keyframes gm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes gm-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.gm-toast,
+[role="alert"],
+.gm-notification {
+  animation: gm-toast-in 220ms ease-out both;
+}
+
+.gm-toast.removing,
+.gm-notification.removing {
+  animation: gm-toast-out 160ms ease-in both;
+}
+
+/* ── Loading spinner ─────────────────────────────────── */
+
+@keyframes gm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gm-spinner,
+.gm-loading,
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: gm-spin 600ms linear infinite;
+}
+
+.gm-spinner-lg {
+  width: 32px;
+  height: 32px;
+  border-width: 3px;
+}
+
+/* ── Status pill pulse (for live indicators) ─────────── */
+
+@keyframes gm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.live-banner .gm-status-pill-good,
+.gm-live-dot {
+  animation: gm-pulse 2s ease-in-out infinite;
+}
+
+/* ── Reduced motion ──────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
+
+  .gm-animate-in,
+  .workspace,
+  .hero,
+  .sales-hero,
+  .onboarding-hero,
+  .status-card,
+  .gm-modal,
+  .gm-toast,
+  [role="dialog"],
+  [role="alert"],
+  .gm-notification {
+    animation: none;
+  }
+
+  .gm-card:hover,
+  .gm-metric-card:hover,
+  .sales-benefits article:hover,
+  .sales-plan-grid article:hover,
+  .sales-module-grid article:hover,
+  .feature:hover,
+  .plan:hover,
+  .metric:hover,
+  .gm-stat-card:hover,
+  .onboarding-step:hover,
+  .salon-table:hover,
+  .inventory-metrics article:hover {
+    transform: none;
+  }
+
+  .button:active:not(:disabled),
+  .gm-button:active:not(:disabled) {
+    transform: none;
+  }
+}

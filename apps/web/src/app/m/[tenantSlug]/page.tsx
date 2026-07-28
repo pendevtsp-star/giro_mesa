@@ -57,6 +57,7 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
   const [menu, setMenu] = useState<PublicMenuResponse>(fallbackMenu);
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState("all");
+  const [visibleCount, setVisibleCount] = useState(20);
 
   useEffect(() => {
     let ignore = false;
@@ -90,12 +91,14 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
     const haystack = `${product.name} ${product.description ?? ""}`.toLowerCase();
     return matchesCategory && haystack.includes(query.toLowerCase());
   });
+  const pagedProducts = filteredProducts.slice(0, visibleCount);
+  const hasMore = filteredProducts.length > visibleCount;
   const branding = menu.tenant.branding ?? fallbackMenu.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
 
   return (
     <main
-      className="menu-shell"
+      className="menu-shell menu-shell-night"
       data-theme={branding?.themeMode ?? "light"}
       data-accent={branding?.accentPreset ?? "emerald"}
     >
@@ -122,7 +125,10 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
           <input
             placeholder="Buscar no cardápio"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setVisibleCount(20);
+            }}
           />
         </label>
         <div className="filter-row">
@@ -131,7 +137,10 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
               className={categoryId === category.id ? "filter active" : "filter"}
               type="button"
               key={category.id}
-              onClick={() => setCategoryId(category.id)}
+              onClick={() => {
+                setCategoryId(category.id);
+                setVisibleCount(20);
+              }}
             >
               {category.name}
             </button>
@@ -140,10 +149,21 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
       </section>
 
       <section className="menu-list">
-        {filteredProducts.map((product, index) => (
+        {pagedProducts.map((product) => (
           <article className="menu-item" key={product.id}>
             <div className="menu-thumb" aria-hidden="true">
-              {product.isClubEligible ? <Sparkles size={22} /> : <Utensils size={22} />}
+              {product.imageUrl ? (
+                // biome-ignore lint/performance/noImgElement: tenant URLs are dynamic and not eligible for a fixed Next Image allowlist.
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }}
+                />
+              ) : product.isClubEligible ? (
+                <Sparkles size={22} />
+              ) : (
+                <Utensils size={22} />
+              )}
             </div>
             <div>
               <h2>{product.name}</h2>
@@ -158,7 +178,6 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
               </span>
             </div>
             <div className="menu-price">
-              <small>{readPrepTime(product.name, index)}</small>
               <strong>{formatMoney(product.priceCents)}</strong>
               <button
                 className="button secondary icon-only"
@@ -171,19 +190,20 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
           </article>
         ))}
       </section>
+      {hasMore && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "16px 0 24px" }}>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => setVisibleCount((c) => c + 20)}
+          >
+            Carregar mais
+          </button>
+        </div>
+      )}
       <footer className="footer compact-footer">
         <Clock size={16} /> Horarios e disponibilidade podem mudar durante o turno.
       </footer>
     </main>
   );
-}
-
-function readPrepTime(name: string, index: number) {
-  if (name.toLowerCase().includes("chopp") || name.toLowerCase().includes("bebida")) {
-    return "2 min";
-  }
-  if (name.toLowerCase().includes("pizza")) {
-    return "18 min";
-  }
-  return index % 2 === 0 ? "12 min" : "7 min";
 }

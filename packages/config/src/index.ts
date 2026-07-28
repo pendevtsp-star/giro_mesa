@@ -6,9 +6,11 @@ const envSchema = z.object({
   APP_URL: z.url().default("http://localhost:3002"),
   PUBLIC_APP_URL: z.url().default("http://localhost:3002"),
   API_URL: z.url().default("http://localhost:3333"),
+  API_PORT: z.coerce.number().int().positive().max(65535).default(3333),
   DATABASE_URL: z.string().min(1).default("postgres://giromesa:giromesa@localhost:55432/giromesa"),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
   SESSION_SECRET: z.string().min(1).default("local-development-session-secret"),
+  QR_SIGNING_SECRET: z.string().min(1).default("local-development-qr-signing-secret"),
   PASSWORD_PEPPER: z.string().min(1).default("local-development-password-pepper"),
   MFA_ISSUER: z.string().default("GiroMesa"),
   MFA_SECRET_ENCRYPTION_KEY: z.string().min(1).default("local-development-mfa-secret-key"),
@@ -26,6 +28,9 @@ const envSchema = z.object({
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
   IFOOD_WEBHOOK_MODE: z.enum(["disabled", "sandbox", "mock", "production"]).default("disabled"),
+  IFOOD_MERCHANT_ID: z.string().optional(),
+  IFOOD_API_KEY: z.string().optional(),
+  IFOOD_WEBHOOK_SECRET: z.string().optional(),
   CLUB_WHISKY_WEBHOOK_SECRET: z.string().optional(),
   CLUB_WHISKY_API_BASE_URL: z.url().optional(),
   CLUB_WHISKY_API_KEY: z.string().optional(),
@@ -52,12 +57,19 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+  BACKUP_ENABLED: z.enum(["true", "false"]).default("true"),
+  BACKUP_SCHEDULE: z.string().default("0 2 * * *"),
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  BACKUP_STORAGE_PATH: z.string().default("./backups"),
+  BACKUP_VALIDATE_AFTER_CREATE: z.enum(["true", "false"]).default("false"),
+  NOTIFY_BACKUP_WEBHOOK: z.url().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
 
 const requiredProductionKeys = [
   "SESSION_SECRET",
+  "QR_SIGNING_SECRET",
   "PASSWORD_PEPPER",
   "MFA_SECRET_ENCRYPTION_KEY",
   "DATABASE_URL",
@@ -69,12 +81,14 @@ const requiredProductionKeys = [
 
 const secretProductionKeys = [
   "SESSION_SECRET",
+  "QR_SIGNING_SECRET",
   "PASSWORD_PEPPER",
   "MFA_SECRET_ENCRYPTION_KEY",
 ] as const;
 
 const weakProductionValues = new Set([
   "local-development-session-secret",
+  "local-development-qr-signing-secret",
   "local-development-password-pepper",
   "local-development-mfa-secret-key",
 ]);
@@ -148,4 +162,5 @@ export const queueNames = {
   inventory: "inventory-movements",
   messaging: "messaging-events",
   outbox: "outbox-events",
+  backup: "backup-events",
 } as const;

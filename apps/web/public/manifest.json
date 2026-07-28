@@ -1,0 +1,19 @@
+{
+  "name": "GiroMesa",
+  "short_name": "GiroMesa",
+  "description": "SaaS multi-tenant para PDV, mesas, comandas, KDS, cardápio digital, estoque e financeiro.",
+  "start_url": "/login",
+  "display": "standalone",
+  "theme_color": "#0D1B2A",
+  "background_color": "#0D1B2A",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "food"]
+}

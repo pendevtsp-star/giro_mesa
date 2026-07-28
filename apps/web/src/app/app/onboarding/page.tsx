@@ -71,7 +71,7 @@ export default function OnboardingPage() {
                 <strong>Salão</strong>
                 <span>Mesas, setores e mapa visual.</span>
               </a>
-              <a href="/app?view=pos">
+              <a href="/app/pos">
                 <ClipboardCheck size={18} />
                 <strong>Pedido teste</strong>
                 <span>Abrir comanda, enviar KDS e receber.</span>

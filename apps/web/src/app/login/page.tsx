@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowRight, LifeBuoy, LockKeyhole, Mail } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LifeBuoy, LockKeyhole, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { LanguageSwitcher } from "../../components/LanguageSwitcher";
 import {
   ApiError,
   apiBaseUrl,
@@ -10,6 +11,7 @@ import {
   login,
   requestPasswordReset,
 } from "../../lib/giromesa-api";
+import { useTranslation } from "../../lib/i18n";
 
 export default function LoginPage() {
   return (
@@ -20,20 +22,22 @@ export default function LoginPage() {
 }
 
 function LoginPageSkeleton() {
+  const { locale, setLocale, t } = useTranslation();
   return (
-    <main className="login-page">
+    <main className="login-page login-page-night">
       <section className="login-art">
         <a className="brand" href="/" aria-label="GiroMesa">
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
+        <LanguageSwitcher currentLocale={locale} onLocaleChange={setLocale} />
       </section>
       <section className="login-panel">
         <form className="form">
           <div>
-            <span className="section-kicker">Acesso seguro</span>
-            <h2>Acessar GiroMesa</h2>
-            <p>Carregando ambiente de acesso...</p>
+            <span className="section-kicker">{t("auth.secureAccess")}</span>
+            <h2>{t("auth.loginTitle")}</h2>
+            <p>{t("auth.loadingAccess")}</p>
           </div>
         </form>
       </section>
@@ -44,8 +48,11 @@ function LoginPageSkeleton() {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { locale, setLocale, t } = useTranslation();
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState(searchParams.get("password") ?? "");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [oauthChallenge, setOauthChallenge] = useState<string | null>(null);
@@ -63,14 +70,14 @@ function LoginPageContent() {
     if (challenge) {
       setOauthChallenge(challenge);
       setMfaRequired(true);
-      setError("Conclua o MFA para finalizar o acesso com Google.");
+      setError(t("auth.mfaCompleteGoogle"));
       return;
     }
 
     if (oauthStatus === "google_sign_in_failed") {
-      setError("Não foi possível concluir o login com Google.");
+      setError(t("auth.googleLoginFailed"));
     }
-  }, [searchParams]);
+  }, [searchParams, t]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -92,7 +99,7 @@ function LoginPageContent() {
       const result = await login(email, password, mfaCode);
       if (result.session.mfaRequired) {
         setMfaRequired(true);
-        setError("Informe o código do autenticador para concluir o acesso.");
+        setError(t("auth.mfaRequired"));
         setStatus("idle");
         return;
       }
@@ -101,10 +108,24 @@ function LoginPageContent() {
       router.push(result.user.isPlatformUser ? "/platform" : "/app");
       router.refresh();
     } catch (loginError) {
-      const message =
-        loginError instanceof ApiError && loginError.status === 401
-          ? "E-mail ou senha inválidos."
-          : "Não foi possível acessar o GiroMesa agora. Tente novamente em instantes.";
+      let message = t("loginErrors.generic");
+
+      if (loginError instanceof ApiError) {
+        if (loginError.status === 401) {
+          message = t("loginErrors.invalidCredentials");
+        } else if (loginError.status === 403) {
+          message = t("loginErrors.accessDenied");
+        } else if (loginError.status === 429) {
+          message = t("loginErrors.rateLimited");
+        } else if (loginError.status === 503) {
+          message = t("loginErrors.serverUnavailable");
+        } else if (loginError.message) {
+          message = loginError.message;
+        }
+      } else if (loginError instanceof TypeError && loginError.message.includes("fetch")) {
+        message = t("loginErrors.connectionFailed");
+      }
+
       setError(message);
       setStatus("idle");
     }
@@ -116,39 +137,37 @@ function LoginPageContent() {
       const reset = await requestPasswordReset(email);
       setError(
         reset.resetUrl
-          ? `Link de reset preparado: ${reset.resetUrl}`
-          : "Solicitação registrada. Se o e-mail existir, enviaremos as instruções de recuperação.",
+          ? `${t("auth.resetPasswordLink")}: ${reset.resetUrl}`
+          : t("auth.resetPasswordEmail"),
       );
     } catch {
-      setError("Não foi possível solicitar o reset agora. Tente novamente em instantes.");
+      setError(t("auth.resetPasswordError"));
     }
   }
 
   return (
-    <main className="login-page">
+    <main className="login-page login-page-night">
       <section className="login-art">
         <a className="brand" href="/" aria-label="GiroMesa">
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
+        <LanguageSwitcher currentLocale={locale} onLocaleChange={setLocale} />
         <div className="login-copy">
-          <span className="eyebrow">Acesso seguro</span>
-          <h1>Entre no seu ambiente GiroMesa.</h1>
-          <p>
-            Use suas credenciais para acessar a operação do estabelecimento ou o backoffice da
-            plataforma.
-          </p>
+          <span className="eyebrow">{t("auth.secureAccess")}</span>
+          <h1>{t("trial.sevenDayTrial")}</h1>
+          <p>{t("trial.trialDescription")}</p>
         </div>
       </section>
       <section className="login-panel">
         <form className="form" onSubmit={handleSubmit}>
           <div>
-            <span className="section-kicker">Login</span>
-            <h2>Acessar GiroMesa</h2>
-            <p>Informe seu e-mail e senha para continuar.</p>
+            <span className="section-kicker">{t("auth.login")}</span>
+            <h2>{t("auth.loginTitle")}</h2>
+            <p>{t("auth.loginSubtitle")}</p>
           </div>
           <label className="field">
-            <span>E-mail</span>
+            <span>{t("auth.email")}</span>
             <span className="input-shell">
               <Mail size={18} />
               <input
@@ -162,22 +181,38 @@ function LoginPageContent() {
             </span>
           </label>
           <label className="field">
-            <span>Senha</span>
+            <span>{t("auth.password")}</span>
             <span className="input-shell">
               <LockKeyhole size={18} />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 name="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="current-password"
                 required
               />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </span>
+          </label>
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+            />
+            <span>{t("auth.rememberMe")}</span>
           </label>
           {mfaRequired ? (
             <label className="field">
-              <span>Código MFA</span>
+              <span>{t("auth.mfaCode")}</span>
               <span className="input-shell">
                 <LockKeyhole size={18} />
                 <input
@@ -203,26 +238,26 @@ function LoginPageContent() {
             disabled={!isHydrated || status === "loading" || status === "success"}
           >
             {!isHydrated
-              ? "Carregando acesso..."
+              ? t("auth.loadingAccess")
               : status === "loading"
-                ? "Entrando..."
-                : "Entrar no painel"}{" "}
+                ? t("auth.signInLoading")
+                : t("auth.signIn")}{" "}
             <ArrowRight size={18} />
           </button>
           <a
             className="button secondary full"
             href={`${apiBaseUrl}/api/v1/auth/google/start?returnTo=${encodeURIComponent("/app")}`}
           >
-            <span>{oauthChallenge ? "Retomar Google após MFA" : "Entrar com Google"}</span>
+            <span>{oauthChallenge ? t("auth.mfaResume") : t("auth.signInWithGoogle")}</span>
           </a>
           <a className="button secondary full" href="mailto:suporte@example.com">
-            <LifeBuoy size={18} /> Suporte
+            <LifeBuoy size={18} /> {t("buttons.support")}
           </a>
           <button className="button ghost full" type="button" onClick={handleResetPassword}>
-            Solicitar reset de senha
+            {t("auth.forgotPassword")}
           </button>
           <a className="button ghost full" href="/teste-gratis">
-            Começar teste grátis
+            {t("trial.startFreeTrial")}
           </a>
         </form>
       </section>

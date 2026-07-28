@@ -19,6 +19,7 @@ import {
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { createIntegrationApiKey } from "../../common/integration-key";
 import { DatabaseService } from "../database/database.service";
+import { discoverUsbPrinters, testDeviceConnection } from "./print-provider";
 
 export type CreatePrinterDeviceInput = {
   branchId: string;
@@ -113,6 +114,36 @@ export class PrintingService {
     });
 
     return device;
+  }
+
+  async testDevice(context: TenantContext, deviceId: string) {
+    const [device] = await this.database.db
+      .select()
+      .from(printerDevices)
+      .where(and(eq(printerDevices.tenantId, context.tenantId), eq(printerDevices.id, deviceId)))
+      .limit(1);
+
+    if (!device) {
+      throw new NotFoundException("Printer device not found");
+    }
+
+    const result = await testDeviceConnection({
+      connectionType: device.connectionType,
+      address: device.address,
+      port: device.port,
+      config: device.config,
+    });
+
+    await this.audit(context, "printer.device_tested", "printer_device", device.id, {
+      connectionType: device.connectionType,
+      result: result.ok ? "success" : result.error,
+    });
+
+    return { deviceId: device.id, ...result };
+  }
+
+  async discoverUsbDevices() {
+    return discoverUsbPrinters();
   }
 
   async listRoutes(context: TenantContext, branchId?: string) {

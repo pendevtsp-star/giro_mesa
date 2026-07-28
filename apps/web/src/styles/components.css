@@ -166,3 +166,35 @@
   background: #edf4ff;
   color: #1b5ea8;
 }
+
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  font-size: 0.85rem;
+  color: #fff;
+}
+
+.login-art > .language-switcher {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.language-switcher select {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.language-switcher select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

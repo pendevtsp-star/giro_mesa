@@ -4,6 +4,7 @@ import {
   branches,
   categories,
   diningTables,
+  floorPlans,
   kdsStations,
   kdsTickets,
   orderItems,
@@ -20,7 +21,13 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DatabaseService } from "../database/database.service";
 import type { FiscalService } from "../fiscal/fiscal.service";
+import type { CashService } from "./cash.service";
+import { OrderRepository } from "./order.repository";
+import { OrdersService } from "./orders.service";
+import { PaymentsService } from "./payments.service";
+import { PosRepository } from "./pos.repository";
 import { PosService } from "./pos.service";
+import type { ShiftService } from "./shift.service";
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -42,6 +49,7 @@ async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(orders).where(eq(orders.tenantId, tenantId));
   await db.delete(products).where(eq(products.tenantId, tenantId));
   await db.delete(categories).where(eq(categories.tenantId, tenantId));
+  await db.delete(floorPlans).where(eq(floorPlans.tenantId, tenantId));
   await db.delete(diningTables).where(eq(diningTables.tenantId, tenantId));
   await db.delete(users).where(eq(users.tenantId, tenantId));
   await db.delete(branches).where(eq(branches.tenantId, tenantId));
@@ -201,7 +209,24 @@ runIntegration("POS QR conference behavior", () => {
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
     db = drizzle(pool, { schema });
-    posService = new PosService({ db } as DatabaseService, {} as FiscalService);
+    const databaseService = { db } as DatabaseService;
+    const posRepository = new PosRepository(databaseService);
+    const orderRepository = new OrderRepository(databaseService);
+    const ordersService = new OrdersService(
+      databaseService,
+      posRepository,
+      orderRepository,
+      {} as FiscalService,
+    );
+    const paymentsService = new PaymentsService(databaseService, orderRepository);
+    posService = new PosService(
+      databaseService,
+      posRepository,
+      ordersService,
+      paymentsService,
+      {} as CashService,
+      {} as ShiftService,
+    );
     fixture = await createPosFixture(db, "Tenant POS");
   });
 
@@ -229,6 +254,34 @@ runIntegration("POS QR conference behavior", () => {
         peopleCount: 2,
       }),
     ).rejects.toThrow("Table does not belong to the selected branch");
+  });
+
+  it("rejects a stale floor-plan revision instead of overwriting another operator", async () => {
+    const context = {
+      tenantId: fixture.tenant.id,
+      branchId: fixture.branch.id,
+      userId: fixture.user.id,
+      requestId: "floor-plan-version",
+      permissions: ["pos:operate"],
+    };
+    const initial = await posService.getFloorPlan(context, fixture.branch.id);
+    expect(initial.version).toBe(0);
+    const saved = await posService.saveFloorPlan(context, {
+      branchId: fixture.branch.id,
+      expectedVersion: initial.version,
+      layout: { [fixture.table.id]: { x: 12, y: 18 } },
+    });
+    expect(saved.version).toBe(1);
+    await expect(
+      posService.saveFloorPlan(context, {
+        branchId: fixture.branch.id,
+        expectedVersion: initial.version,
+        layout: { [fixture.table.id]: { x: 70, y: 70 } },
+      }),
+    ).rejects.toThrow(/conflict/i);
+    const current = await posService.getFloorPlan(context, fixture.branch.id);
+    expect(current.layout).toEqual({ [fixture.table.id]: { x: 12, y: 18 } });
+    expect(current.version).toBe(1);
   });
 
   it("cancels a single QR item, keeps the order pending and sends only active items to KDS", async () => {
@@ -264,16 +317,26 @@ runIntegration("POS QR conference behavior", () => {
     expect(sent.status).toBe("sent_to_kitchen");
     expect(sent.ticketsCreated).toHaveLength(1);
 
+    const paymentIdempotencyKey = `pos-payment-${Date.now()}`;
     const payment = await posService.registerPayment(context, fixture.order.id, {
       amountCents: 3200,
       method: "pix_manual",
-      idempotencyKey: `pos-payment-${Date.now()}`,
+      idempotencyKey: paymentIdempotencyKey,
     });
     expect(payment.audit).toBe("payment.confirmed");
     expect(payment.orderStatus).toBe("paid");
 
+    const replayedPayment = await posService.registerPayment(context, fixture.order.id, {
+      amountCents: 3200,
+      method: "pix_manual",
+      idempotencyKey: paymentIdempotencyKey,
+    });
+    expect(replayedPayment.id).toBe(payment.id);
+
     const closed = await posService.closeOrder(context, fixture.order.id);
     expect(closed.audit).toBe("order.closed");
+    const replayedClose = await posService.closeOrder(context, fixture.order.id);
+    expect(replayedClose.audit).toBe("order.closed");
 
     const rows = await db
       .select({ id: orderItems.id, status: orderItems.status, totalCents: orderItems.totalCents })
@@ -288,6 +351,8 @@ runIntegration("POS QR conference behavior", () => {
 
     const history = await posService.listTableHistory(context, fixture.table.id);
     expect(history[0]?.action).toBe("order.closed");
+    expect(history.filter((event) => event.action === "order.closed")).toHaveLength(1);
+    expect(history.filter((event) => event.action === "payment.confirmed")).toHaveLength(1);
     expect(history.some((event) => event.action === "qr_order.item_canceled")).toBe(true);
     expect(history.find((event) => event.action === "qr_order.item_canceled")?.userName).toBe(
       "Operador POS",
@@ -300,5 +365,7 @@ runIntegration("POS QR conference behavior", () => {
     expect(outboxRows.map((event) => event.topic)).toEqual(
       expect.arrayContaining(["payment.confirmed", "order.closed"]),
     );
+    expect(outboxRows.filter((event) => event.topic === "payment.confirmed")).toHaveLength(1);
+    expect(outboxRows.filter((event) => event.topic === "order.closed")).toHaveLength(1);
   });
 });

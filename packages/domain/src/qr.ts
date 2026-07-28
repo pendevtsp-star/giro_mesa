@@ -1,0 +1,56 @@
+export type QrCapability =
+  | "menu"
+  | "order"
+  | "review_before_kds"
+  | "track_preparation"
+  | "view_tab"
+  | "call_waiter"
+  | "request_pre_bill";
+
+export type QrTableStatus = "active" | "revoked";
+
+export type QrBranchSettings = {
+  branchId: string;
+  capabilities: QrCapability[];
+  reviewBeforeKds: boolean;
+  template: "classic" | "minimal" | "premium";
+  primaryColor: string;
+  instruction: string;
+  showLogo: boolean;
+};
+
+export type ServiceRequest = {
+  id: string;
+  branchId: string;
+  tableId: string;
+  orderId: string | null;
+  type: "call_waiter" | "request_pre_bill" | "need_help";
+  status: "pending" | "acknowledged" | "resolved" | "canceled";
+  message: string | null;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+};
+
+export type PublicOrderSummary = {
+  id: string;
+  status: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    unitPriceCents: number;
+    totalCents: number;
+    status: string;
+  }>;
+  subtotalCents: number;
+  discountCents: number;
+  serviceChargeCents: number;
+  totalCents: number;
+};
+
+export type FloorPlanRevision = {
+  id: string;
+  version: number;
+  layout: Record<string, unknown>;
+  updatedAt: string;
+};

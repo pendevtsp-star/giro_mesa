@@ -380,13 +380,34 @@ export class FocusNfeProvider implements FiscalProvider {
       };
     }
 
+    const ref = input.fiscalDocumentId.replace(/[^a-zA-Z0-9]/g, "");
+    const response = await this.fetcher(
+      `${this.baseUrl("homologation")}/v2/nfce/${encodeURIComponent(ref)}/cancelamento`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: this.authorizationHeader(),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ justificativa: input.reason }),
+      },
+    );
+    const payload = await readJson(response);
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        errorCode: `focus_nfe_cancel_http_${response.status}`,
+        errorMessage: readProviderError(payload, "Focus NFe rejected the cancel request"),
+        retryable: response.status >= 500 || response.status === 429,
+      };
+    }
+
     return {
-      ok: false,
-      externalId: input.fiscalDocumentId,
-      errorCode: "focus_nfe_cancel_not_implemented",
-      errorMessage:
-        "Focus NFe cancelamento real ainda precisa ser habilitado com endpoint validado em homologacao.",
-      retryable: false,
+      ok: true,
+      externalId: ref,
+      data: { canceledAt: new Date().toISOString() },
     };
   }
 

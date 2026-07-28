@@ -4,6 +4,7 @@ export type TenantContext = {
   userId?: string;
   requestId: string;
   permissions: string[];
+  isDemo?: boolean;
   mfaRequired?: boolean;
   billing?: {
     status: "healthy" | "trial_ok" | "trial_ending" | "payment_required" | "access_blocked";

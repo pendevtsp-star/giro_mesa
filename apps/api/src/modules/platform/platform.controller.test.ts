@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthService } from "../auth/auth.service";
+import type { BackupService } from "./backup.service";
 import { PlatformController } from "./platform.controller";
 import type { PlatformService } from "./platform.service";
 
@@ -101,9 +102,38 @@ function controllerWithContext(permissions: string[]) {
     })),
   } as unknown as PlatformService;
 
+  const backupService = {
+    createBackup: vi.fn(async () => ({
+      id: "backup-1",
+      filename: "backup-1.sql.gz",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      sizeBytes: 1024,
+      checksum: "abc123",
+      status: "completed",
+    })),
+    listBackups: vi.fn(async () => []),
+    restoreBackup: vi.fn(async () => ({
+      success: true,
+      message: "Backup restored",
+    })),
+    validateBackup: vi.fn(async () => ({
+      valid: true,
+      backupId: "backup-1",
+      checksumMatch: true,
+      fileExists: true,
+      errors: [],
+    })),
+    scheduleBackup: vi.fn(async () => ({
+      scheduleId: "schedule-1",
+      cron: "0 2 * * *",
+    })),
+    cleanupOldBackups: vi.fn(async () => ({ deleted: 0 })),
+  } as unknown as BackupService;
+
   return {
-    controller: new PlatformController(authService, platformService),
+    controller: new PlatformController(authService, platformService, backupService),
     platformService,
+    backupService,
   };
 }
 

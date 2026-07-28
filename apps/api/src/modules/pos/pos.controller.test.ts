@@ -60,6 +60,22 @@ function controllerWithContext(permissions: string[]) {
       reason: input.reason,
       audit: "cash_movement.created",
     })),
+    requestDiscount: vi.fn(async (_context, orderId, input) => ({
+      orderId,
+      amountCents: input.amountCents,
+      status: "pending_approval",
+    })),
+    requestItemCancellation: vi.fn(async (_context, orderId, itemId, input) => ({
+      orderId,
+      itemId,
+      reason: input.reason,
+      status: "pending_approval",
+    })),
+    receiveCashHandover: vi.fn(async (_context, paymentId) => ({
+      id: paymentId,
+      cashHandoverStatus: "received",
+      audit: "cash_handover.received",
+    })),
   } as unknown as PosService;
 
   return {
@@ -69,12 +85,58 @@ function controllerWithContext(permissions: string[]) {
 }
 
 describe("PosController", () => {
-  it("requires at least POS-compatible permission to list order payments", async () => {
+  it("requires payment permission to list order payments", async () => {
     const { controller } = controllerWithContext(["reports:read"]);
 
     await expect(controller.listOrderPayments("order-1", {})).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+  });
+
+  it("does not let a POS operator list or register payments", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+
+    await expect(controller.listOrderPayments("order-1", {})).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(
+      controller.registerPayment(
+        "order-1",
+        {
+          amountCents: 2500,
+          method: "cash",
+          idempotencyKey: "payment-key-123",
+        },
+        {},
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(posService.listOrderPayments).not.toHaveBeenCalled();
+    expect(posService.registerPayment).not.toHaveBeenCalled();
+  });
+
+  it("does not let a POS operator close an order", async () => {
+    const { controller } = controllerWithContext(["pos:operate"]);
+
+    await expect(controller.closeOrder("order-1", {})).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("does not let a POS operator review QR items or send to KDS", async () => {
+    const { controller } = controllerWithContext(["pos:operate"]);
+
+    await expect(
+      controller.updateQrOrderItem("order-1", "item-1", { quantity: 2 }, {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.sendToKitchen("order-1", {})).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it("does not let a payment-only role operate a shift", async () => {
+    const { controller } = controllerWithContext(["pos:payment_manage"]);
+
+    await expect(
+      controller.openShift({ branchId: "11111111-1111-4111-8111-111111111111" }, {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("lists order payments with payment permission", async () => {
@@ -201,5 +263,82 @@ describe("PosController", () => {
       expect.objectContaining({ amountCents: 3000 }),
     );
     expect(result.audit).toBe("cash_movement.created");
+  });
+
+  it("requests a validated order discount", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+
+    const result = await controller.requestDiscount(
+      "11111111-1111-4111-8111-111111111111",
+      { amountCents: 1250, reason: "Cliente fidelidade" },
+      {},
+    );
+
+    expect(posService.requestDiscount).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      "11111111-1111-4111-8111-111111111111",
+      { amountCents: 1250, reason: "Cliente fidelidade" },
+    );
+    expect(result.status).toBe("pending_approval");
+  });
+
+  it("requests cancellation without removing an already-sent item", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+
+    const result = await controller.requestItemCancellation(
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      { reason: "Cliente desistiu" },
+      {},
+    );
+
+    expect(posService.requestItemCancellation).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      { reason: "Cliente desistiu" },
+    );
+    expect(result.status).toBe("pending_approval");
+  });
+
+  it("records waiter payment origin and reference", async () => {
+    const { controller, posService } = controllerWithContext(["pos:payment_manage"]);
+
+    await controller.registerPayment(
+      "order-1",
+      {
+        amountCents: 2500,
+        method: "cash",
+        idempotencyKey: "waiter-cash-123",
+        registeredVia: "waiter",
+        reference: "Mesa 12",
+      },
+      {},
+    );
+
+    expect(posService.registerPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-test" }),
+      "order-1",
+      expect.objectContaining({
+        registeredVia: "waiter",
+        reference: "Mesa 12",
+      }),
+    );
+  });
+
+  it("receives waiter cash once through a cash-managed endpoint", async () => {
+    const { controller, posService } = controllerWithContext(["cash:manage"]);
+
+    const result = await controller.receiveCashHandover(
+      "33333333-3333-4333-8333-333333333333",
+      {},
+      {},
+    );
+
+    expect(posService.receiveCashHandover).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: "11111111-1111-4111-8111-111111111111" }),
+      "33333333-3333-4333-8333-333333333333",
+    );
+    expect(result.cashHandoverStatus).toBe("received");
   });
 });

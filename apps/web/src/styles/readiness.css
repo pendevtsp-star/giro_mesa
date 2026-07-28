@@ -1,0 +1,36 @@
+/* Readiness Panel Styles */
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.readiness-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--surface, #fff);
+  border-radius: 8px;
+  border: 1px solid var(--line, #dce5e3);
+}
+
+.readiness-label {
+  font-size: 0.75rem;
+  color: var(--muted, #607080);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.readiness-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink, #0d1b2a);
+}
+
+@media (max-width: 640px) {
+  .readiness-grid {
+    grid-template-columns: 1fr;
+  }
+}

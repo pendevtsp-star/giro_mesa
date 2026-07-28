@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 
 const pnpmExecPath = process.env.npm_execpath;
-const command = pnpmExecPath ? process.execPath : "pnpm";
+const directWindows = !pnpmExecPath && process.platform === "win32";
+const command = pnpmExecPath ? process.execPath : directWindows ? "cmd.exe" : "pnpm";
 
 const env = {
   ...process.env,
@@ -13,8 +14,27 @@ const env = {
       : "postgres://giromesa:giromesa@localhost:55432/giromesa"),
 };
 
+function run(args) {
+  const commandArgs = pnpmExecPath
+    ? [pnpmExecPath, ...args]
+    : directWindows
+      ? ["/d", "/c", "pnpm", ...args]
+      : args;
+  return spawnSync(command, commandArgs, {
+    env,
+    stdio: "inherit",
+  });
+}
+
+const migration = run(["db:migrate"]);
+if (migration.status !== 0) {
+  const applied = run(["--filter", "@giromesa/db", "db:check-applied"]);
+  if (applied.status !== 0) {
+    process.exit(migration.status ?? applied.status ?? 1);
+  }
+}
+
 for (const args of [
-  ["db:migrate"],
   [
     "--filter",
     "@giromesa/api",
@@ -24,6 +44,7 @@ for (const args of [
     "src/modules/integrations/club-whisky.integration.test.ts",
     "src/modules/fiscal/fiscal.integration.test.ts",
     "src/modules/printing/connector-auth.integration.test.ts",
+    "src/modules/qr/qr.integration.test.ts",
     "--pool=threads",
     "--maxWorkers=1",
     "--minWorkers=1",
@@ -41,10 +62,7 @@ for (const args of [
     "--minWorkers=1",
   ],
 ]) {
-  const result = spawnSync(command, pnpmExecPath ? [pnpmExecPath, ...args] : args, {
-    env,
-    stdio: "inherit",
-  });
+  const result = run(args);
 
   if (result.status !== 0) {
     process.exit(result.status ?? 1);

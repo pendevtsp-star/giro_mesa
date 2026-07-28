@@ -11,7 +11,7 @@ test.describe("GiroMesa public trial", () => {
 
     await page.goto("/teste-gratis", { waitUntil: "networkidle" });
     await expect(page.getByRole("heading", { name: "Teste grátis GiroMesa" })).toBeVisible();
-    await expect(page.getByText("Sem cartão na criação da conta")).toBeVisible();
+    await expect(page.getByText("Sem cartão na criação da conta").first()).toBeVisible();
 
     await page.getByPlaceholder("Ex.: Bar Aurora").fill(`Trial E2E ${suffix}`);
     await page.getByPlaceholder("Nome do responsável").fill("Cliente E2E");

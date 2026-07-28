@@ -31,6 +31,11 @@ const env: AppEnv = {
   EMAIL_PROVIDER: "smtp",
   SMTP_SECURE: "false",
   LOG_LEVEL: "info",
+  BACKUP_ENABLED: "true",
+  BACKUP_SCHEDULE: "0 2 * * *",
+  BACKUP_RETENTION_DAYS: 30,
+  BACKUP_STORAGE_PATH: "./backups",
+  BACKUP_VALIDATE_AFTER_CREATE: "false",
 };
 
 describe("FocusNfeProvider", () => {
@@ -93,17 +98,72 @@ describe("FocusNfeProvider", () => {
     expect(result.errorCode).toBe("focus_nfe_credentials_missing");
   });
 
-  it("does not call an unverified Focus NFe cancel endpoint", async () => {
-    const provider = new FocusNfeProvider(env);
+  it("cancels an NFC-e through Focus NFe using Basic Auth and ref", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), ...(init ? { init } : {}) });
+
+      return new Response(
+        JSON.stringify({
+          status: "cancelamento_autorizado",
+          mensagem: "Cancelamento autorizado com sucesso",
+        }),
+        { status: 200 },
+      );
+    };
+
+    const provider = new FocusNfeProvider(env, fetcher);
     const result = await provider.cancelDocument({
       tenantId: "tenant",
-      fiscalDocumentId: "document001",
+      fiscalDocumentId: "document-001",
+      reason: "Erro operacional identificado apos emissao.",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.externalId).toBe("document001");
+    expect(calls[0]?.url).toBe(
+      "https://homologacao.focusnfe.com.br/v2/nfce/document001/cancelamento",
+    );
+    expect(calls[0]?.init?.headers).toMatchObject({
+      authorization: `Basic ${Buffer.from("focus-token:").toString("base64")}`,
+    });
+    expect(calls[0]?.init?.body).toBe(
+      JSON.stringify({ justificativa: "Erro operacional identificado apos emissao." }),
+    );
+  });
+
+  it("handles Focus NFe cancel API errors", async () => {
+    const fetcher = async () => {
+      return new Response(JSON.stringify({ message: "NFC-e não encontrada" }), { status: 404 });
+    };
+
+    const provider = new FocusNfeProvider(env, fetcher);
+    const result = await provider.cancelDocument({
+      tenantId: "tenant",
+      fiscalDocumentId: "document-001",
       reason: "Erro operacional identificado apos emissao.",
     });
 
     expect(result.ok).toBe(false);
-    expect(result.errorCode).toBe("focus_nfe_cancel_not_implemented");
+    expect(result.errorCode).toBe("focus_nfe_cancel_http_404");
     expect(result.retryable).toBe(false);
+  });
+
+  it("retries Focus NFe cancel on server errors", async () => {
+    const fetcher = async () => {
+      return new Response(JSON.stringify({ message: "Internal server error" }), { status: 500 });
+    };
+
+    const provider = new FocusNfeProvider(env, fetcher);
+    const result = await provider.cancelDocument({
+      tenantId: "tenant",
+      fiscalDocumentId: "document-001",
+      reason: "Erro operacional identificado apos emissao.",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errorCode).toBe("focus_nfe_cancel_http_500");
+    expect(result.retryable).toBe(true);
   });
 });
 

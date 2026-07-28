@@ -2,6 +2,7 @@ import { loadEnv } from "@giromesa/config";
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Inject,
@@ -111,6 +112,16 @@ const updateRoleSchema = z
     message: "At least one field must be provided",
   });
 
+const createRoleSchema = z.object({
+  code: z
+    .string()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9_]+$/, "Code must be lowercase alphanumeric with underscores"),
+  name: z.string().min(2).max(120),
+  permissions: z.array(z.string().min(2).max(120)).max(80).default([]),
+});
+
 @Controller("auth")
 export class AuthController {
   constructor(
@@ -208,7 +219,7 @@ export class AuthController {
     const input = loginSchema.parse(body);
     this.rateLimitService.assertAllowed(headers, {
       namespace: "auth_login",
-      limit: 8,
+      limit: process.env.NODE_ENV === "production" ? 8 : 100,
       windowMs: 60_000,
       identifier: input.email.toLowerCase(),
     });
@@ -343,6 +354,24 @@ export class AuthController {
     requirePermission(context, "tenant:manage");
 
     return this.authService.updateRole(context, roleId, input);
+  }
+
+  @Post("roles")
+  async createRole(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const input = createRoleSchema.parse(body);
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "tenant:manage");
+
+    return this.authService.createRole(context, input);
+  }
+
+  @Delete("roles/:roleId")
+  async deleteRole(@Param("roleId") roleId: string, @Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "tenant:manage");
+
+    return this.authService.deleteRole(context, roleId);
   }
 
   @Post("invitations")
@@ -493,5 +522,13 @@ export class AuthController {
     requirePermission(context, "tenant:manage");
 
     return this.authService.assignUserRole(context, userId, input);
+  }
+
+  @Patch("users/:userId/deactivate")
+  async deactivateUser(@Param("userId") userId: string, @Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "tenant:manage");
+
+    return this.authService.deactivateUser(context, userId);
   }
 }

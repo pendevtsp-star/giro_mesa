@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import {
+  approvalRequests,
   auditLogs,
   branches,
   cashMovements,
@@ -13,6 +14,7 @@ import {
   diningTables,
   fiscalDocuments,
   fiscalSettings,
+  floorAreas,
   floorPlans,
   integrationAccounts,
   inventoryItems,
@@ -25,6 +27,7 @@ import {
   oauthAccounts,
   onboardingSteps,
   operationalShifts,
+  operationPolicies,
   orderItems,
   orders,
   outboxEvents,
@@ -37,16 +40,19 @@ import {
   products,
   recipeItems,
   recipes,
+  reservations,
   roles,
   sessions,
   stockLocations,
   stockMovements,
   subscriptions,
   suppliers,
+  tableEvents,
   tabs,
   tenants,
   userRoles,
   users,
+  waitlistEntries,
   webhookEvents,
 } from "./schema";
 
@@ -84,6 +90,11 @@ async function resetDemoTenant() {
   const tenantId = existingTenant.id;
 
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(approvalRequests).where(eq(approvalRequests.tenantId, tenantId));
+  await db.delete(tableEvents).where(eq(tableEvents.tenantId, tenantId));
+  await db.delete(reservations).where(eq(reservations.tenantId, tenantId));
+  await db.delete(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId));
+  await db.delete(operationPolicies).where(eq(operationPolicies.tenantId, tenantId));
   await db.delete(webhookEvents).where(eq(webhookEvents.tenantId, tenantId));
   await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));
   await db.delete(printJobs).where(eq(printJobs.tenantId, tenantId));
@@ -111,6 +122,7 @@ async function resetDemoTenant() {
   await db.delete(categories).where(eq(categories.tenantId, tenantId));
   await db.delete(kdsStations).where(eq(kdsStations.tenantId, tenantId));
   await db.delete(diningTables).where(eq(diningTables.tenantId, tenantId));
+  await db.delete(floorAreas).where(eq(floorAreas.tenantId, tenantId));
   await db.delete(floorPlans).where(eq(floorPlans.tenantId, tenantId));
   await db.delete(customers).where(eq(customers.tenantId, tenantId));
   await db.delete(onboardingSteps).where(eq(onboardingSteps.tenantId, tenantId));
@@ -156,6 +168,7 @@ async function upsertDemo() {
       name: "Bar Aurora Demo",
       slug: "bar-aurora-demo",
       status: "trial",
+      isDemo: true,
       settings: {
         branding: {
           displayName: "Bar Aurora",
@@ -170,6 +183,7 @@ async function upsertDemo() {
       set: {
         name: "Bar Aurora Demo",
         status: "trial",
+        isDemo: true,
         settings: {
           branding: {
             displayName: "Bar Aurora",
@@ -226,6 +240,8 @@ async function upsertDemo() {
         "print:operate",
         "inventory:manage",
         "reports:read",
+        "delivery:manage",
+        "approvals:manage",
       ],
     },
     {
@@ -245,6 +261,7 @@ async function upsertDemo() {
         "print:operate",
         "inventory:manage",
         "reports:read",
+        "approvals:manage",
       ],
     },
     {
@@ -372,6 +389,9 @@ async function upsertDemo() {
           name: userSeed.name,
           passwordHash,
           isActive: true,
+          mfaEnabled: false,
+          mfaSecretRef: null,
+          updatedAt: new Date(),
         },
       })
       .returning();
@@ -387,6 +407,12 @@ async function upsertDemo() {
       roleId: role.id,
       branchId: branch.id,
     });
+
+    // Force disable MFA for all seeded users
+    await db
+      .update(users)
+      .set({ mfaEnabled: false, mfaSecretRef: null, updatedAt: new Date() })
+      .where(and(eq(users.email, userSeed.email), eq(users.tenantId, tenant.id)));
 
     seededUsers.push({
       email: userSeed.email,
@@ -468,16 +494,70 @@ async function upsertDemo() {
     ["M12", "Mesa 12", 4, "occupied"],
   ] as const;
 
+  const tableByCode = new Map<string, { id: string }>();
   for (const [code, name, seats, status] of tableSeeds) {
-    await db.insert(diningTables).values({
+    const [table] = await db
+      .insert(diningTables)
+      .values({
+        tenantId: tenant.id,
+        branchId: branch.id,
+        code,
+        name,
+        seats,
+        status,
+      })
+      .returning({ id: diningTables.id });
+    if (table) tableByCode.set(code, table);
+  }
+
+  await db.insert(floorAreas).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    name: "Salão principal",
+    sortOrder: 0,
+    layout: {},
+  });
+
+  const managerPinHash = await argon2.hash(`1234${passwordPepper}`, {
+    type: argon2.argon2id,
+    memoryCost: 19_456,
+    timeCost: 2,
+    parallelism: 1,
+  });
+  await db.insert(operationPolicies).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    maxDiscountWithoutApprovalBps: 1000,
+    requireCancellationReason: true,
+    requireApprovalAfterKitchen: true,
+    returnStockOnApprovedCancellation: true,
+    managerPinHash,
+  });
+
+  const reservationTable = tableByCode.get("M05");
+  if (reservationTable) {
+    await db.insert(reservations).values({
       tenantId: tenant.id,
       branchId: branch.id,
-      code,
-      name,
-      seats,
-      status,
+      tableId: reservationTable.id,
+      customerName: "Marina Costa",
+      customerPhone: "+55 11 99999-1234",
+      partySize: 6,
+      scheduledAt: new Date(Date.now() + 1000 * 60 * 90),
+      createdByUserId: ownerId,
+      notes: "Aniversário",
     });
   }
+
+  await db.insert(waitlistEntries).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    customerName: "Rafael Lima",
+    customerPhone: "+55 11 98888-4321",
+    partySize: 3,
+    quotedWaitMinutes: 20,
+    createdByUserId: ownerId,
+  });
 
   const [foodCategory] = await db
     .insert(categories)

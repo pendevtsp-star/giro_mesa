@@ -52,8 +52,20 @@ const demoSummary: CashSessionSummary = {
   openOrders: { count: 6, totalCents: 48600 },
 };
 
+const emptySummary: CashSessionSummary = {
+  branchId: "",
+  session: null,
+  payments: {
+    totalCents: 0,
+    count: 0,
+    byMethod: {},
+  },
+  movements: [],
+  openOrders: { count: 0, totalCents: 0 },
+};
+
 const fallbackBranding: TenantBranding = {
-  displayName: "Bar Aurora",
+  displayName: "GiroMesa",
   logoUrl: null,
   themeMode: "light",
   accentPreset: "emerald",
@@ -104,28 +116,27 @@ function buildCsv(rows: unknown[][]) {
 
 export default function ReportsPage() {
   const [reportView, setReportView] = useState<"overview" | "products">("overview");
-  const [summary, setSummary] = useState<CashSessionSummary>(demoSummary);
+  const [summary, setSummary] = useState<CashSessionSummary>(emptySummary);
   const [fiscalDocs, setFiscalDocs] = useState<FiscalDocument[]>([]);
   const [inventory, setInventory] = useState<InventorySummaryItem[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [branding, setBranding] = useState<TenantBranding>(fallbackBranding);
   const [reportDre, setReportDre] = useState({
-    grossRevenueCents: demoSummary.payments.totalCents,
-    estimatedCostsCents: Math.round(demoSummary.payments.totalCents * 0.32),
-    operationalMarginCents:
-      demoSummary.payments.totalCents - Math.round(demoSummary.payments.totalCents * 0.32),
-    operationalMarginPercent: 68,
+    grossRevenueCents: 0,
+    estimatedCostsCents: 0,
+    operationalMarginCents: 0,
+    operationalMarginPercent: 0,
   });
-  const [status, setStatus] = useState("demo");
+  const [status, setStatus] = useState("carregando");
   const [financialCommercial, setFinancialCommercial] = useState<
     NonNullable<FinancialReport["commercial"]>
   >({
-    averageTicketCents: demoSummary.payments.totalCents / Math.max(1, demoSummary.payments.count),
-    openOrdersExposureCents: demoSummary.openOrders.totalCents,
-    receivedVsOpenRatio: 4,
+    averageTicketCents: 0,
+    openOrdersExposureCents: 0,
+    receivedVsOpenRatio: null,
     previousTotalCents: 0,
     previousCount: 0,
-    deltaCents: demoSummary.payments.totalCents,
+    deltaCents: 0,
     deltaPercent: null,
     previousDateFrom: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     previousDateTo: new Date().toISOString(),
@@ -143,7 +154,7 @@ export default function ReportsPage() {
   const [cashManagement, setCashManagement] = useState<
     NonNullable<FinancialReport["cashManagement"]>
   >({
-    sessionsOpen: 1,
+    sessionsOpen: 0,
     sessionsClosed: 0,
     balancedSessions: 0,
     divergentSessions: 0,
@@ -164,7 +175,7 @@ export default function ReportsPage() {
     "monitor",
   );
   const [productSales, setProductSales] = useState<ProductSalesReport>({
-    branchId: "demo",
+    branchId: "",
     period: "today",
     dateFrom: new Date().toISOString(),
     dateTo: null,
@@ -174,8 +185,10 @@ export default function ReportsPage() {
 
   useEffect(() => {
     async function load() {
+      let allowDemoFixtures = false;
       try {
         const session = await getSession();
+        allowDemoFixtures = session.isDemo;
         if (!session.branchId) {
           return;
         }
@@ -266,7 +279,19 @@ export default function ReportsPage() {
         setAudit(auditEvents.slice(0, 8));
         setStatus("online");
       } catch {
-        setStatus("demo");
+        if (allowDemoFixtures) {
+          setSummary(demoSummary);
+          setReportDre({
+            grossRevenueCents: demoSummary.payments.totalCents,
+            estimatedCostsCents: Math.round(demoSummary.payments.totalCents * 0.32),
+            operationalMarginCents:
+              demoSummary.payments.totalCents - Math.round(demoSummary.payments.totalCents * 0.32),
+            operationalMarginPercent: 68,
+          });
+          setStatus("demo");
+          return;
+        }
+        setStatus("erro ao carregar dados reais");
       }
     }
 

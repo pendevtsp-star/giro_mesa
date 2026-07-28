@@ -1,7 +1,14 @@
 "use client";
 
-import { Boxes, PackagePlus, Plus, Tag } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { Boxes, Download, PackagePlus, Plus, Tag } from "lucide-react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   type Category,
   createCategory,
@@ -37,6 +44,52 @@ export default function CatalogPage() {
   const [product, setProduct] = useState(initialProduct);
   const [message, setMessage] = useState("Carregando catálogo...");
   const [busy, setBusy] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+
+  const toggleProductSelection = useCallback((productId: string) => {
+    setSelectedProducts((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) {
+        next.delete(productId);
+      } else {
+        next.add(productId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllProducts = useCallback(() => {
+    if (selectedProducts.size === products.length) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(products.map((p) => p.id)));
+    }
+  }, [products, selectedProducts.size]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedProducts(new Set());
+    setBulkMode(false);
+  }, []);
+
+  const handleBulkExport = useCallback(() => {
+    const selected = products.filter((p) => selectedProducts.has(p.id));
+    const csv = [
+      "Nome,Categoria,Preco,Custo,Canais",
+      ...selected.map((p) => {
+        const category = categories.find((c) => c.id === p.categoryId);
+        return `"${p.name}","${category?.name ?? "Sem categoria"}",${formatMoney(p.priceCents)},${formatMoney(p.costCents)},"${p.channels.join(", ")}"`;
+      }),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `produtos-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setMessage(`${selected.length} produto(s) exportado(s) para CSV.`);
+  }, [products, selectedProducts, categories]);
 
   async function refresh() {
     try {
@@ -129,7 +182,7 @@ export default function CatalogPage() {
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
-        <a className="button secondary" href="/app?view=pos">
+        <a className="button secondary" href="/app/pos">
           Abrir PDV
         </a>
       </header>
@@ -319,17 +372,102 @@ export default function CatalogPage() {
             <span className="section-kicker">Catálogo ativo</span>
             <h2>Produtos por categoria</h2>
           </div>
-          <span className="count-chip">{products.length} itens</span>
+          <div className="gm-bulk-actions">
+            <span className="count-chip">{products.length} itens</span>
+            {bulkMode ? (
+              <>
+                <span className="gm-bulk-count">{selectedProducts.size} selecionado(s)</span>
+                <button
+                  className="button secondary compact"
+                  onClick={toggleAllProducts}
+                  type="button"
+                >
+                  {selectedProducts.size === products.length
+                    ? "Desmarcar todos"
+                    : "Selecionar todos"}
+                </button>
+                {selectedProducts.size > 0 && (
+                  <button
+                    className="button secondary compact"
+                    onClick={handleBulkExport}
+                    type="button"
+                  >
+                    <Download size={14} /> Exportar CSV
+                  </button>
+                )}
+                <button className="button secondary compact" onClick={clearSelection} type="button">
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <button
+                className="button secondary compact"
+                onClick={() => setBulkMode(true)}
+                type="button"
+              >
+                Selecionar
+              </button>
+            )}
+          </div>
         </div>
         <div className="product-groups">
           {productsByCategory.map((category) => (
             <article className="product-group" key={category.id}>
               <header>
+                {bulkMode && (
+                  <input
+                    type="checkbox"
+                    checked={category.products.every((p) => selectedProducts.has(p.id))}
+                    onChange={() => {
+                      const allSelected = category.products.every((p) =>
+                        selectedProducts.has(p.id),
+                      );
+                      setSelectedProducts((current) => {
+                        const next = new Set(current);
+                        for (const p of category.products) {
+                          if (allSelected) {
+                            next.delete(p.id);
+                          } else {
+                            next.add(p.id);
+                          }
+                        }
+                        return next;
+                      });
+                    }}
+                    className="gm-bulk-checkbox"
+                  />
+                )}
                 <strong>{category.name}</strong>
                 <span>{category.products.length} itens</span>
               </header>
               {category.products.map((item) => (
-                <div className="product-row" key={item.id}>
+                <div
+                  className={`product-row ${selectedProducts.has(item.id) ? "product-row--selected" : ""}`}
+                  key={item.id}
+                  style={bulkMode ? { cursor: "pointer" } : undefined}
+                  {...(bulkMode
+                    ? {
+                        role: "button",
+                        tabIndex: 0,
+                        onClick: () => toggleProductSelection(item.id),
+                        onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            toggleProductSelection(item.id);
+                          }
+                        },
+                      }
+                    : {})}
+                >
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      checked={selectedProducts.has(item.id)}
+                      onChange={() => toggleProductSelection(item.id)}
+                      className="gm-bulk-checkbox"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
                   <div>
                     <strong>{item.name}</strong>
                     <small>{item.description || "Sem descrição"}</small>
@@ -351,13 +489,63 @@ export default function CatalogPage() {
           {products.filter((item) => !item.categoryId).length ? (
             <article className="product-group">
               <header>
+                {bulkMode && (
+                  <input
+                    type="checkbox"
+                    checked={products
+                      .filter((p) => !p.categoryId)
+                      .every((p) => selectedProducts.has(p.id))}
+                    onChange={() => {
+                      const uncategorized = products.filter((p) => !p.categoryId);
+                      const allSelected = uncategorized.every((p) => selectedProducts.has(p.id));
+                      setSelectedProducts((current) => {
+                        const next = new Set(current);
+                        for (const p of uncategorized) {
+                          if (allSelected) {
+                            next.delete(p.id);
+                          } else {
+                            next.add(p.id);
+                          }
+                        }
+                        return next;
+                      });
+                    }}
+                    className="gm-bulk-checkbox"
+                  />
+                )}
                 <strong>Sem categoria</strong>
                 <span>Itens avulsos</span>
               </header>
               {products
                 .filter((item) => !item.categoryId)
                 .map((item) => (
-                  <div className="product-row" key={item.id}>
+                  <div
+                    className={`product-row ${selectedProducts.has(item.id) ? "product-row--selected" : ""}`}
+                    key={item.id}
+                    style={bulkMode ? { cursor: "pointer" } : undefined}
+                    {...(bulkMode
+                      ? {
+                          role: "button",
+                          tabIndex: 0,
+                          onClick: () => toggleProductSelection(item.id),
+                          onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              toggleProductSelection(item.id);
+                            }
+                          },
+                        }
+                      : {})}
+                  >
+                    {bulkMode && (
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.has(item.id)}
+                        onChange={() => toggleProductSelection(item.id)}
+                        className="gm-bulk-checkbox"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
                     <div>
                       <strong>{item.name}</strong>
                       <small>{item.description || "Sem descrição"}</small>

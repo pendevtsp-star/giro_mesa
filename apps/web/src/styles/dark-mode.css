@@ -1,0 +1,75 @@
+/* GiroMesa - Dark Mode Overrides */
+
+.app-layout[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f4f7f5;
+  --ink-soft: #dce6e2;
+  --muted: #a9b9b3;
+  --line: #263832;
+  --paper: #0e1513;
+  --surface: #141f1c;
+  --surface-soft: #192724;
+  --shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+  --tight-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+  background: linear-gradient(180deg, rgba(14, 21, 19, 0.96), rgba(8, 12, 11, 0.98)), var(--paper);
+}
+
+.app-layout[data-theme="dark"] .sidebar,
+.app-layout[data-theme="dark"] .panel,
+.app-layout[data-theme="dark"] .metric,
+.app-layout[data-theme="dark"] .tenant-chip,
+.app-layout[data-theme="dark"] .product-tile,
+.app-layout[data-theme="dark"] .table-tile,
+.app-layout[data-theme="dark"] .ticket-preview,
+.app-layout[data-theme="dark"] .role-chip,
+.app-layout[data-theme="dark"] .permission-card,
+.app-layout[data-theme="dark"] .qr-review-card,
+.app-layout[data-theme="dark"] .qr-order-chip,
+.app-layout[data-theme="dark"] .hardware-form,
+.app-layout[data-theme="dark"] .secret-box,
+.app-layout[data-theme="dark"] .live-banner,
+.app-layout[data-theme="dark"] .profile-action-strip {
+  background: var(--surface);
+}
+
+.app-layout[data-theme="dark"] input,
+.app-layout[data-theme="dark"] select,
+.app-layout[data-theme="dark"] .button.secondary,
+.app-layout[data-theme="dark"] .icon-button {
+  background: #101916;
+  color: var(--ink);
+}
+
+.app-layout[data-theme="dark"] .sidebar a.active,
+.app-layout[data-theme="dark"] .product-tile.selected,
+.app-layout[data-theme="dark"] .table-tile.selected-table,
+.app-layout[data-theme="dark"] .role-chip.selected {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.menu-shell[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f4f7f5;
+  --ink-soft: #dce6e2;
+  --muted: #a9b9b3;
+  --line: #263832;
+  --paper: #0e1513;
+  --surface: #141f1c;
+  --surface-soft: #192724;
+  background: #0e1513;
+}
+
+.menu-shell[data-theme="dark"] .menu-toolbar,
+.menu-shell[data-theme="dark"] .menu-item,
+.menu-shell[data-theme="dark"] .qr-card,
+.menu-shell[data-theme="dark"] .qr-menu-row,
+.menu-shell[data-theme="dark"] .qr-cart-row,
+.menu-shell[data-theme="dark"] .qr-action,
+.menu-shell[data-theme="dark"] .search-box,
+.menu-shell[data-theme="dark"] .filter {
+  background: var(--surface);
+}
+
+.menu-shell[data-theme="dark"] input {
+  color: var(--ink);
+}

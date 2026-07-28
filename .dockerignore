@@ -12,3 +12,8 @@ dist
 .env.*
 !.env.example
 backups
+.superpowers/
+.vscode/
+*.md
+docs/
+testsprite_tests/

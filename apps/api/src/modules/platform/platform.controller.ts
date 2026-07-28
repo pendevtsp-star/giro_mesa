@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { HeaderRecord } from "../../common/http";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
+import { BackupService } from "./backup.service";
 import { PlatformService } from "./platform.service";
 
 const createTenantSchema = z.object({
@@ -41,11 +42,16 @@ const listPlatformCommunicationsSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
+const scheduleBackupSchema = z.object({
+  cron: z.string().min(1).max(100),
+});
+
 @Controller("platform")
 export class PlatformController {
   constructor(
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(PlatformService) private readonly platformService: PlatformService,
+    @Inject(BackupService) private readonly backupService: BackupService,
   ) {}
 
   @Get("tenants")
@@ -172,5 +178,53 @@ export class PlatformController {
       tenantId,
       sendTenantCommunicationSchema.parse(body).type,
     );
+  }
+
+  @Post("backup")
+  async createBackup(@Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+
+    return this.backupService.createBackup(context);
+  }
+
+  @Get("backup")
+  async listBackups(@Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+
+    return { data: await this.backupService.listBackups() };
+  }
+
+  @Post("backup/:id/restore")
+  async restoreBackup(@Param("id") id: string, @Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+
+    return this.backupService.restoreBackup(context, id);
+  }
+
+  @Post("backup/:id/validate")
+  async validateBackup(@Param("id") id: string, @Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+
+    return this.backupService.validateBackup(context, id);
+  }
+
+  @Post("backup/schedule")
+  async scheduleBackup(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+
+    return this.backupService.scheduleBackup(context, scheduleBackupSchema.parse(body).cron);
+  }
+
+  @Post("backup/cleanup")
+  async cleanupBackups(@Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+
+    return this.backupService.cleanupOldBackups(context);
   }
 }

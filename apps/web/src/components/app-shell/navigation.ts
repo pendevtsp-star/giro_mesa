@@ -3,6 +3,8 @@ import {
   ChefHat,
   ClipboardList,
   CreditCard,
+  FileCheck2,
+  Gauge,
   LayoutDashboard,
   type LucideIcon,
   MapPinned,
@@ -14,130 +16,179 @@ import {
   Settings,
   ShieldCheck,
   Store,
+  Truck,
   Users,
 } from "lucide-react";
 
-export type AppNavigationGroup = "Operação" | "Gestão" | "Configuração" | "Plataforma";
+export type AppNavigationGroup = "operation" | "management" | "settings" | "platform";
 
 export type AppNavigationItem = {
   group: AppNavigationGroup;
   icon: LucideIcon;
-  label: string;
+  labelKey: string;
   href: string;
   permissions: readonly string[];
 };
 
 export const appNavigationItems = [
-  { group: "Operação", icon: LayoutDashboard, label: "Dashboard", href: "/app", permissions: [] },
   {
-    group: "Operação",
+    group: "operation",
+    icon: LayoutDashboard,
+    labelKey: "nav.dashboard",
+    href: "/app",
+    permissions: [],
+  },
+  {
+    group: "operation",
     icon: ClipboardList,
-    label: "PDV",
-    href: "/app?view=pos",
+    labelKey: "nav.pos",
+    href: "/app/pos",
     permissions: ["pos:operate"],
   },
   {
-    group: "Operação",
+    group: "operation",
     icon: MapPinned,
-    label: "Salão",
+    labelKey: "nav.salon",
     href: "/app/salon",
     permissions: ["pos:operate"],
   },
   {
-    group: "Operação",
+    group: "operation",
     icon: Users,
-    label: "Garçom",
+    labelKey: "nav.waiter",
     href: "/app/waiter",
     permissions: ["pos:operate"],
   },
   {
-    group: "Operação",
+    group: "operation",
     icon: ChefHat,
-    label: "KDS",
+    labelKey: "nav.kds",
     href: "/app/kds",
     permissions: ["pos:kds_send", "kds:operate"],
   },
   {
-    group: "Gestão",
+    group: "management",
     icon: Users,
-    label: "Clientes",
+    labelKey: "nav.customers",
     href: "/app/customers",
     permissions: ["pos:operate"],
   },
   {
-    group: "Gestão",
+    group: "management",
     icon: PackageOpen,
-    label: "Estoque",
+    labelKey: "nav.inventory",
     href: "/app/inventory",
     permissions: ["inventory:manage"],
   },
   {
-    group: "Gestão",
+    group: "management",
     icon: Banknote,
-    label: "Caixa",
+    labelKey: "nav.cash",
     href: "/app/cash",
     permissions: ["pos:payment_manage"],
   },
   {
-    group: "Gestão",
+    group: "management",
     icon: CreditCard,
-    label: "Relatórios",
+    labelKey: "nav.reports",
     href: "/app/reports",
     permissions: ["reports:read"],
   },
   {
-    group: "Configuração",
+    group: "management",
+    icon: Truck,
+    labelKey: "nav.delivery",
+    href: "/app/delivery",
+    permissions: ["delivery:manage"],
+  },
+  {
+    group: "settings",
     icon: QrCode,
-    label: "Cardápio",
+    labelKey: "nav.catalog",
     href: "/app/catalog",
     permissions: ["catalog:manage", "pos:qr_review"],
   },
   {
-    group: "Configuração",
+    group: "settings",
+    icon: QrCode,
+    labelKey: "nav.qr",
+    href: "/app/qr",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "settings",
     icon: Printer,
-    label: "Impressão",
+    labelKey: "nav.printing",
     href: "/app/printing",
     permissions: ["hardware:manage", "printing:manage"],
   },
   {
-    group: "Configuração",
+    group: "settings",
     icon: Rocket,
-    label: "Implantação",
+    labelKey: "nav.onboarding",
     href: "/app/onboarding",
     permissions: ["tenant:manage"],
   },
   {
-    group: "Configuração",
+    group: "settings",
     icon: CreditCard,
-    label: "Assinatura",
+    labelKey: "nav.billing",
     href: "/app/billing",
     permissions: ["tenant:manage"],
   },
   {
-    group: "Configuração",
+    group: "settings",
+    icon: ShieldCheck,
+    labelKey: "nav.operationPolicies",
+    href: "/app/settings/operation",
+    permissions: ["approvals:manage"],
+  },
+  {
+    group: "settings",
     icon: Palette,
-    label: "Personalização",
+    labelKey: "nav.branding",
     href: "/app/settings/branding",
     permissions: ["tenant:manage"],
   },
   {
-    group: "Configuração",
+    group: "settings",
     icon: ShieldCheck,
-    label: "Segurança",
+    labelKey: "nav.security",
     href: "/app/security",
     permissions: ["tenant:manage"],
   },
   {
-    group: "Configuração",
+    group: "settings",
     icon: Settings,
-    label: "Equipe",
+    labelKey: "nav.team",
     href: "/app/team",
     permissions: ["tenant:manage"],
   },
   {
-    group: "Plataforma",
+    group: "settings",
+    icon: FileCheck2,
+    labelKey: "nav.fiscal",
+    href: "/app/fiscal",
+    permissions: ["fiscal:manage"],
+  },
+  {
+    group: "settings",
+    icon: Gauge,
+    labelKey: "nav.outbox",
+    href: "/app/outbox",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "settings",
+    icon: Gauge,
+    labelKey: "nav.audit",
+    href: "/app/audit",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "platform",
     icon: Store,
-    label: "Backoffice",
+    labelKey: "nav.backoffice",
     href: "/platform",
     permissions: ["platform:manage"],
   },
@@ -170,9 +221,6 @@ export function groupNavigationItems(items: readonly AppNavigationItem[]) {
 }
 
 export function isNavigationItemActive(item: AppNavigationItem, currentPath: string) {
-  if (item.href === "/app?view=pos") {
-    return currentPath === item.href;
-  }
   if (item.href === "/app") {
     return currentPath === "/app";
   }

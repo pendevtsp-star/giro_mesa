@@ -23,6 +23,25 @@ const financialReportSchema = z.object({
     .transform((value) => (value ? new Date(value) : undefined)),
 });
 
+const salesByPeriodSchema = z.object({
+  branchId: z.string().uuid().optional(),
+  startDate: z.string().transform((value) => new Date(value)),
+  endDate: z.string().transform((value) => new Date(value)),
+  groupBy: z.enum(["day", "week", "month"]).default("day"),
+});
+
+const performanceMetricsSchema = z.object({
+  branchId: z.string().uuid().optional(),
+  startDate: z.string().transform((value) => new Date(value)),
+  endDate: z.string().transform((value) => new Date(value)),
+});
+
+const financialSummarySchema = z.object({
+  branchId: z.string().uuid().optional(),
+  startDate: z.string().transform((value) => new Date(value)),
+  endDate: z.string().transform((value) => new Date(value)),
+});
+
 @Controller("reports")
 export class ReportsController {
   constructor(
@@ -42,5 +61,26 @@ export class ReportsController {
     const context = await this.authService.resolveContext(headers);
     requirePermission(context, "reports:read");
     return this.reportsService.productSalesReport(context, financialReportSchema.parse(query));
+  }
+
+  @Get("sales-by-period")
+  async salesByPeriod(@Headers() headers: HeaderRecord, @Query() query: Record<string, string>) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "reports:read");
+    return this.reportsService.salesByPeriod(context, salesByPeriodSchema.parse(query));
+  }
+
+  @Get("performance")
+  async performance(@Headers() headers: HeaderRecord, @Query() query: Record<string, string>) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "reports:read");
+    return this.reportsService.performanceMetrics(context, performanceMetricsSchema.parse(query));
+  }
+
+  @Get("financial-summary")
+  async financialSummary(@Headers() headers: HeaderRecord, @Query() query: Record<string, string>) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "reports:read");
+    return this.reportsService.financialSummary(context, financialSummarySchema.parse(query));
   }
 }

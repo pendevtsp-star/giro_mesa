@@ -28,6 +28,9 @@ export class MockEmailProvider implements EmailProvider {
   }
 }
 
+const SMTP_RETRY_ATTEMPTS = 3;
+const SMTP_RETRY_DELAY_MS = 1000;
+
 export class SmtpEmailProvider implements EmailProvider {
   private readonly transporter = nodemailer.createTransport({
     host: requiredEnv("SMTP_HOST"),
@@ -40,23 +43,54 @@ export class SmtpEmailProvider implements EmailProvider {
             pass: process.env.SMTP_PASSWORD,
           }
         : undefined,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
 
   async send(message: EmailMessage): Promise<EmailDelivery> {
-    const info = await this.transporter.sendMail({
-      from: requiredEnv("EMAIL_FROM"),
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-    });
+    let lastError: unknown;
 
-    return {
-      provider: "smtp",
-      messageId: info.messageId,
-      queued: true,
-    };
+    for (let attempt = 1; attempt <= SMTP_RETRY_ATTEMPTS; attempt++) {
+      try {
+        const info = await this.transporter.sendMail({
+          from: requiredEnv("EMAIL_FROM"),
+          to: message.to,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        });
+
+        return {
+          provider: "smtp",
+          messageId: info.messageId,
+          queued: true,
+        };
+      } catch (error) {
+        lastError = error;
+
+        if (attempt < SMTP_RETRY_ATTEMPTS) {
+          const delay = SMTP_RETRY_DELAY_MS * attempt;
+          await sleep(delay);
+        }
+      }
+    }
+
+    throw new Error(
+      `SMTP delivery failed after ${SMTP_RETRY_ATTEMPTS} attempts: ${formatError(lastError)}`,
+    );
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 export function createEmailProvider() {

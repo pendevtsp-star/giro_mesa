@@ -1,11 +1,12 @@
-const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
 
-export const apiBaseUrl =
-  configuredApiBaseUrl ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:3333");
+// Use relative URLs - Next.js rewrites proxy /api/* to the real API server
+export const apiBaseUrl = configuredApiBaseUrl ?? "";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
+  headers?: Record<string, string>;
 };
 
 let csrfTokenCache: string | null = null;
@@ -16,6 +17,7 @@ export type TenantSession = {
   userId?: string;
   requestId: string;
   permissions: string[];
+  isDemo: boolean;
   mfaRequired?: boolean;
   billing?: {
     status: "healthy" | "trial_ok" | "trial_ending" | "payment_required" | "access_blocked";
@@ -71,6 +73,69 @@ export type DiningTable = {
   name: string;
   seats: number;
   status: string;
+  groupId?: string | null;
+  reservedName?: string | null;
+};
+
+export type QrCapability =
+  | "menu"
+  | "order"
+  | "review_before_kds"
+  | "track_preparation"
+  | "view_tab"
+  | "call_waiter"
+  | "request_pre_bill";
+
+export type QrBranchSettings = {
+  branchId: string;
+  capabilities: QrCapability[];
+  reviewBeforeKds: boolean;
+  template: "classic" | "minimal" | "premium";
+  primaryColor: string;
+  instruction: string;
+  showLogo: boolean;
+};
+
+export type QrAdminTable = {
+  id: string;
+  code: string;
+  name: string;
+  seats: number;
+  tableStatus: string;
+  qrStatus: "active" | "revoked";
+  qrTokenVersion: number;
+  qrRotatedAt: string | null;
+  publicUrl: string;
+};
+
+export type QrArtwork = {
+  format: "svg" | "png" | "pdf";
+  size: "plate_10x15" | "sticker_8x8" | "a4";
+  settings: QrBranchSettings;
+  items: Array<{
+    tableId: string;
+    tableCode: string;
+    tableName: string;
+    publicUrl: string;
+    svg: string;
+    png: string | null;
+    fileName: string;
+  }>;
+  printHtml: string | null;
+};
+
+export type ServiceRequest = {
+  id: string;
+  tableId: string;
+  tableCode: string;
+  tableName: string;
+  orderId: string | null;
+  type: "call_waiter" | "request_pre_bill" | "need_help";
+  status: "pending" | "acknowledged" | "resolved" | "canceled";
+  message: string | null;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
 };
 
 export type KdsTicket = {
@@ -234,6 +299,9 @@ export type PaymentResponse = {
   id: string;
   amountCents: number;
   method: string;
+  registeredByUserId: string | null;
+  registeredVia: "waiter" | "cashier";
+  cashHandoverStatus: "not_required" | "pending" | "received" | "disputed";
   orderStatus: "partially_paid" | "paid";
   audit: string;
 };
@@ -243,9 +311,71 @@ export type OrderPayment = {
   amountCents: number;
   method: string;
   status: string;
+  registeredByUserId: string | null;
+  registeredVia: "waiter" | "cashier";
+  cashHandoverStatus: "not_required" | "pending" | "received" | "disputed";
+  cashHandoverReceivedByUserId: string | null;
+  cashHandoverReceivedAt: string | null;
   confirmedAt: string | null;
   createdAt: string;
   audit: string;
+};
+
+export type OperationPolicy = {
+  id: string;
+  branchId: string | null;
+  roleId: string | null;
+  maxDiscountWithoutApprovalBps: number;
+  requireCancellationReason: boolean;
+  requireApprovalAfterKitchen: boolean;
+  returnStockOnApprovedCancellation: boolean;
+};
+
+export type ApprovalRequest = {
+  id: string;
+  branchId: string | null;
+  entityType: string;
+  entityId: string;
+  action: string;
+  requestedByUserId: string;
+  requestedValueCents: number | null;
+  reason: string | null;
+  decisionReason: string | null;
+  status: "pending" | "approved" | "rejected" | "expired";
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type FloorArea = {
+  id: string;
+  branchId: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  layout: Record<string, unknown>;
+};
+
+export type FloorReservation = {
+  id: string;
+  tableId: string | null;
+  customerName: string;
+  customerPhone: string | null;
+  partySize: number;
+  scheduledAt: string;
+  status: "booked" | "arrived" | "seated" | "no_show" | "canceled";
+  notes: string | null;
+};
+
+export type WaitlistEntry = {
+  id: string;
+  tableId: string | null;
+  customerName: string;
+  customerPhone: string | null;
+  partySize: number;
+  quotedWaitMinutes: number | null;
+  status: "waiting" | "notified" | "seated" | "left" | "canceled";
+  notes: string | null;
+  createdAt: string;
 };
 
 export type CloseOrderResponse = {
@@ -310,6 +440,16 @@ export type CashSessionSummary = {
     totalCents: number;
     count: number;
     byMethod: Record<string, number>;
+    pendingCount?: number;
+    pendingAmountCents?: number;
+    receivedAmountCents?: number;
+    disputedAmountCents?: number;
+    pendingHandovers?: Array<{
+      id: string;
+      amountCents: number;
+      registeredByUserId: string | null;
+      createdAt: string;
+    }>;
     averageTicketCents?: number;
     mix?: Array<{
       method: string;
@@ -347,6 +487,40 @@ export type OperationalShift = {
 export type CurrentShiftResponse = {
   branchId: string;
   shift: OperationalShift | null;
+};
+
+export type DashboardSummary = {
+  salesToday: number;
+  activeOrders: number;
+  occupiedTables: string;
+  cashBalance: number;
+  shiftOpen: boolean;
+  cashOpen: boolean;
+  inventoryAlerts: number;
+};
+
+export type SalesByPeriodResponse = {
+  branchId: string;
+  dateFrom: string;
+  dateTo: string | null;
+  groupBy: string;
+  summary: {
+    totalCents: number;
+    totalOrders: number;
+    averageTicketCents: number;
+  };
+  periods: Array<{
+    period: string;
+    totalCents: number;
+    orderCount: number;
+    averageTicketCents: number;
+  }>;
+  topProducts: Array<{
+    productId: string | null;
+    name: string | null;
+    quantity: number;
+    revenueCents: number;
+  }>;
 };
 
 export type OnboardingStepStatus = "pending" | "in_progress" | "completed" | "skipped" | "blocked";
@@ -763,13 +937,74 @@ export type PublicMenuResponse = {
       | "bottleVolumeMl"
       | "defaultDoseMl"
       | "spiritType"
-    >
+    > & {
+      modifierGroupCount?: number;
+    }
   >;
+};
+
+export type PublicModifierGroup = {
+  id: string;
+  name: string;
+  minChoices: number;
+  maxChoices: number;
+  isRequired: boolean;
+  options: Array<{
+    id: string;
+    groupId: string;
+    name: string;
+    priceDeltaCents: number;
+  }>;
 };
 
 export type PublicQrResponse = {
   tenant: { id: string; name: string; slug: string; branding?: TenantBranding };
   table: { id: string; branchId: string; code: string; name: string; status: string };
+};
+
+export type SecurePublicQrContext = {
+  tenant: {
+    name: string;
+    branding: { displayName: string; logoUrl: string | null };
+  };
+  branchId: string;
+  table: {
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+    active: boolean;
+  };
+  capabilities: QrCapability[];
+  reviewBeforeKds: boolean;
+  categories: Category[];
+  products: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    categoryId: string | null;
+    priceCents: number;
+    imageUrl: string | null;
+    channels: string[];
+  }>;
+};
+
+export type SecurePublicOrderSummary = {
+  order: {
+    id: string;
+    status: string;
+    items: Array<{
+      name: string;
+      quantity: number;
+      unitPriceCents: number;
+      totalCents: number;
+      status: string;
+    }>;
+    subtotalCents: number;
+    discountCents: number;
+    serviceChargeCents: number;
+    totalCents: number;
+  } | null;
 };
 
 export type PrinterDevice = {
@@ -784,6 +1019,34 @@ export type PrinterDevice = {
   charactersPerLine: number;
   isActive: boolean;
   config?: Record<string, unknown>;
+};
+
+export type DeliveryStatus =
+  | "pending"
+  | "confirmed"
+  | "preparing"
+  | "ready_for_pickup"
+  | "out_for_delivery"
+  | "delivered"
+  | "canceled";
+
+export type DeliveryOrder = {
+  id: string;
+  orderId: string;
+  channel: "own_app" | "ifood" | "rappi" | "phone";
+  status: DeliveryStatus;
+  customerName: string | null;
+  customerPhone: string | null;
+  deliveryAddress: string | null;
+  deliveryFee: number;
+  estimatedMinutes: number | null;
+  riderName: string | null;
+  riderPhone: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  orderStatus: string;
+  totalCents: number;
 };
 
 export type PrintRoute = {
@@ -925,9 +1188,13 @@ async function buildRequestInit(path: string, method: string, options: RequestOp
     method,
     credentials: "include",
   };
+  if (options.headers) {
+    requestInit.headers = options.headers;
+  }
 
   if (options.body !== undefined) {
     const headers: Record<string, string> = {
+      ...options.headers,
       "content-type": "application/json",
     };
     const csrfToken = await csrfTokenForRequest(path, method);
@@ -971,6 +1238,17 @@ export async function login(email: string, password: string, mfaCode?: string) {
     method: "POST",
     body: { email, password, ...(mfaCode ? { mfaCode } : {}) },
   });
+}
+
+export async function logout() {
+  try {
+    return await apiRequest<{ revoked: boolean }>("/api/v1/auth/logout", {
+      method: "POST",
+      body: {},
+    });
+  } finally {
+    csrfTokenCache = null;
+  }
 }
 
 export async function startTrial(input: {
@@ -1095,6 +1373,64 @@ export async function getSession() {
 
 export function getTenantBranding() {
   return apiRequest<TenantBranding>("/api/v1/tenants/branding");
+}
+
+export function getQrSettings() {
+  return apiRequest<QrBranchSettings>("/api/v1/qr/settings");
+}
+
+export function updateQrSettings(input: Partial<Omit<QrBranchSettings, "branchId">>) {
+  return apiRequest<QrBranchSettings>("/api/v1/qr/settings", {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export async function listQrTables() {
+  const response = await apiRequest<{ data: QrAdminTable[] }>("/api/v1/qr/tables");
+  return response.data;
+}
+
+export function rotateQrTable(tableId: string) {
+  return apiRequest<{ tableId: string; version: number; publicUrl: string }>(
+    `/api/v1/qr/tables/${encodeURIComponent(tableId)}/rotate`,
+    { method: "POST" },
+  );
+}
+
+export function createQrArtwork(input: {
+  tableIds: string[];
+  format: "svg" | "png" | "pdf";
+  size: "plate_10x15" | "sticker_8x8" | "a4";
+}) {
+  return apiRequest<QrArtwork>("/api/v1/qr/artwork", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function listServiceRequests(
+  status?: "pending" | "acknowledged" | "resolved" | "canceled",
+) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await apiRequest<{ data: ServiceRequest[] }>(
+    `/api/v1/qr/service-requests${query}`,
+  );
+  return response.data;
+}
+
+export function acknowledgeServiceRequest(id: string) {
+  return apiRequest<ServiceRequest>(
+    `/api/v1/qr/service-requests/${encodeURIComponent(id)}/acknowledge`,
+    { method: "POST" },
+  );
+}
+
+export function resolveServiceRequest(id: string) {
+  return apiRequest<ServiceRequest>(
+    `/api/v1/qr/service-requests/${encodeURIComponent(id)}/resolve`,
+    { method: "POST" },
+  );
 }
 
 export function updateTenantBranding(input: Partial<TenantBranding>) {
@@ -1326,7 +1662,12 @@ export function createPublicQrOrder(
   tableCode: string,
   input: {
     tenantSlug?: string;
-    items: { productId: string; quantity: number; notes?: string }[];
+    items: {
+      productId: string;
+      quantity: number;
+      notes?: string;
+      modifiers?: { optionId: string }[];
+    }[];
   },
 ) {
   return apiRequest<{ orderId: string; status: string }>(
@@ -1352,6 +1693,60 @@ export function requestPublicQrAction(
   );
 }
 
+export function getSecurePublicQrContext(token: string) {
+  return apiRequest<SecurePublicQrContext>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/context`,
+  );
+}
+
+export function getSecurePublicOrder(token: string) {
+  return apiRequest<SecurePublicOrderSummary>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/order`,
+  );
+}
+
+export function createSecurePublicOrder(
+  token: string,
+  idempotencyKey: string,
+  input: {
+    items: {
+      productId: string;
+      quantity: number;
+      notes?: string;
+      modifiers?: { optionId: string }[];
+    }[];
+  },
+) {
+  return apiRequest<{
+    orderId: string;
+    status: string;
+    requiresReview: boolean;
+    itemCount: number;
+  }>(`/api/v1/qr/public/${encodeURIComponent(token)}/orders`, {
+    method: "POST",
+    headers: { "x-idempotency-key": idempotencyKey },
+    body: input,
+  });
+}
+
+export function createSecureServiceRequest(
+  token: string,
+  idempotencyKey: string,
+  input: {
+    type: "call_waiter" | "request_pre_bill" | "need_help";
+    message?: string;
+  },
+) {
+  return apiRequest<{ id: string; status: string; type: string }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/service-requests`,
+    {
+      method: "POST",
+      headers: { "x-idempotency-key": idempotencyKey },
+      body: input,
+    },
+  );
+}
+
 export async function listTables(branchId: string) {
   const result = await apiRequest<{ data: DiningTable[] }>(
     `/api/v1/pos/tables?branchId=${encodeURIComponent(branchId)}`,
@@ -1368,6 +1763,10 @@ export async function listQrPendingOrders(branchId: string) {
 
 export function buildPosEventsUrl(branchId: string) {
   return `${apiBaseUrl}/api/v1/pos/events?branchId=${encodeURIComponent(branchId)}`;
+}
+
+export function buildRealtimeEventsUrl(branchId: string) {
+  return `${apiBaseUrl}/api/v1/realtime/events?branchId=${encodeURIComponent(branchId)}`;
 }
 
 export async function listKdsTickets() {
@@ -1394,13 +1793,55 @@ export function getFloorPlan(branchId: string) {
     branchId: string;
     name: string;
     layout: Record<string, { x: number; y: number }>;
+    version: number;
   }>(`/api/v1/pos/floor-plan?branchId=${encodeURIComponent(branchId)}`);
 }
-export function saveFloorPlan(branchId: string, layout: Record<string, { x: number; y: number }>) {
-  return apiRequest<Record<string, unknown>>("/api/v1/pos/floor-plan", {
+
+export function saveFloorPlan(
+  branchId: string,
+  layout: Record<string, { x: number; y: number }>,
+  expectedVersion: number,
+) {
+  return apiRequest<{
+    id: string;
+    branchId: string;
+    layout: Record<string, { x: number; y: number }>;
+    version: number;
+  }>("/api/v1/pos/floor-plan", {
     method: "PATCH",
-    body: { branchId, layout },
+    body: { branchId, layout, expectedVersion },
   });
+}
+
+export function mergeTables(branchId: string, tableIds: string[]) {
+  return apiRequest<{ data: DiningTable[] }>("/api/v1/pos/merge-tables", {
+    method: "POST",
+    body: { branchId, tableIds },
+  });
+}
+
+export function unmergeTables(tableId: string) {
+  return apiRequest<{ data: DiningTable[] }>(
+    `/api/v1/pos/unmerge-tables/${encodeURIComponent(tableId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function updateTable(
+  tableId: string,
+  data: { status?: string; reservedName?: string | null },
+) {
+  return apiRequest<{ data: DiningTable }>(`/api/v1/pos/tables/${encodeURIComponent(tableId)}`, {
+    method: "PATCH",
+    body: data,
+  });
+}
+
+export async function getPublicProductModifiers(productId: string) {
+  const result = await apiRequest<{ data: PublicModifierGroup[] }>(
+    `/api/v1/catalog/public/products/${encodeURIComponent(productId)}/modifiers`,
+  );
+  return result.data;
 }
 
 export async function listProductModifiers(productId: string) {
@@ -1551,6 +1992,8 @@ export function registerManualPayment(
   input?: {
     method?: string;
     idempotencyKey?: string;
+    registeredVia?: "waiter" | "cashier";
+    reference?: string;
   },
 ) {
   return apiRequest<PaymentResponse>(`/api/v1/pos/orders/${orderId}/payments`, {
@@ -1560,7 +2003,16 @@ export function registerManualPayment(
       method: input?.method ?? "pix_manual",
       idempotencyKey:
         input?.idempotencyKey ?? `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      registeredVia: input?.registeredVia ?? "cashier",
+      ...(input?.reference ? { reference: input.reference } : {}),
     },
+  });
+}
+
+export function receiveCashHandover(paymentId: string) {
+  return apiRequest<PaymentResponse>(`/api/v1/pos/payments/${paymentId}/cash-handover/receive`, {
+    method: "POST",
+    body: {},
   });
 }
 
@@ -1569,6 +2021,97 @@ export async function listOrderPayments(orderId: string) {
     `/api/v1/pos/orders/${orderId}/payments`,
   );
   return result.data;
+}
+
+export function getOperationPolicy() {
+  return apiRequest<OperationPolicy>("/api/v1/operation/policies");
+}
+
+export function updateOperationPolicy(
+  input: Omit<OperationPolicy, "id" | "branchId" | "roleId"> & { managerPin?: string },
+) {
+  return apiRequest<OperationPolicy>("/api/v1/operation/policies", {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export async function listApprovalRequests(status = "pending") {
+  const result = await apiRequest<{ data: ApprovalRequest[] }>(
+    `/api/v1/approvals?status=${encodeURIComponent(status)}`,
+  );
+  return result.data;
+}
+
+export function decideApprovalRequest(
+  approvalId: string,
+  decision: "approve" | "reject",
+  input: { managerPin: string; reason?: string },
+) {
+  return apiRequest<ApprovalRequest>(`/api/v1/approvals/${approvalId}/${decision}`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function listFloorAreas() {
+  const result = await apiRequest<{ data: FloorArea[] }>("/api/v1/floor/areas");
+  return result.data;
+}
+
+export async function listFloorReservations(status?: FloorReservation["status"]) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const result = await apiRequest<{ data: FloorReservation[] }>(
+    `/api/v1/floor/reservations${query}`,
+  );
+  return result.data;
+}
+
+export function createFloorReservation(input: {
+  tableId?: string | null;
+  customerName: string;
+  customerPhone?: string;
+  partySize: number;
+  scheduledAt: string;
+  notes?: string;
+}) {
+  return apiRequest<FloorReservation>("/api/v1/floor/reservations", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function listWaitlistEntries(status?: WaitlistEntry["status"]) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const result = await apiRequest<{ data: WaitlistEntry[] }>(`/api/v1/floor/waitlist${query}`);
+  return result.data;
+}
+
+export function createWaitlistEntry(input: {
+  customerName: string;
+  customerPhone?: string;
+  partySize: number;
+  quotedWaitMinutes?: number;
+  notes?: string;
+}) {
+  return apiRequest<WaitlistEntry>("/api/v1/floor/waitlist", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function seatFloorReservation(reservationId: string, tableId: string) {
+  return apiRequest<Record<string, unknown>>(`/api/v1/floor/reservations/${reservationId}/seat`, {
+    method: "POST",
+    body: { tableId },
+  });
+}
+
+export function transferDiningTable(sourceTableId: string, targetTableId: string) {
+  return apiRequest<Record<string, unknown>>(`/api/v1/floor/tables/${sourceTableId}/transfer`, {
+    method: "POST",
+    body: { targetTableId },
+  });
 }
 
 export function closeOrder(orderId: string) {
@@ -1586,6 +2129,12 @@ export function printBillPreview(orderId: string) {
 export function getCashSessionSummary(branchId: string) {
   return apiRequest<CashSessionSummary>(
     `/api/v1/pos/cash-sessions/summary?branchId=${encodeURIComponent(branchId)}`,
+  );
+}
+
+export function getDashboardSummary(branchId: string) {
+  return apiRequest<DashboardSummary>(
+    `/api/v1/pos/dashboard/summary?branchId=${encodeURIComponent(branchId)}`,
   );
 }
 
@@ -1751,6 +2300,20 @@ export function getProductSalesReport(input: {
   return apiRequest<ProductSalesReport>(`/api/v1/reports/products?${params.toString()}`);
 }
 
+export function getSalesByPeriod(input: {
+  branchId?: string;
+  startDate: string;
+  endDate: string;
+  groupBy?: "day" | "week" | "month";
+}) {
+  const params = new URLSearchParams();
+  if (input.branchId) params.set("branchId", input.branchId);
+  params.set("startDate", input.startDate);
+  params.set("endDate", input.endDate);
+  if (input.groupBy) params.set("groupBy", input.groupBy);
+  return apiRequest<SalesByPeriodResponse>(`/api/v1/reports/sales-by-period?${params.toString()}`);
+}
+
 export async function listFiscalDocuments(branchId?: string) {
   const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
   const result = await apiRequest<{ data: FiscalDocument[] }>(`/api/v1/fiscal/documents${query}`);
@@ -1854,6 +2417,45 @@ export async function listInventoryMovements(branchId: string, limit = 50) {
   return result.data;
 }
 
+export async function listDeliveries(branchId: string, status?: DeliveryStatus) {
+  const params = new URLSearchParams({ branchId });
+  if (status) params.set("status", status);
+  const result = await apiRequest<{ data: DeliveryOrder[] }>(
+    `/api/v1/deliveries?${params.toString()}`,
+  );
+  return result.data;
+}
+
+export function createDelivery(input: {
+  orderId: string;
+  channel: "own_app" | "phone";
+  customerName?: string;
+  customerPhone?: string;
+  deliveryAddress?: string;
+  deliveryFee?: number;
+  estimatedMinutes?: number;
+  notes?: string;
+}) {
+  return apiRequest<DeliveryOrder>("/api/v1/deliveries", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function updateDeliveryStatus(id: string, status: DeliveryStatus) {
+  return apiRequest<DeliveryOrder>(`/api/v1/deliveries/${encodeURIComponent(id)}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
+}
+
+export function cancelDelivery(id: string, reason: string) {
+  return apiRequest<DeliveryOrder>(`/api/v1/deliveries/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+    body: { reason },
+  });
+}
+
 export async function listPrinterDevices(branchId?: string) {
   const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
   const result = await apiRequest<{ data: PrinterDevice[] }>(`/api/v1/printing/devices${query}`);
@@ -1875,6 +2477,13 @@ export function createPrinterDevice(input: {
     method: "POST",
     body: input,
   });
+}
+
+export function testPrinterDevice(deviceId: string) {
+  return apiRequest<{ deviceId: string; ok: boolean; error?: string }>(
+    `/api/v1/printing/devices/${deviceId}/test`,
+    { method: "POST" },
+  );
 }
 
 export async function listPrintRoutes(branchId?: string) {

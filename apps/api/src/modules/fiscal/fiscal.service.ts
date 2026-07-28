@@ -1,6 +1,7 @@
 import { loadEnv } from "@giromesa/config";
 import {
   auditLogs,
+  fiscalCertificates,
   fiscalDocuments,
   fiscalSettings,
   orderItems,
@@ -243,6 +244,12 @@ export class FiscalService {
         throw new BadRequestException("Fiscal settings are not enabled for this branch");
       }
 
+      if (resolvedSettings.environment === "production" && !resolvedSettings.certificateSecretRef) {
+        throw new BadRequestException(
+          "Certificate is required for production environment. Please upload a certificate first.",
+        );
+      }
+
       const model = requestedModel ?? (resolvedSettings.defaultModel as "nfce" | "nfe" | "nfse");
       const items = await tx
         .select({
@@ -482,6 +489,23 @@ export class FiscalService {
     });
 
     return retried;
+  }
+
+  async getActiveCertificate(context: TenantContext, branchId: string) {
+    const [certificate] = await this.database.db
+      .select()
+      .from(fiscalCertificates)
+      .where(
+        and(
+          eq(fiscalCertificates.tenantId, context.tenantId),
+          eq(fiscalCertificates.branchId, branchId),
+          eq(fiscalCertificates.isActive, true),
+        ),
+      )
+      .orderBy(desc(fiscalCertificates.createdAt))
+      .limit(1);
+
+    return certificate;
   }
 
   private async audit(

@@ -6,6 +6,7 @@ import {
   closeCashSession,
   getCashSessionSummary,
   openCashSession,
+  receiveCashHandover,
   registerCashSupply,
   registerCashWithdrawal,
 } from "../giromesa-api";
@@ -57,6 +58,10 @@ export function useCashSummary(branchId?: string) {
     },
     close: async (cashSessionId: string, countedAmountCents: number) => {
       await closeCashSession(cashSessionId, countedAmountCents);
+      return refresh();
+    },
+    receiveHandover: async (paymentId: string) => {
+      await receiveCashHandover(paymentId);
       return refresh();
     },
   };

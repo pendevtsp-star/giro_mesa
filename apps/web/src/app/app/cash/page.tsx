@@ -10,6 +10,7 @@ import {
   Unlock,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import { CashHandoverPanel } from "../../../features/cash/CashHandoverPanel";
 import { formatMoney, getSession, printCashSessionSummary } from "../../../lib/giromesa-api";
 import { useCashSummary } from "../../../lib/hooks/useCashSummary";
 import { useOperationalShift } from "../../../lib/hooks/useOperationalShift";
@@ -114,6 +115,20 @@ export default function CashPage() {
         <h1>Turno e caixa</h1>
         <p>{message}</p>
       </section>
+
+      <CashHandoverPanel
+        payments={cash.data?.payments}
+        busy={busy}
+        onReceive={async (paymentId) => {
+          await withBusy(
+            async () => {
+              await cash.receiveHandover(paymentId);
+            },
+            "Dinheiro conferido e incorporado ao caixa.",
+            "Não foi possível conferir esta entrega.",
+          );
+        }}
+      />
 
       <section className="cash-layout">
         <article className="workspace-panel">

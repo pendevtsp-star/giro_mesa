@@ -1,0 +1,266 @@
+/* GiroMesa - Login Page Styles */
+
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  background: #fff;
+}
+
+.login-art {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  padding: clamp(28px, 6vw, 70px);
+  background:
+    linear-gradient(180deg, rgba(20, 32, 29, 0.12), rgba(20, 32, 29, 0.88)),
+    url("https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1500&q=82");
+  background-position: center;
+  background-size: cover;
+  color: #fff;
+}
+
+.login-art > .brand {
+  align-self: start;
+}
+
+.login-art > .language-switcher {
+  position: absolute;
+  top: clamp(28px, 6vw, 70px);
+  right: clamp(28px, 6vw, 70px);
+}
+
+.login-art > .login-copy {
+  align-self: end;
+}
+
+.login-copy {
+  max-width: 680px;
+}
+
+.login-copy h1 {
+  margin: 14px 0 0;
+  font-size: clamp(2.4rem, 5vw, 4.8rem);
+  line-height: 1;
+}
+
+.login-copy p {
+  max-width: 560px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 1.12rem;
+  line-height: 1.58;
+}
+
+.trial-checklist {
+  display: grid;
+  max-width: 560px;
+  gap: 10px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 750;
+}
+
+.trial-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trial-checklist svg {
+  color: var(--accent);
+}
+
+.login-panel {
+  display: grid;
+  align-content: center;
+  border-radius: 0;
+  border-width: 0;
+  border-left: 1px solid var(--line);
+  padding: 34px;
+}
+
+.form {
+  display: grid;
+  gap: 15px;
+}
+
+.form h2 {
+  margin: 6px 0 6px;
+  font-size: 1.7rem;
+}
+
+.form p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.login-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.login-mode-grid legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.login-mode {
+  display: grid;
+  gap: 5px;
+  min-height: 74px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.login-mode:hover {
+  transform: translateY(-1px);
+}
+
+.login-mode.selected {
+  border-color: rgba(11, 130, 109, 0.42);
+  background: #edf7f4;
+  color: var(--accent-strong);
+}
+
+.login-mode span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.trial-form {
+  gap: 14px;
+}
+
+.trial-plan-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.trial-plan-selector legend {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.trial-plan-selector button {
+  display: grid;
+  gap: 4px;
+  min-height: 66px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trial-plan-selector button.selected {
+  border-color: rgba(250, 166, 35, 0.72);
+  background: #fff8e8;
+  box-shadow: inset 0 0 0 1px rgba(250, 166, 35, 0.22);
+}
+
+.trial-plan-selector span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.trial-plan-selector small {
+  color: var(--accent-strong);
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.trial-next-steps {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #e6d7bd;
+  border-radius: 8px;
+  background: #fff8e8;
+  padding: 12px;
+  color: #60450f;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.trial-next-steps strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.form .form-alert {
+  border: 1px solid #f0bebf;
+  border-radius: 8px;
+  background: #fff0f0;
+  padding: 10px 12px;
+  color: var(--red);
+  font-weight: 750;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+.field > span:first-child {
+  font-weight: 800;
+}
+
+.input-shell,
+.search-box {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 10px;
+}
+
+.input-shell svg,
+.search-box svg {
+  color: var(--muted);
+}
+
+.field input,
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: inherit;
+  color: inherit;
+}
+
+@media (max-width: 900px) {
+  .login-art {
+    min-height: 360px;
+  }
+}

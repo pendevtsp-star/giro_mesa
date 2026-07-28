@@ -19,6 +19,7 @@
     "test:coverage": "vitest run --passWithNoTests --pool=threads --maxWorkers=1 --minWorkers=1 --coverage --coverage.reporter=json-summary --coverage.reporter=lcov --coverage.reporter=text",
     "db:generate": "drizzle-kit generate",
     "db:check-applied": "node scripts/check-migrations-applied.mjs",
+    "db:check-safety": "node scripts/check-migration-safety.mjs",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/seed.ts",
     "db:reset-demo": "pnpm db:seed"

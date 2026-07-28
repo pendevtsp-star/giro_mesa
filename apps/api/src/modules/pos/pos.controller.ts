@@ -1,8 +1,9 @@
-import { paymentMethods } from "@giromesa/domain";
+import { paymentMethods, tableStatuses } from "@giromesa/domain";
 import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Inject,
@@ -39,6 +40,8 @@ const paymentSchema = z.object({
   amountCents: z.number().int().positive(),
   method: z.enum(paymentMethods),
   idempotencyKey: z.string().min(8),
+  registeredVia: z.enum(["waiter", "cashier"]).default("cashier"),
+  reference: z.string().max(120).optional(),
 });
 
 const splitSchema = z.object({
@@ -67,6 +70,7 @@ const cashCloseSchema = z.object({
 });
 const floorLayoutSchema = z.object({
   branchId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
   layout: z.record(
     z.string(),
     z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }),
@@ -79,6 +83,11 @@ const createTableSchema = z.object({
   seats: z.number().int().min(1).max(40),
 });
 
+const mergeTablesSchema = z.object({
+  branchId: z.string().min(1),
+  tableIds: z.array(z.string().min(1)).min(2).max(8),
+});
+
 const qrOrderItemUpdateSchema = z.object({
   quantity: z.number().positive().max(99),
   notes: z.string().max(240).optional(),
@@ -89,6 +98,15 @@ const qrOrderRejectSchema = z.object({
 });
 
 const qrOrderItemCancelSchema = z.object({
+  reason: z.string().min(3).max(240),
+});
+
+const discountSchema = z.object({
+  amountCents: z.number().int().positive(),
+  reason: z.string().min(3).max(240),
+});
+
+const itemCancellationSchema = z.object({
   reason: z.string().min(3).max(240),
 });
 
@@ -116,10 +134,66 @@ export class PosController {
     return this.posService.createTable(context, createTableSchema.parse(body));
   }
 
+  @Patch("tables/:tableId")
+  async updateTable(
+    @Param("tableId") tableId: string,
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    const parsed = z
+      .object({
+        status: z.enum(tableStatuses).optional(),
+        reservedName: z.string().max(120).nullable().optional(),
+      })
+      .parse(body);
+    const updates = {
+      ...(parsed.status !== undefined ? { status: parsed.status } : {}),
+      ...(parsed.reservedName !== undefined ? { reservedName: parsed.reservedName } : {}),
+    };
+    return { data: await this.posService.updateTable(context, tableId, updates) };
+  }
+
+  @Post("merge-tables")
+  async mergeTables(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    const input = mergeTablesSchema.parse(body);
+    return { data: await this.posService.mergeTables(context, input.branchId, input.tableIds) };
+  }
+
+  @Delete("unmerge-tables/:tableId")
+  async unmergeTables(@Param("tableId") tableId: string, @Headers() headers: HeaderRecord) {
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return { data: await this.posService.unmergeTables(context, tableId) };
+  }
+
   @Get("floor-plan")
   async getFloorPlan(@Headers() headers: HeaderRecord, @Query("branchId") branchId: string) {
     const context = await this.contextWithPermission(headers);
     return this.posService.getFloorPlan(context, branchId);
+  }
+
+  @Get("dashboard/summary")
+  async getDashboardSummary(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId?: string,
+  ) {
+    const context = await this.contextWithPermission(headers);
+    const resolvedBranchId = branchId ?? context.branchId;
+    if (!resolvedBranchId) {
+      return {
+        salesToday: 0,
+        activeOrders: 0,
+        occupiedTables: "0/0",
+        cashBalance: 0,
+        shiftOpen: false,
+        cashOpen: false,
+        inventoryAlerts: 0,
+      };
+    }
+    return this.posService.getDashboardSummary(context, resolvedBranchId);
   }
 
   @Patch("floor-plan")
@@ -207,6 +281,38 @@ export class PosController {
     return this.posService.addItem(context, orderId, addItemSchema.parse(body));
   }
 
+  @Post("orders/:orderId/discounts")
+  async requestDiscount(
+    @Param("orderId") orderId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return this.posService.requestDiscount(
+      context,
+      z.string().uuid().parse(orderId),
+      discountSchema.parse(body),
+    );
+  }
+
+  @Post("orders/:orderId/items/:itemId/cancel-requests")
+  async requestItemCancellation(
+    @Param("orderId") orderId: string,
+    @Param("itemId") itemId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return this.posService.requestItemCancellation(
+      context,
+      z.string().uuid().parse(orderId),
+      z.string().uuid().parse(itemId),
+      itemCancellationSchema.parse(body),
+    );
+  }
+
   @Post("orders/:orderId/send-to-kitchen")
   async sendToKitchen(@Param("orderId") orderId: string, @Headers() headers: HeaderRecord) {
     const context = await this.contextWithPermission(headers, "pos:kds_send");
@@ -287,6 +393,18 @@ export class PosController {
     return {
       data: await this.posService.listOrderPayments(context, orderId),
     };
+  }
+
+  @Post("payments/:paymentId/cash-handover/receive")
+  async receiveCashHandover(
+    @Param("paymentId") paymentId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "cash:manage");
+    z.object({}).parse(body);
+    return this.posService.receiveCashHandover(context, z.string().uuid().parse(paymentId));
   }
 
   @Post("orders/:orderId/close")

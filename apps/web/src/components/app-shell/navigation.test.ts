@@ -15,37 +15,43 @@ function requireItem(item: AppNavigationItem | undefined) {
 
 describe("app shell navigation", () => {
   it("keeps dashboard public and filters operational items by permission", () => {
-    const visible = filterNavigationByPermissions(["pos:operate"]).map((item) => item.label);
+    const visible = filterNavigationByPermissions(["pos:operate"]).map((item) => item.labelKey);
 
-    expect(visible).toContain("Dashboard");
-    expect(visible).toContain("PDV");
-    expect(visible).toContain("Salão");
-    expect(visible).toContain("Clientes");
-    expect(visible).not.toContain("Estoque");
-    expect(visible).not.toContain("Backoffice");
+    expect(visible).toContain("nav.dashboard");
+    expect(visible).toContain("nav.pos");
+    expect(visible).toContain("nav.salon");
+    expect(visible).toContain("nav.customers");
+    expect(visible).not.toContain("nav.inventory");
+    expect(visible).not.toContain("nav.backoffice");
   });
 
   it("groups visible items for scannable navigation", () => {
     const groups = groupNavigationItems(filterNavigationByPermissions(["tenant:manage"]));
 
-    expect(groups.map((group) => group.group)).toEqual(["Operação", "Configuração"]);
-    expect(
-      groups.find((group) => group.group === "Configuração")?.items.map((item) => item.label),
-    ).toEqual(["Implantação", "Assinatura", "Personalização", "Segurança", "Equipe"]);
+    expect(groups.map((group) => group.group)).toEqual(["operation", "settings"]);
+    const settingsItems =
+      groups.find((group) => group.group === "settings")?.items.map((item) => item.labelKey) ?? [];
+    expect(settingsItems).toContain("nav.onboarding");
+    expect(settingsItems).toContain("nav.billing");
+    expect(settingsItems).toContain("nav.branding");
+    expect(settingsItems).toContain("nav.security");
+    expect(settingsItems).toContain("nav.team");
   });
 
   it("marks dashboard, POS and nested routes without false positives", () => {
     const dashboard = requireItem(filterNavigationByPermissions([])[0]);
     const pos = requireItem(
-      filterNavigationByPermissions(["pos:operate"]).find((item) => item.label === "PDV"),
+      filterNavigationByPermissions(["pos:operate"]).find((item) => item.labelKey === "nav.pos"),
     );
     const reports = requireItem(
-      filterNavigationByPermissions(["reports:read"]).find((item) => item.label === "Relatórios"),
+      filterNavigationByPermissions(["reports:read"]).find(
+        (item) => item.labelKey === "nav.reports",
+      ),
     );
 
     expect(isNavigationItemActive(dashboard, "/app")).toBe(true);
     expect(isNavigationItemActive(dashboard, "/app/reports")).toBe(false);
-    expect(isNavigationItemActive(pos, "/app?view=pos")).toBe(true);
+    expect(isNavigationItemActive(pos, "/app/pos")).toBe(true);
     expect(isNavigationItemActive(reports, "/app/reports/detail")).toBe(true);
   });
 });

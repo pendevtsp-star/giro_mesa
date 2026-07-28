@@ -41,6 +41,18 @@ export type PaymentStatus = (typeof paymentStatuses)[number];
 export const cashSessionStatuses = ["open", "closed", "reconciled", "disputed"] as const;
 export type CashSessionStatus = (typeof cashSessionStatuses)[number];
 
+export const approvalStatuses = ["pending", "approved", "rejected", "expired"] as const;
+export type ApprovalStatus = (typeof approvalStatuses)[number];
+
+export const cashHandoverStatuses = ["not_required", "pending", "received", "disputed"] as const;
+export type CashHandoverStatus = (typeof cashHandoverStatuses)[number];
+
+export const reservationStatuses = ["booked", "arrived", "seated", "no_show", "canceled"] as const;
+export type ReservationStatus = (typeof reservationStatuses)[number];
+
+export const waitlistStatuses = ["waiting", "notified", "seated", "left", "canceled"] as const;
+export type WaitlistStatus = (typeof waitlistStatuses)[number];
+
 export const fiscalStatuses = [
   "not_required",
   "pending",

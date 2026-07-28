@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Builds
 dist/
@@ -10,6 +11,8 @@ coverage/
 playwright-report/
 test-results/
 *.tsbuildinfo
+*.js.map
+*.d.ts.map
 
 # Env and secrets
 .env
@@ -21,6 +24,8 @@ test-results/
 *.p12
 *.crt
 *.cer
+*.credentials.json
+service-account*.json
 
 # Local data
 data/
@@ -35,8 +40,25 @@ artifacts/
 npm-debug.log*
 pnpm-debug.log*
 
+# Temp files
+*.tmp
+*.temp
+*.bak
+*.orig
+
 # OS/editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+
+# Superpowers
+.superpowers/
+
+# IDE specific
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json

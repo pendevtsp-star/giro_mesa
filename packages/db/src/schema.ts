@@ -57,6 +57,32 @@ export const cashSessionStatus = pgEnum("cash_session_status", [
   "reconciled",
   "disputed",
 ]);
+export const approvalStatus = pgEnum("approval_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "expired",
+]);
+export const cashHandoverStatus = pgEnum("cash_handover_status", [
+  "not_required",
+  "pending",
+  "received",
+  "disputed",
+]);
+export const reservationStatus = pgEnum("reservation_status", [
+  "booked",
+  "arrived",
+  "seated",
+  "no_show",
+  "canceled",
+]);
+export const waitlistStatus = pgEnum("waitlist_status", [
+  "waiting",
+  "notified",
+  "seated",
+  "left",
+  "canceled",
+]);
 export const onboardingStepStatus = pgEnum("onboarding_step_status", [
   "pending",
   "in_progress",
@@ -101,6 +127,22 @@ export const printJobStatus = pgEnum("print_job_status", [
   "failed",
   "canceled",
 ]);
+export const deliveryStatus = pgEnum("delivery_status", [
+  "pending",
+  "confirmed",
+  "preparing",
+  "ready_for_pickup",
+  "out_for_delivery",
+  "delivered",
+  "canceled",
+]);
+export const qrTableStatus = pgEnum("qr_table_status", ["active", "revoked"]);
+export const serviceRequestStatus = pgEnum("service_request_status", [
+  "pending",
+  "acknowledged",
+  "resolved",
+  "canceled",
+]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -115,6 +157,7 @@ export const tenants = pgTable(
     slug: varchar("slug", { length: 80 }).notNull(),
     document: varchar("document", { length: 32 }),
     status: tenantStatus("status").notNull().default("trial"),
+    isDemo: boolean("is_demo").notNull().default(false),
     settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
     ...timestamps,
   },
@@ -348,6 +391,7 @@ export const floorPlans = pgTable(
       .references(() => branches.id),
     name: varchar("name", { length: 120 }).notNull(),
     layout: jsonb("layout").$type<Record<string, unknown>>().notNull().default({}),
+    version: integer("version").notNull().default(1),
     ...timestamps,
   },
   (table) => [index("floor_plans_tenant_branch_idx").on(table.tenantId, table.branchId)],
@@ -368,12 +412,64 @@ export const diningTables = pgTable(
     name: varchar("name", { length: 80 }).notNull(),
     seats: integer("seats").notNull().default(2),
     status: tableStatus("status").notNull().default("free"),
+    groupId: uuid("group_id"),
+    reservedName: varchar("reserved_name", { length: 120 }),
     qrTokenHash: text("qr_token_hash"),
+    qrTokenVersion: integer("qr_token_version").notNull().default(1),
+    qrStatus: qrTableStatus("qr_status").notNull().default("active"),
+    qrRotatedAt: timestamp("qr_rotated_at", { withTimezone: true }),
+    qrRotatedByUserId: uuid("qr_rotated_by_user_id").references(() => users.id),
     ...timestamps,
   },
   (table) => [
     uniqueIndex("dining_tables_code_branch_idx").on(table.branchId, table.code),
     index("dining_tables_tenant_branch_idx").on(table.tenantId, table.branchId),
+  ],
+);
+
+export const qrBranchSettings = pgTable(
+  "qr_branch_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    capabilities: jsonb("capabilities")
+      .$type<
+        Array<
+          | "menu"
+          | "order"
+          | "review_before_kds"
+          | "track_preparation"
+          | "view_tab"
+          | "call_waiter"
+          | "request_pre_bill"
+        >
+      >()
+      .notNull()
+      .default([
+        "menu",
+        "order",
+        "track_preparation",
+        "view_tab",
+        "call_waiter",
+        "request_pre_bill",
+      ]),
+    reviewBeforeKds: boolean("review_before_kds").notNull().default(false),
+    template: varchar("template", { length: 40 }).notNull().default("classic"),
+    primaryColor: varchar("primary_color", { length: 16 }).notNull().default("#FFCC00"),
+    instruction: varchar("instruction", { length: 180 })
+      .notNull()
+      .default("Aponte a câmera para acessar o cardápio"),
+    showLogo: boolean("show_logo").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("qr_branch_settings_branch_idx").on(table.branchId),
+    index("qr_branch_settings_tenant_branch_idx").on(table.tenantId, table.branchId),
   ],
 );
 
@@ -669,6 +765,7 @@ export const payments = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id),
+    branchId: uuid("branch_id").references(() => branches.id),
     orderId: uuid("order_id").references(() => orders.id),
     provider: varchar("provider", { length: 40 }).notNull().default("manual"),
     method: varchar("method", { length: 40 }).notNull(),
@@ -676,6 +773,15 @@ export const payments = pgTable(
     amountCents: integer("amount_cents").notNull(),
     externalId: varchar("external_id", { length: 160 }),
     idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    registeredByUserId: uuid("registered_by_user_id").references(() => users.id),
+    registeredVia: varchar("registered_via", { length: 20 }).notNull().default("cashier"),
+    cashHandoverStatus: cashHandoverStatus("cash_handover_status")
+      .notNull()
+      .default("not_required"),
+    cashHandoverReceivedByUserId: uuid("cash_handover_received_by_user_id").references(
+      () => users.id,
+    ),
+    cashHandoverReceivedAt: timestamp("cash_handover_received_at", { withTimezone: true }),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     ...timestamps,
@@ -683,6 +789,238 @@ export const payments = pgTable(
   (table) => [
     uniqueIndex("payments_idempotency_idx").on(table.tenantId, table.idempotencyKey),
     index("payments_tenant_order_idx").on(table.tenantId, table.orderId),
+  ],
+);
+
+export const operationPolicies = pgTable(
+  "operation_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id").references(() => branches.id),
+    roleId: uuid("role_id").references(() => roles.id),
+    maxDiscountWithoutApprovalBps: integer("max_discount_without_approval_bps")
+      .notNull()
+      .default(0),
+    requireCancellationReason: boolean("require_cancellation_reason").notNull().default(true),
+    requireApprovalAfterKitchen: boolean("require_approval_after_kitchen").notNull().default(true),
+    returnStockOnApprovedCancellation: boolean("return_stock_on_approved_cancellation")
+      .notNull()
+      .default(true),
+    managerPinHash: text("manager_pin_hash"),
+    ...timestamps,
+  },
+  (table) => [
+    index("operation_policies_scope_idx").on(table.tenantId, table.branchId, table.roleId),
+  ],
+);
+
+export const approvalRequests = pgTable(
+  "approval_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id").references(() => branches.id),
+    entityType: varchar("entity_type", { length: 60 }).notNull(),
+    entityId: uuid("entity_id").notNull(),
+    action: varchar("action", { length: 80 }).notNull(),
+    requestedByUserId: uuid("requested_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    decidedByUserId: uuid("decided_by_user_id").references(() => users.id),
+    requestedValueCents: integer("requested_value_cents"),
+    approvedValueCents: integer("approved_value_cents"),
+    reason: text("reason"),
+    decisionReason: text("decision_reason"),
+    status: approvalStatus("status").notNull().default("pending"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index("approval_requests_tenant_status_idx").on(table.tenantId, table.status),
+    index("approval_requests_entity_idx").on(table.tenantId, table.entityType, table.entityId),
+  ],
+);
+
+export const floorAreas = pgTable(
+  "floor_areas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    layout: jsonb("layout").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("floor_areas_branch_name_idx").on(table.branchId, table.name),
+    index("floor_areas_tenant_branch_idx").on(table.tenantId, table.branchId),
+  ],
+);
+
+export const reservations = pgTable(
+  "reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    tableId: uuid("table_id").references(() => diningTables.id),
+    customerId: uuid("customer_id").references(() => customers.id),
+    customerName: varchar("customer_name", { length: 160 }).notNull(),
+    customerPhone: varchar("customer_phone", { length: 40 }),
+    partySize: integer("party_size").notNull(),
+    status: reservationStatus("status").notNull().default("booked"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    seatedAt: timestamp("seated_at", { withTimezone: true }),
+    notes: text("notes"),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    index("reservations_tenant_branch_status_idx").on(table.tenantId, table.branchId, table.status),
+    index("reservations_table_schedule_idx").on(table.tableId, table.scheduledAt),
+  ],
+);
+
+export const waitlistEntries = pgTable(
+  "waitlist_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    tableId: uuid("table_id").references(() => diningTables.id),
+    customerId: uuid("customer_id").references(() => customers.id),
+    customerName: varchar("customer_name", { length: 160 }).notNull(),
+    customerPhone: varchar("customer_phone", { length: 40 }),
+    partySize: integer("party_size").notNull(),
+    status: waitlistStatus("status").notNull().default("waiting"),
+    quotedWaitMinutes: integer("quoted_wait_minutes"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    seatedAt: timestamp("seated_at", { withTimezone: true }),
+    notes: text("notes"),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    index("waitlist_entries_tenant_branch_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.status,
+    ),
+  ],
+);
+
+export const tableEvents = pgTable(
+  "table_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    tableId: uuid("table_id")
+      .notNull()
+      .references(() => diningTables.id),
+    reservationId: uuid("reservation_id").references(() => reservations.id),
+    orderId: uuid("order_id").references(() => orders.id),
+    targetTableId: uuid("target_table_id").references(() => diningTables.id),
+    type: varchar("type", { length: 80 }).notNull(),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("table_events_tenant_table_idx").on(table.tenantId, table.tableId, table.createdAt),
+  ],
+);
+
+export const serviceRequests = pgTable(
+  "service_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    tableId: uuid("table_id")
+      .notNull()
+      .references(() => diningTables.id),
+    orderId: uuid("order_id").references(() => orders.id),
+    type: varchar("type", { length: 40 })
+      .$type<"call_waiter" | "request_pre_bill" | "need_help">()
+      .notNull(),
+    status: serviceRequestStatus("status").notNull().default("pending"),
+    requesterKeyHash: text("requester_key_hash"),
+    message: varchar("message", { length: 180 }),
+    acknowledgedByUserId: uuid("acknowledged_by_user_id").references(() => users.id),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index("service_requests_tenant_branch_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.status,
+    ),
+    index("service_requests_table_created_idx").on(table.tableId, table.createdAt),
+  ],
+);
+
+export const publicRequestIdempotency = pgTable(
+  "public_request_idempotency",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    tableId: uuid("table_id")
+      .notNull()
+      .references(() => diningTables.id),
+    action: varchar("action", { length: 60 }).notNull(),
+    idempotencyKeyHash: text("idempotency_key_hash").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    response: jsonb("response").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("public_request_idempotency_key_idx").on(
+      table.tableId,
+      table.action,
+      table.idempotencyKeyHash,
+    ),
+    index("public_request_idempotency_created_idx").on(table.tenantId, table.createdAt),
   ],
 );
 
@@ -941,13 +1279,22 @@ export const deliveryOrders = pgTable(
     orderId: uuid("order_id")
       .notNull()
       .references(() => orders.id),
-    customerAddress: jsonb("customer_address").$type<Record<string, unknown>>().notNull(),
-    deliveryStatus: varchar("delivery_status", { length: 40 }).notNull().default("received"),
-    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    channel: varchar("channel", { length: 40 }).notNull(), // own_app, ifood, rappi, phone
+    status: deliveryStatus("status").notNull().default("pending"),
+    customerName: varchar("customer_name", { length: 160 }),
+    customerPhone: varchar("customer_phone", { length: 40 }),
+    deliveryAddress: text("delivery_address"),
+    deliveryFee: integer("delivery_fee").notNull().default(0),
+    estimatedMinutes: integer("estimated_minutes"),
+    riderName: varchar("rider_name", { length: 120 }),
+    riderPhone: varchar("rider_phone", { length: 40 }),
+    notes: text("notes"),
     ...timestamps,
   },
-  (table) => [index("delivery_orders_tenant_order_idx").on(table.tenantId, table.orderId)],
+  (table) => [
+    index("delivery_orders_tenant_idx").on(table.tenantId),
+    index("delivery_orders_order_idx").on(table.orderId),
+  ],
 );
 
 export const fiscalDocuments = pgTable(
@@ -1012,6 +1359,33 @@ export const fiscalSettings = pgTable(
     ...timestamps,
   },
   (table) => [uniqueIndex("fiscal_settings_tenant_branch_idx").on(table.tenantId, table.branchId)],
+);
+
+export const fiscalCertificates = pgTable(
+  "fiscal_certificates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    type: varchar("type", { length: 20 }).notNull().default("a1"),
+    dataEncrypted: text("data_encrypted").notNull(),
+    filename: varchar("filename", { length: 255 }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
+    validationError: text("validation_error"),
+    isActive: boolean("is_active").notNull().default(true),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    index("fiscal_certificates_tenant_idx").on(table.tenantId),
+    index("fiscal_certificates_tenant_branch_idx").on(table.tenantId, table.branchId),
+  ],
 );
 
 export const integrationAccounts = pgTable(

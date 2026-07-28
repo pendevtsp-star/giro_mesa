@@ -1,0 +1,209 @@
+/* GiroMesa - Catalog/Workspace Page Styles */
+
+.workspace-page {
+  min-height: 100vh;
+  background: #f4f7f4;
+  color: var(--ink);
+}
+
+.workspace-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px clamp(18px, 4vw, 56px);
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.workspace-heading {
+  padding: 34px clamp(18px, 4vw, 56px) 20px;
+}
+
+.workspace-heading h1 {
+  margin: 6px 0;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+}
+
+.workspace-heading p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 16px;
+  padding: 0 clamp(18px, 4vw, 56px) 18px;
+}
+
+.workspace-panel,
+.workspace-list-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--tight-shadow);
+}
+
+.workspace-panel {
+  padding: 20px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.panel-heading h2 {
+  margin: 5px 0 0;
+  font-size: 1.3rem;
+}
+
+.workspace-form {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-form label,
+.channel-fieldset {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.workspace-form input,
+.workspace-form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.workspace-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.channel-fieldset {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.channel-fieldset legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.channel-fieldset label,
+.check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.channel-fieldset input,
+.check-label input {
+  width: auto;
+  min-height: auto;
+}
+
+.category-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.category-pills span,
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #e6f4ef;
+  color: #096d61;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.workspace-list-section {
+  margin: 0 clamp(18px, 4vw, 56px) 44px;
+  padding: 20px;
+}
+
+.product-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.product-group {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.product-group header,
+.product-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+}
+
+.product-group header {
+  background: #f6faf8;
+  border-bottom: 1px solid var(--line);
+}
+
+.product-group header span,
+.product-row small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.product-row + .product-row {
+  border-top: 1px solid var(--line);
+}
+
+.product-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.product-row > :last-child {
+  text-align: right;
+}
+
+.workspace-header h1,
+.workspace-heading h1 {
+  color: #0d1b2a;
+}
+
+@media (max-width: 760px) {
+  .catalog-layout {
+    grid-template-columns: 1fr;
+  }
+  .workspace-form-grid,
+  .channel-fieldset {
+    grid-template-columns: 1fr;
+  }
+  .workspace-list-section {
+    margin-bottom: 28px;
+  }
+}

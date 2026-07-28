@@ -12,7 +12,7 @@ import {
 import type { TenantContext } from "@giromesa/domain";
 import { calculateOrderTotal } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
 export type CreateCategoryInput = {
@@ -90,7 +90,12 @@ export type ModifierOptionInput = {
 
 export type PublicQrOrderInput = {
   tenantSlug: string;
-  items: { productId: string; quantity: number; notes?: string | undefined }[];
+  items: {
+    productId: string;
+    quantity: number;
+    notes?: string | undefined;
+    modifiers?: { optionId: string }[] | undefined;
+  }[];
 };
 
 export type PublicQrActionInput = {
@@ -275,6 +280,25 @@ export class CatalogService {
         .orderBy(asc(products.name)),
     ]);
 
+    const availableProducts = menuProducts.filter(
+      (product) => product.isAvailable && product.channels.includes("qr"),
+    );
+
+    const productIds = availableProducts.map((p) => p.id);
+    const modifierCounts =
+      productIds.length > 0
+        ? await this.database.db
+            .select({
+              productId: modifierGroups.productId,
+              count: sql<number>`count(*)::int`,
+            })
+            .from(modifierGroups)
+            .where(sql`${modifierGroups.productId} IN ${productIds}`)
+            .groupBy(modifierGroups.productId)
+        : [];
+
+    const countByProduct = new Map(modifierCounts.map((r) => [r.productId, r.count]));
+
     return {
       tenant: {
         id: tenant.id,
@@ -283,14 +307,16 @@ export class CatalogService {
         branding: this.readBranding(tenant.settings, tenant.name),
       },
       categories: menuCategories,
-      products: menuProducts.filter(
-        (product) => product.isAvailable && product.channels.includes("qr"),
-      ),
+      products: availableProducts.map((product) => ({
+        ...product,
+        modifierGroupCount: countByProduct.get(product.id) ?? 0,
+      })),
     };
   }
 
   async getPublicQrContext(tenantSlug: string, tableCode: string) {
     const tenant = await this.resolveTenant(tenantSlug);
+    this.assertLegacyQrAllowed(tenant);
     const [table] = await this.database.db
       .select()
       .from(diningTables)
@@ -321,6 +347,7 @@ export class CatalogService {
   async createPublicQrOrder(tableCode: string, input: PublicQrOrderInput) {
     return this.database.db.transaction(async (tx) => {
       const tenant = await this.resolveTenant(input.tenantSlug);
+      this.assertLegacyQrAllowed(tenant);
       const [table] = await tx
         .select()
         .from(diningTables)
@@ -356,14 +383,38 @@ export class CatalogService {
 
       let subtotalCents = 0;
       const createdItems = [];
+
+      const allModifierOptionIds = input.items.flatMap((item) =>
+        (item.modifiers ?? []).map((m) => m.optionId),
+      );
+      const modifierOptionRows =
+        allModifierOptionIds.length > 0
+          ? await tx
+              .select()
+              .from(modifierOptions)
+              .where(sql`${modifierOptions.id} IN ${allModifierOptionIds}`)
+          : [];
+      const modifierOptionById = new Map(modifierOptionRows.map((opt) => [opt.id, opt]));
+
       for (const item of input.items) {
         const product = productById.get(item.productId);
         if (!product?.isAvailable || !product.channels.includes("qr")) {
           throw new NotFoundException("Product not found or unavailable");
         }
 
+        let modifierDeltaCents = 0;
+        const resolvedModifiers: { optionId: string }[] = [];
+        for (const mod of item.modifiers ?? []) {
+          const option = modifierOptionById.get(mod.optionId);
+          if (option) {
+            modifierDeltaCents += option.priceDeltaCents;
+            resolvedModifiers.push({ optionId: mod.optionId });
+          }
+        }
+
+        const unitPriceCents = product.priceCents + modifierDeltaCents;
         const total = calculateOrderTotal({
-          lines: [{ quantity: item.quantity, unitPriceCents: product.priceCents }],
+          lines: [{ quantity: item.quantity, unitPriceCents }],
         });
         subtotalCents += total.totalCents;
 
@@ -375,10 +426,10 @@ export class CatalogService {
             productId: product.id,
             nameSnapshot: product.name,
             quantity: String(item.quantity),
-            unitPriceCents: product.priceCents,
+            unitPriceCents,
             totalCents: total.totalCents,
             notes: item.notes,
-            modifiers: [],
+            modifiers: resolvedModifiers,
           })
           .returning();
 
@@ -412,6 +463,7 @@ export class CatalogService {
 
   async registerPublicQrAction(tableCode: string, action: string, input: PublicQrActionInput) {
     const tenant = await this.resolveTenant(input.tenantSlug);
+    this.assertLegacyQrAllowed(tenant);
     const [table] = await this.database.db
       .select()
       .from(diningTables)
@@ -433,6 +485,75 @@ export class CatalogService {
     });
 
     return { ok: true, tableCode, action };
+  }
+
+  async getPublicModifierGroups(productId: string) {
+    const [product] = await this.database.db
+      .select({ id: products.id, isActive: products.isActive })
+      .from(products)
+      .where(and(eq(products.id, productId), eq(products.isActive, true)))
+      .limit(1);
+
+    if (!product) {
+      throw new NotFoundException("Product not found");
+    }
+
+    const groups = await this.database.db
+      .select({
+        id: modifierGroups.id,
+        name: modifierGroups.name,
+        minChoices: modifierGroups.minChoices,
+        maxChoices: modifierGroups.maxChoices,
+        isRequired: modifierGroups.isRequired,
+        tenantId: modifierGroups.tenantId,
+      })
+      .from(modifierGroups)
+      .where(eq(modifierGroups.productId, productId));
+
+    const firstGroup = groups[0];
+    if (!firstGroup) return [];
+    const tenantId = firstGroup.tenantId;
+    const groupIds = groups.map((g) => g.id);
+
+    const availableOptions = await this.database.db
+      .select({
+        id: modifierOptions.id,
+        groupId: modifierOptions.groupId,
+        name: modifierOptions.name,
+        priceDeltaCents: modifierOptions.priceDeltaCents,
+      })
+      .from(modifierOptions)
+      .where(
+        and(
+          eq(modifierOptions.tenantId, tenantId),
+          eq(modifierOptions.isAvailable, true),
+          inArray(modifierOptions.groupId, groupIds),
+        ),
+      );
+
+    const optionsByGroup = new Map<string, typeof availableOptions>();
+    for (const opt of availableOptions) {
+      const list = optionsByGroup.get(opt.groupId) ?? [];
+      list.push(opt);
+      optionsByGroup.set(opt.groupId, list);
+    }
+
+    return groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      minChoices: group.minChoices,
+      maxChoices: group.maxChoices,
+      isRequired: group.isRequired,
+      options: optionsByGroup.get(group.id) ?? [],
+    }));
+  }
+
+  async countModifierGroupsByProduct(productId: string): Promise<number> {
+    const [result] = await this.database.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(modifierGroups)
+      .where(eq(modifierGroups.productId, productId));
+    return result?.count ?? 0;
   }
 
   async listModifierGroups(context: TenantContext, productId: string) {
@@ -532,6 +653,12 @@ export class CatalogService {
     }
 
     return tenant;
+  }
+
+  private assertLegacyQrAllowed(tenant: typeof tenants.$inferSelect) {
+    if (!tenant.isDemo) {
+      throw new NotFoundException("Legacy QR links are disabled for this tenant");
+    }
   }
 
   private readBranding(settings: Record<string, unknown>, tenantName: string): PublicBranding {

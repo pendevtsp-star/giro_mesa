@@ -78,7 +78,7 @@ export default function CustomersPage() {
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
-        <a className="button secondary" href="/app?view=pos">
+        <a className="button secondary" href="/app/pos">
           Abrir PDV
         </a>
       </header>

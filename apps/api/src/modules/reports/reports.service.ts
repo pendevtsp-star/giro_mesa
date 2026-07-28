@@ -1,10 +1,12 @@
 import {
+  cashMovements,
   cashSessions,
   orderItems,
   orders,
   payments,
   recipeItems,
   recipes,
+  stockMovements,
   users,
 } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
@@ -21,6 +23,25 @@ type FinancialReportInput = {
   period: "today" | "week" | "month" | "shift" | "custom";
   dateFrom?: Date | undefined;
   dateTo?: Date | undefined;
+};
+
+type SalesByPeriodInput = {
+  branchId?: string | undefined;
+  startDate: Date;
+  endDate: Date;
+  groupBy: "day" | "week" | "month";
+};
+
+type PerformanceMetricsInput = {
+  branchId?: string | undefined;
+  startDate: Date;
+  endDate: Date;
+};
+
+type FinancialSummaryInput = {
+  branchId?: string | undefined;
+  startDate: Date;
+  endDate: Date;
 };
 
 @Injectable()
@@ -178,6 +199,7 @@ export class ReportsService {
             and(
               eq(payments.tenantId, context.tenantId),
               eq(payments.status, "confirmed"),
+              inArray(payments.cashHandoverStatus, ["not_required", "received"]),
               input.paymentMethod ? eq(payments.method, input.paymentMethod) : sql`true`,
               eq(orders.branchId, branchId),
               gte(payments.confirmedAt, session.openedAt),
@@ -456,6 +478,407 @@ export class ReportsService {
           totalCents > 0 ? Number(((Number(row.revenueCents) / totalCents) * 100).toFixed(1)) : 0,
       })),
     };
+  }
+
+  async salesByPeriod(context: TenantContext, input: SalesByPeriodInput) {
+    const branchId = input.branchId ?? context.branchId;
+    if (!branchId) {
+      throw new BadRequestException("branchId is required");
+    }
+    this.assertBranchScope(context, branchId);
+
+    const { from, to } = this.parseDateRange(input.startDate, input.endDate);
+    const groupByExpression = this.getGroupByExpression(input.groupBy);
+
+    const emptyResult = {
+      branchId,
+      dateFrom: from.toISOString(),
+      dateTo: to?.toISOString() ?? null,
+      groupBy: input.groupBy,
+      summary: {
+        totalCents: 0,
+        totalOrders: 0,
+        averageTicketCents: 0,
+      },
+      periods: [] as Array<{
+        period: string;
+        totalCents: number;
+        orderCount: number;
+        averageTicketCents: number;
+      }>,
+      topProducts: [] as Array<{
+        productId: string | null;
+        name: string | null;
+        quantity: number;
+        revenueCents: number;
+      }>,
+    };
+
+    try {
+      const periodRows = await this.database.db
+        .select({
+          period: sql<string>`${groupByExpression}`,
+          totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+          orderCount: sql<number>`count(distinct ${orders.id})::int`,
+          averageTicketCents: sql<number>`
+            case
+              when count(distinct ${orders.id}) > 0
+              then round(coalesce(sum(${payments.amountCents}), 0) / count(distinct ${orders.id}))
+              else 0
+            end::int
+          `,
+        })
+        .from(payments)
+        .innerJoin(orders, eq(orders.id, payments.orderId))
+        .where(
+          and(
+            eq(payments.tenantId, context.tenantId),
+            eq(orders.branchId, branchId),
+            eq(payments.status, "confirmed"),
+            gte(payments.createdAt, from),
+            to ? lte(payments.createdAt, to) : sql`true`,
+          ),
+        )
+        .groupBy(sql`${groupByExpression}`)
+        .orderBy(sql`${groupByExpression}`);
+
+      const topProducts = await this.database.db
+        .select({
+          productId: orderItems.productId,
+          name: orderItems.nameSnapshot,
+          quantity: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+          revenueCents: sql<number>`coalesce(sum(${orderItems.totalCents}), 0)::int`,
+        })
+        .from(orderItems)
+        .innerJoin(orders, eq(orders.id, orderItems.orderId))
+        .where(
+          and(
+            eq(orderItems.tenantId, context.tenantId),
+            eq(orders.branchId, branchId),
+            gte(orderItems.createdAt, from),
+            to ? lte(orderItems.createdAt, to) : sql`true`,
+            sql`${orderItems.status} <> 'canceled'`,
+          ),
+        )
+        .groupBy(orderItems.productId, orderItems.nameSnapshot)
+        .orderBy(sql`sum(${orderItems.totalCents}) desc`)
+        .limit(10);
+
+      const totalCents = periodRows.reduce((sum, row) => sum + Number(row.totalCents), 0);
+      const totalOrders = periodRows.reduce((sum, row) => sum + Number(row.orderCount), 0);
+
+      return {
+        branchId,
+        dateFrom: from.toISOString(),
+        dateTo: to?.toISOString() ?? null,
+        groupBy: input.groupBy,
+        summary: {
+          totalCents,
+          totalOrders,
+          averageTicketCents: totalOrders > 0 ? Math.round(totalCents / totalOrders) : 0,
+        },
+        periods: periodRows.map((row) => ({
+          period: row.period,
+          totalCents: Number(row.totalCents),
+          orderCount: Number(row.orderCount),
+          averageTicketCents: Number(row.averageTicketCents),
+        })),
+        topProducts: topProducts.map((row) => ({
+          productId: row.productId,
+          name: row.name,
+          quantity: Number(row.quantity),
+          revenueCents: Number(row.revenueCents),
+        })),
+      };
+    } catch {
+      return emptyResult;
+    }
+  }
+
+  async performanceMetrics(context: TenantContext, input: PerformanceMetricsInput) {
+    const branchId = input.branchId ?? context.branchId;
+    if (!branchId) {
+      throw new BadRequestException("branchId is required");
+    }
+    this.assertBranchScope(context, branchId);
+
+    const { from, to } = this.parseDateRange(input.startDate, input.endDate);
+
+    const totalOrdersResult = await this.database.db
+      .select({
+        count: sql<number>`count(${orders.id})::int`,
+        canceledCount: sql<number>`
+          count(case when ${orders.status} = 'canceled' then 1 end)::int
+        `,
+        avgPrepTimeMinutes: sql<number>`
+          round(
+            avg(
+              case
+                when ${orders.openedAt} is not null
+                then extract(epoch from (
+                  ${orders.closedAt} - ${orders.openedAt}
+                )) / 60
+                else null
+              end
+            ),
+            2
+          )
+        `,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          gte(orders.createdAt, from),
+          to ? lte(orders.createdAt, to) : sql`true`,
+        ),
+      );
+
+    const [totalOrders] = totalOrdersResult;
+
+    const hourRows = await this.database.db
+      .select({
+        hour: sql<number>`extract(hour from ${orders.createdAt})::int`,
+        orderCount: sql<number>`count(${orders.id})::int`,
+        totalCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          gte(orders.createdAt, from),
+          to ? lte(orders.createdAt, to) : sql`true`,
+          sql`${orders.status} <> 'draft'`,
+        ),
+      )
+      .groupBy(sql`extract(hour from ${orders.createdAt})`)
+      .orderBy(sql`extract(hour from ${orders.createdAt})`);
+
+    const maxHourOrders = Math.max(...hourRows.map((r) => Number(r.orderCount)), 1);
+    const peakHours = hourRows
+      .filter((r) => Number(r.orderCount) >= maxHourOrders * 0.7)
+      .map((r) => r.hour);
+
+    const dayOfWeekRows = await this.database.db
+      .select({
+        dayOfWeek: sql<number>`extract(dow from ${orders.createdAt})::int`,
+        orderCount: sql<number>`count(${orders.id})::int`,
+        totalCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          gte(orders.createdAt, from),
+          to ? lte(orders.createdAt, to) : sql`true`,
+          sql`${orders.status} <> 'draft'`,
+        ),
+      )
+      .groupBy(sql`extract(dow from ${orders.createdAt})`)
+      .orderBy(sql`extract(dow from ${orders.createdAt})`);
+
+    const totalOrderCount = Number(totalOrders?.count ?? 0);
+    const canceledOrderCount = Number(totalOrders?.canceledCount ?? 0);
+    const durationMs = to ? to.getTime() - from.getTime() : Date.now() - from.getTime();
+    const durationHours = Math.max(durationMs / (1000 * 60 * 60), 1);
+
+    return {
+      branchId,
+      dateFrom: from.toISOString(),
+      dateTo: to?.toISOString() ?? null,
+      summary: {
+        totalOrders: totalOrderCount,
+        canceledOrders: canceledOrderCount,
+        cancellationRatePercent:
+          totalOrderCount > 0
+            ? Number(((canceledOrderCount / totalOrderCount) * 100).toFixed(1))
+            : 0,
+        averagePrepTimeMinutes: Number(totalOrders?.avgPrepTimeMinutes ?? 0),
+        ordersPerHour: Number((totalOrderCount / durationHours).toFixed(2)),
+      },
+      peakHours: {
+        hours: peakHours,
+        peakHourOrderDistribution: hourRows.map((row) => ({
+          hour: Number(row.hour),
+          orderCount: Number(row.orderCount),
+          totalCents: Number(row.totalCents),
+        })),
+      },
+      dayOfWeekDistribution: dayOfWeekRows.map((row) => ({
+        dayOfWeek: Number(row.dayOfWeek),
+        orderCount: Number(row.orderCount),
+        totalCents: Number(row.totalCents),
+      })),
+    };
+  }
+
+  async financialSummary(context: TenantContext, input: FinancialSummaryInput) {
+    const branchId = input.branchId ?? context.branchId;
+    if (!branchId) {
+      throw new BadRequestException("branchId is required");
+    }
+    this.assertBranchScope(context, branchId);
+
+    const { from, to } = this.parseDateRange(input.startDate, input.endDate);
+
+    const revenueResult = await this.database.db
+      .select({
+        totalRevenueCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        confirmedCount: sql<number>`count(${payments.id})::int`,
+      })
+      .from(payments)
+      .innerJoin(orders, eq(orders.id, payments.orderId))
+      .where(
+        and(
+          eq(payments.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          eq(payments.status, "confirmed"),
+          gte(payments.createdAt, from),
+          to ? lte(payments.createdAt, to) : sql`true`,
+        ),
+      );
+
+    const paymentsByMethod = await this.database.db
+      .select({
+        method: payments.method,
+        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        count: sql<number>`count(${payments.id})::int`,
+      })
+      .from(payments)
+      .innerJoin(orders, eq(orders.id, payments.orderId))
+      .where(
+        and(
+          eq(payments.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          eq(payments.status, "confirmed"),
+          gte(payments.createdAt, from),
+          to ? lte(payments.createdAt, to) : sql`true`,
+        ),
+      )
+      .groupBy(payments.method);
+
+    const pendingPaymentsResult = await this.database.db
+      .select({
+        totalCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)::int`,
+        count: sql<number>`count(${orders.id})::int`,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          inArray(orders.status, ["waiting_payment", "partially_paid"]),
+          gte(orders.createdAt, from),
+          to ? lte(orders.createdAt, to) : sql`true`,
+        ),
+      );
+
+    const cashInflowResult = await this.database.db
+      .select({
+        totalCents: sql<number>`coalesce(sum(${cashMovements.amountCents}), 0)::int`,
+        count: sql<number>`count(${cashMovements.id})::int`,
+      })
+      .from(cashMovements)
+      .innerJoin(cashSessions, eq(cashSessions.id, cashMovements.cashSessionId))
+      .where(
+        and(
+          eq(cashMovements.tenantId, context.tenantId),
+          eq(cashSessions.branchId, branchId),
+          eq(cashMovements.type, "supply"),
+          gte(cashMovements.createdAt, from),
+          to ? lte(cashMovements.createdAt, to) : sql`true`,
+        ),
+      );
+
+    const cashOutflowResult = await this.database.db
+      .select({
+        totalCents: sql<number>`coalesce(sum(${cashMovements.amountCents}), 0)::int`,
+        count: sql<number>`count(${cashMovements.id})::int`,
+      })
+      .from(cashMovements)
+      .innerJoin(cashSessions, eq(cashSessions.id, cashMovements.cashSessionId))
+      .where(
+        and(
+          eq(cashMovements.tenantId, context.tenantId),
+          eq(cashSessions.branchId, branchId),
+          eq(cashMovements.type, "withdrawal"),
+          gte(cashMovements.createdAt, from),
+          to ? lte(cashMovements.createdAt, to) : sql`true`,
+        ),
+      );
+
+    const supplierPaymentsResult = await this.database.db
+      .select({
+        totalCents: sql<number>`coalesce(sum(${stockMovements.unitCostCents} * ${stockMovements.quantity}), 0)::int`,
+        count: sql<number>`count(${stockMovements.id})::int`,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, context.tenantId),
+          eq(stockMovements.branchId, branchId),
+          eq(stockMovements.type, "purchase"),
+          gte(stockMovements.createdAt, from),
+          to ? lte(stockMovements.createdAt, to) : sql`true`,
+        ),
+      );
+
+    const totalRevenue = Number(revenueResult[0]?.totalRevenueCents ?? 0);
+    const cashInflow = Number(cashInflowResult[0]?.totalCents ?? 0);
+    const cashOutflow = Number(cashOutflowResult[0]?.totalCents ?? 0);
+    const supplierPayments = Number(supplierPaymentsResult[0]?.totalCents ?? 0);
+
+    return {
+      branchId,
+      dateFrom: from.toISOString(),
+      dateTo: to?.toISOString() ?? null,
+      revenue: {
+        totalCents: totalRevenue,
+        confirmedPayments: Number(revenueResult[0]?.confirmedCount ?? 0),
+      },
+      paymentsByMethod: paymentsByMethod.map((row) => ({
+        method: row.method,
+        totalCents: Number(row.totalCents),
+        count: Number(row.count),
+        sharePercent:
+          totalRevenue > 0 ? Number(((Number(row.totalCents) / totalRevenue) * 100).toFixed(1)) : 0,
+      })),
+      accountsReceivable: {
+        pendingOrdersCents: Number(pendingPaymentsResult[0]?.totalCents ?? 0),
+        pendingOrdersCount: Number(pendingPaymentsResult[0]?.count ?? 0),
+      },
+      accountsPayable: {
+        supplierPaymentsCents: supplierPayments,
+        supplierPaymentsCount: Number(supplierPaymentsResult[0]?.count ?? 0),
+      },
+      cashFlow: {
+        inflowCents: cashInflow,
+        outflowCents: cashOutflow,
+        netFlowCents: cashInflow - cashOutflow,
+        inflowCount: Number(cashInflowResult[0]?.count ?? 0),
+        outflowCount: Number(cashOutflowResult[0]?.count ?? 0),
+      },
+    };
+  }
+
+  private parseDateRange(startDate: Date, endDate: Date) {
+    return { from: startDate, to: endDate };
+  }
+
+  private getGroupByExpression(groupBy: "day" | "week" | "month") {
+    switch (groupBy) {
+      case "day":
+        return sql`date_trunc('day', ${payments.createdAt})::date`;
+      case "week":
+        return sql`date_trunc('week', ${payments.createdAt})::date`;
+      case "month":
+        return sql`date_trunc('month', ${payments.createdAt})::date`;
+      default:
+        return sql`date_trunc('day', ${payments.createdAt})::date`;
+    }
   }
 
   private periodWindow(input: FinancialReportInput) {

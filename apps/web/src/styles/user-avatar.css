@@ -1,0 +1,119 @@
+/* User Avatar Container */
+.user-avatar-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, var(--surface, #fff) 0%, var(--surface-soft, #fafafa) 100%);
+  border: 1px solid var(--line, #dce5e3);
+  border-radius: 12px;
+  cursor: default;
+  transition: box-shadow 200ms ease;
+}
+
+.user-avatar-container:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.user-avatar-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    var(--accent, #f5a623) 0%,
+    var(--accent-strong, #d98b08) 100%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(245, 166, 35, 0.3);
+}
+
+.user-avatar-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-avatar-initial {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.user-avatar-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.user-avatar-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink, #0d1b2a);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-avatar-role {
+  font-size: 0.7rem;
+  color: var(--muted, #607080);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 640px) {
+  .user-avatar-info {
+    display: none;
+  }
+  .user-avatar-container {
+    padding: 0.5rem;
+  }
+}
+
+/* Password Toggle */
+.password-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: 0 -4px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #607080);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.password-toggle:hover {
+  color: var(--ink, #0d1b2a);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Checkbox Field */
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--muted, #607080);
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent, #f5a623);
+  cursor: pointer;
+}

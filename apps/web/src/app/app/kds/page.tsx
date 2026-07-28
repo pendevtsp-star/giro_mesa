@@ -1,8 +1,10 @@
 "use client";
 
 import { Bell, ChefHat, Clock3, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  buildRealtimeEventsUrl,
+  getSession,
   type KdsTicket,
   listKdsStations,
   listKdsTickets,
@@ -22,11 +24,27 @@ export default function KdsPage() {
   const [statusFilter, setStatusFilter] = useState("active");
   const [message, setMessage] = useState("Carregando produção...");
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [volume, setVolume] = useState(0.65);
   const [stations, setStations] = useState<Array<{ id: string; name: string }>>([]);
+  const soundEnabledRef = useRef(false);
+  const volumeRef = useRef(0.65);
+  const initializedRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
   async function load() {
     try {
       const [ticketRows, stationRows] = await Promise.all([listKdsTickets(), listKdsStations()]);
-      setTickets(ticketRows);
+      setTickets((current) => {
+        const currentIds = new Set(current.map((ticket) => ticket.id));
+        if (
+          initializedRef.current &&
+          soundEnabledRef.current &&
+          ticketRows.some((ticket) => !currentIds.has(ticket.id) && ticket.status === "sent")
+        ) {
+          playAlert(audioContextRef.current, volumeRef.current);
+        }
+        initializedRef.current = true;
+        return ticketRows;
+      });
       setStations(stationRows.map((item) => ({ id: item.id, name: item.name })));
       setMessage(`${ticketRows.length} ticket(s) no fluxo de produção.`);
     } catch {
@@ -36,6 +54,26 @@ export default function KdsPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: carregamento inicial do KDS.
   useEffect(() => {
     void load();
+    const polling = window.setInterval(() => void load(), 15_000);
+    let events: EventSource | null = null;
+    void getSession()
+      .then((session) => {
+        if (!session.branchId) return;
+        events = new EventSource(buildRealtimeEventsUrl(session.branchId), {
+          withCredentials: true,
+        });
+        events.onmessage = () => void load();
+        events.onerror = () => {
+          setMessage("Tempo real desconectado; atualização automática por polling continua ativa.");
+          events?.close();
+          events = null;
+        };
+      })
+      .catch(() => undefined);
+    return () => {
+      window.clearInterval(polling);
+      events?.close();
+    };
   }, []);
   const visible = useMemo(
     () =>
@@ -54,7 +92,21 @@ export default function KdsPage() {
     setTickets((current) =>
       current.map((item) => (item.id === ticket.id ? { ...item, ...updated } : item)),
     );
-    if (soundEnabled && next === "ready") window.navigator.vibrate?.(80);
+    if (soundEnabled && next === "ready") {
+      playAlert(audioContextRef.current, volume);
+      window.navigator.vibrate?.(80);
+    }
+  }
+  async function toggleSound() {
+    const next = !soundEnabled;
+    if (next) {
+      const context = audioContextRef.current ?? new AudioContext();
+      audioContextRef.current = context;
+      await context.resume();
+      playAlert(context, volume);
+    }
+    soundEnabledRef.current = next;
+    setSoundEnabled(next);
   }
   return (
     <main className="kds-page">
@@ -66,11 +118,28 @@ export default function KdsPage() {
         <div className="toolbar">
           <button
             className={soundEnabled ? "button primary compact" : "button secondary compact"}
-            onClick={() => setSoundEnabled((value) => !value)}
+            onClick={() => void toggleSound()}
             type="button"
           >
             <Bell size={16} /> Som
           </button>
+          <label className="kds-volume">
+            Volume
+            <input
+              aria-label="Volume dos alertas"
+              disabled={!soundEnabled}
+              max="1"
+              min="0"
+              onChange={(event) => {
+                const next = Number(event.target.value);
+                volumeRef.current = next;
+                setVolume(next);
+              }}
+              step="0.05"
+              type="range"
+              value={volume}
+            />
+          </label>
           <button className="button secondary compact" onClick={() => void load()} type="button">
             <RefreshCw size={16} /> Atualizar
           </button>
@@ -152,4 +221,19 @@ function readAge(createdAt: string) {
     return "agora";
   }
   return `${minutes} min`;
+}
+
+function playAlert(context: AudioContext | null, volume: number) {
+  if (context?.state !== "running") return;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(880, context.currentTime);
+  oscillator.frequency.exponentialRampToValueAtTime(1320, context.currentTime + 0.16);
+  gain.gain.setValueAtTime(Math.max(0.01, volume * 0.22), context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.28);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start();
+  oscillator.stop(context.currentTime + 0.3);
 }

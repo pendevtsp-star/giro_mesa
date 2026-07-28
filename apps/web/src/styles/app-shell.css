@@ -75,3 +75,9 @@
     padding-inline: 6px;
   }
 }
+
+@media (max-width: 768px) {
+  .qr-order-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 import { firstHeader, type HeaderRecord } from "../../common/http";
+import { Public } from "../../common/public";
 import { RateLimitService } from "../../common/rate-limit";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
@@ -64,6 +65,10 @@ const publicQrOrderSchema = z.object({
         productId: z.string().min(1),
         quantity: z.number().positive().default(1),
         notes: z.string().optional(),
+        modifiers: z
+          .array(z.object({ optionId: z.string().min(1) }))
+          .optional()
+          .default([]),
       }),
     )
     .min(1),
@@ -112,6 +117,19 @@ export class CatalogController {
     @Query("tenantSlug") tenantSlug = "bar-aurora-demo",
   ) {
     return this.catalogService.getPublicQrContext(tenantSlug, tableCode);
+  }
+
+  @Public()
+  @Get("public/products/:productId/modifiers")
+  async publicModifiers(@Param("productId") productId: string, @Headers() headers: HeaderRecord) {
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "public_catalog_modifiers",
+      limit: 20,
+      windowMs: 60_000,
+    });
+    return {
+      data: await this.catalogService.getPublicModifierGroups(productId),
+    };
   }
 
   @Post("categories")

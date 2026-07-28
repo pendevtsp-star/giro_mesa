@@ -24,6 +24,7 @@
     "lint:copy": "biome check .",
     "format": "biome check --write .",
     "db:generate": "pnpm --filter @giromesa/db db:generate",
+    "db:check-safety": "pnpm --filter @giromesa/db db:check-safety",
     "db:migrate": "pnpm --filter @giromesa/db db:migrate",
     "demo:reset": "pnpm db:migrate && pnpm --filter @giromesa/db db:seed"
   },

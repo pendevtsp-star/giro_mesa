@@ -32,12 +32,15 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noUnusedFunctionParameters": "off"
       },
       "suspicious": {
         "noConsole": "off"
+      },
+      "style": {
+        "noDescendingSpecificity": "off"
       }
     }
   }

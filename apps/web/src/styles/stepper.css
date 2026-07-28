@@ -1,0 +1,598 @@
+/* Stepper component styles */
+.stepper-container {
+  display: grid;
+  gap: 0;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #fbfcfa 0%, var(--paper) 100%);
+}
+
+/* Topbar */
+.stepper-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 66px;
+  border-bottom: 1px solid rgba(220, 228, 223, 0.82);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 12px clamp(14px, 4vw, 28px);
+  backdrop-filter: blur(16px);
+}
+
+.stepper-topbar .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+}
+
+.stepper-topbar .brand-mark {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.stepper-topbar .brand-mark-logo {
+  background-size: cover;
+  background-position: center;
+}
+
+/* Step indicator */
+.stepper-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 20px clamp(14px, 4vw, 28px) 0;
+}
+
+.stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepper-step-circle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+  transition: all 200ms ease;
+}
+
+.stepper-step.active .stepper-step-circle {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(245, 166, 35, 0.28);
+}
+
+.stepper-step.completed .stepper-step-circle {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+}
+
+.stepper-step-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.stepper-step.active .stepper-step-label {
+  color: var(--ink);
+}
+
+.stepper-step.completed .stepper-step-label {
+  color: var(--green);
+}
+
+.stepper-line {
+  width: 48px;
+  height: 2px;
+  margin: 0 6px;
+  background: var(--line);
+  transition: background 200ms ease;
+}
+
+.stepper-line.completed {
+  background: var(--green);
+}
+
+/* Content area */
+.stepper-content {
+  flex: 1;
+  padding: 20px clamp(14px, 4vw, 28px) 120px;
+}
+
+.stepper-step-title {
+  margin: 0 0 6px;
+  font-size: 1.55rem;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.stepper-step-subtitle {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Navigation footer */
+.stepper-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px clamp(14px, 4vw, 28px);
+  border-top: 1px solid rgba(220, 228, 223, 0.82);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+.stepper-nav .button {
+  min-height: 46px;
+  padding: 0 24px;
+  font-size: 0.95rem;
+}
+
+.stepper-nav-info {
+  flex: 1;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.stepper-nav-info strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1.08rem;
+}
+
+/* Table grid */
+.stepper-table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.stepper-table-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: center;
+  transition: all 160ms ease;
+}
+
+.stepper-table-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.stepper-table-card.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, #fff);
+  box-shadow: var(--focus-ring);
+}
+
+.stepper-table-card strong {
+  font-size: 1.15rem;
+  color: var(--ink);
+}
+
+.stepper-table-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.stepper-table-card small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: capitalize;
+}
+
+.stepper-table-card.occupied {
+  border-color: rgba(245, 166, 35, 0.32);
+  background: #fff8e8;
+}
+
+.stepper-table-card.waiting {
+  border-color: rgba(189, 63, 74, 0.28);
+  background: #fff2f3;
+}
+
+/* Counter card */
+.stepper-counter-card {
+  display: grid;
+  gap: 8px;
+  padding: 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  text-align: center;
+}
+
+.stepper-counter-card strong {
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+
+.stepper-counter-card span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Note presets */
+.stepper-note-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stepper-note-presets .button.active-note {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, #fff);
+  color: var(--ink);
+}
+
+/* Product grid */
+.stepper-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.stepper-product-tile {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition: all 160ms ease;
+}
+
+.stepper-product-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.stepper-product-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+
+.stepper-product-tile strong {
+  font-size: 0.95rem;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.stepper-product-tile small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.stepper-product-tile b {
+  color: var(--accent-strong);
+  font-size: 0.88rem;
+}
+
+/* Ticket preview (step 2 sidebar) */
+.stepper-ticket-preview {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.stepper-ticket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.stepper-ticket-head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stepper-ticket-head strong {
+  font-size: 1.18rem;
+  color: var(--ink);
+}
+
+.stepper-ticket-lines {
+  display: grid;
+  gap: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.stepper-ticket-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(220, 228, 223, 0.5);
+  font-size: 0.88rem;
+}
+
+.stepper-ticket-line:last-child {
+  border-bottom: none;
+}
+
+.stepper-ticket-line span {
+  color: var(--ink);
+}
+
+.stepper-ticket-line strong {
+  color: var(--ink);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.stepper-ticket-empty {
+  padding: 24px 16px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+/* Step 2 layout */
+.stepper-items-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 18px;
+  align-items: start;
+}
+
+/* Payment methods */
+.stepper-payment-methods {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.stepper-payment-btn {
+  display: grid;
+  gap: 4px;
+  padding: 18px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: center;
+  transition: all 160ms ease;
+}
+
+.stepper-payment-btn:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.stepper-payment-btn.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, #fff);
+  box-shadow: var(--focus-ring);
+}
+
+.stepper-payment-btn strong {
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.stepper-payment-btn span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* Order summary (step 3) */
+.stepper-order-summary {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.stepper-order-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.92rem;
+}
+
+.stepper-order-summary-row span {
+  color: var(--muted);
+}
+
+.stepper-order-summary-row strong {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.stepper-order-summary-total {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 1.18rem;
+}
+
+/* Success animation */
+.stepper-success {
+  display: grid;
+  place-items: center;
+  gap: 16px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.stepper-success-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #eaf6ec;
+  color: var(--green);
+}
+
+.stepper-success h2 {
+  margin: 0;
+  font-size: 1.55rem;
+  color: var(--ink);
+}
+
+.stepper-success p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* Mode switch */
+.stepper-mode-switch {
+  display: flex;
+  gap: 6px;
+}
+
+/* Status row */
+.stepper-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.stepper-status-row strong {
+  color: var(--ink);
+}
+
+.stepper-status-row span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .stepper-items-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .stepper-product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .stepper-step-label {
+    display: none;
+  }
+
+  .stepper-line {
+    width: 32px;
+  }
+
+  .stepper-content {
+    padding-bottom: 100px;
+  }
+
+  .stepper-product-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stepper-payment-methods {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .stepper-table-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  }
+
+  .stepper-product-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stepper-payment-methods {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dark theme overrides */
+.stepper-container[data-theme="dark"] {
+  background: #0d1b2a;
+}
+
+.stepper-container[data-theme="dark"] .stepper-topbar {
+  background: rgba(13, 27, 42, 0.92);
+  border-color: rgba(220, 228, 223, 0.12);
+}
+
+.stepper-container[data-theme="dark"] .stepper-nav {
+  background: rgba(13, 27, 42, 0.96);
+  border-color: rgba(220, 228, 223, 0.12);
+}
+
+.stepper-container[data-theme="dark"] .stepper-table-card,
+.stepper-container[data-theme="dark"] .stepper-product-tile,
+.stepper-container[data-theme="dark"] .stepper-counter-card,
+.stepper-container[data-theme="dark"] .stepper-payment-btn,
+.stepper-container[data-theme="dark"] .stepper-order-summary,
+.stepper-container[data-theme="dark"] .stepper-ticket-preview,
+.stepper-container[data-theme="dark"] .stepper-status-row {
+  background: #1b263b;
+  border-color: rgba(220, 228, 223, 0.12);
+}
+
+.stepper-container[data-theme="dark"] .stepper-step-circle {
+  background: #1b263b;
+  border-color: rgba(220, 228, 223, 0.2);
+}
+
+.stepper-container[data-theme="dark"] .stepper-counter-card {
+  background: #1b263b;
+}

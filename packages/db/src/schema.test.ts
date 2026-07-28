@@ -1,6 +1,7 @@
 import { getTableColumns } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
+  approvalRequests,
   auditLogs,
   branches,
   cashMovements,
@@ -11,6 +12,7 @@ import {
   diningTables,
   fiscalDocuments,
   fiscalSettings,
+  floorAreas,
   floorPlans,
   integrationAccounts,
   inventoryItems,
@@ -22,6 +24,7 @@ import {
   oauthAccounts,
   onboardingSteps,
   operationalShifts,
+  operationPolicies,
   orderItems,
   orders,
   outboxEvents,
@@ -32,15 +35,18 @@ import {
   products,
   recipeItems,
   recipes,
+  reservations,
   roles,
   sessions,
   stockLocations,
   stockMovements,
   subscriptions,
   suppliers,
+  tableEvents,
   tabs,
   userRoles,
   users,
+  waitlistEntries,
   webhookEvents,
 } from "./schema";
 
@@ -65,6 +71,7 @@ const tenantScopedTables = {
   modifierOptions,
   oauthAccounts,
   onboardingSteps,
+  operationPolicies,
   orderItems,
   orders,
   operationalShifts,
@@ -86,6 +93,11 @@ const tenantScopedTables = {
   userRoles,
   users,
   webhookEvents,
+  approvalRequests,
+  floorAreas,
+  reservations,
+  waitlistEntries,
+  tableEvents,
 };
 
 describe("multi-tenant schema", () => {
@@ -138,5 +150,33 @@ describe("multi-tenant schema", () => {
     expect(routeColumns).toContain("stationId");
     expect(jobColumns).toContain("idempotencyKey");
     expect(jobColumns).toContain("renderedText");
+  });
+
+  it("tracks payment origin and cash handover lifecycle", () => {
+    const columns = Object.keys(getTableColumns(payments));
+
+    expect(columns).toContain("registeredByUserId");
+    expect(columns).toContain("registeredVia");
+    expect(columns).toContain("cashHandoverStatus");
+    expect(columns).toContain("cashHandoverReceivedByUserId");
+    expect(columns).toContain("cashHandoverReceivedAt");
+  });
+
+  it("stores hybrid operation policy, approval and floor contracts", () => {
+    expect(Object.keys(getTableColumns(operationPolicies))).toEqual(
+      expect.arrayContaining(["tenantId", "branchId", "roleId", "maxDiscountWithoutApprovalBps"]),
+    );
+    expect(Object.keys(getTableColumns(approvalRequests))).toEqual(
+      expect.arrayContaining(["tenantId", "branchId", "requestedByUserId", "status", "action"]),
+    );
+    expect(Object.keys(getTableColumns(reservations))).toEqual(
+      expect.arrayContaining(["tenantId", "branchId", "tableId", "status", "partySize"]),
+    );
+    expect(Object.keys(getTableColumns(waitlistEntries))).toEqual(
+      expect.arrayContaining(["tenantId", "branchId", "status", "partySize"]),
+    );
+    expect(Object.keys(getTableColumns(tableEvents))).toEqual(
+      expect.arrayContaining(["tenantId", "branchId", "tableId", "type"]),
+    );
   });
 });

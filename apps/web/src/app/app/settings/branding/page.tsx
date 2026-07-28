@@ -273,16 +273,8 @@ export default function BrandingSettingsPage() {
             </div>
           </div>
           <div className="branding-public-links">
-            <a
-              className="button secondary"
-              href="/m/bar-aurora-demo"
-              target="_blank"
-              rel="noopener"
-            >
-              <ExternalLink size={16} /> Cardápio
-            </a>
-            <a className="button secondary" href="/q/M03" target="_blank" rel="noopener">
-              <ExternalLink size={16} /> QR mesa
+            <a className="button secondary" href="/app/qr">
+              <ExternalLink size={16} /> Gerenciar cardápio e QR
             </a>
           </div>
           <p className="muted-copy">{status}</p>

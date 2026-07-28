@@ -16,6 +16,7 @@ const productionEnv = {
   SESSION_SECRET: "0123456789abcdef0123456789abcdef",
   PASSWORD_PEPPER: "0123456789abcdef0123456789abcdef-pepper",
   MFA_SECRET_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef-mfa",
+  QR_SIGNING_SECRET: "qr-signing-secret-0123456789abcdef0123456789",
 } satisfies NodeJS.ProcessEnv;
 
 function buildController() {

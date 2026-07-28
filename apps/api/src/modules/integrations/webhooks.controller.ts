@@ -2,9 +2,11 @@ import { loadEnv } from "@giromesa/config";
 import {
   Body,
   Controller,
+  Get,
   Headers,
   Inject,
   Post,
+  Query,
   type RawBodyRequest,
   Req,
   UnauthorizedException,
@@ -14,6 +16,7 @@ import type { HeaderRecord } from "../../common/http";
 import { firstHeader } from "../../common/http";
 import { RateLimitService } from "../../common/rate-limit";
 import { verifyRawBodyHmacSignature, verifyWebhookSignature } from "../../common/webhook-signature";
+import { createWhatsAppProvider } from "../../common/whatsapp-provider";
 import { WebhooksService } from "./webhooks.service";
 
 function bodyRecord(body: unknown): Record<string, unknown> {
@@ -69,6 +72,20 @@ export class WebhooksController {
       externalEventId: eventId(headers, "asaas", body),
       payload: bodyRecord(body),
     });
+  }
+
+  @Get("meta")
+  verifyMetaWebhook(
+    @Query("hub.mode") mode: string,
+    @Query("hub.verify_token") token: string,
+    @Query("hub.challenge") challenge: string,
+  ) {
+    const provider = createWhatsAppProvider();
+    const result = provider.verifyWebhubChallenge(mode, token, challenge);
+    if (result !== null) {
+      return result;
+    }
+    throw new UnauthorizedException("Webhook verification failed");
   }
 
   @Post("meta")

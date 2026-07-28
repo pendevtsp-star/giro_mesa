@@ -3,6 +3,7 @@ import { RateLimitService } from "../../common/rate-limit";
 import { AuthModule } from "../auth/auth.module";
 import { ClubWhiskyController } from "./club-whisky.controller";
 import { ClubWhiskyService } from "./club-whisky.service";
+import { IfoodProvider } from "./ifood-provider";
 import { IntegrationAuthService } from "./integration-auth.service";
 import { OutboxController } from "./outbox.controller";
 import { OutboxService } from "./outbox.service";
@@ -18,6 +19,8 @@ import { WebhooksService } from "./webhooks.service";
     OutboxService,
     IntegrationAuthService,
     RateLimitService,
+    IfoodProvider,
   ],
+  exports: [IfoodProvider],
 })
 export class IntegrationsModule {}

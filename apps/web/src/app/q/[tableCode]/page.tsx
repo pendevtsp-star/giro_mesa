@@ -11,24 +11,39 @@ import {
   ReceiptText,
   Search,
   Send,
+  X,
 } from "lucide-react";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   createPublicQrOrder,
+  createSecurePublicOrder,
+  createSecureServiceRequest,
   formatMoney,
   getPublicMenu,
+  getPublicProductModifiers,
   getPublicQr,
+  getSecurePublicOrder,
+  getSecurePublicQrContext,
   type Product,
   type PublicMenuResponse,
+  type PublicModifierGroup,
   type PublicQrResponse,
   requestPublicQrAction,
 } from "../../../lib/giromesa-api";
+
+type ModifierSelection = {
+  groupId: string;
+  optionId: string;
+  name: string;
+  priceDeltaCents: number;
+};
 
 type CartLine = {
   productId: string;
   name: string;
   quantity: number;
   priceCents: number;
+  modifiers: ModifierSelection[];
 };
 
 const fallbackQr: PublicQrResponse = {
@@ -83,35 +98,98 @@ const fallbackMenu: PublicMenuResponse = {
 
 export default function TableQrPage({ params }: { params: Promise<{ tableCode: string }> }) {
   const { tableCode } = use(params);
+  const secureMode = tableCode.includes(".");
   const [qr, setQr] = useState<PublicQrResponse>(fallbackQr);
   const [menu, setMenu] = useState<PublicMenuResponse>(fallbackMenu);
+  const [fatalError, setFatalError] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [status, setStatus] = useState("Escolha itens do cardápio ou chame o atendimento.");
   const [productQuery, setProductQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [isBusy, setIsBusy] = useState(false);
 
+  const [modifierModalProduct, setModifierModalProduct] = useState<
+    PublicMenuResponse["products"][number] | null
+  >(null);
+  const [modifierGroups, setModifierGroups] = useState<PublicModifierGroup[]>([]);
+  const [modifierSelections, setModifierSelections] = useState<Record<string, ModifierSelection>>(
+    {},
+  );
+  const [modifierLoading, setModifierLoading] = useState(false);
+
   useEffect(() => {
     let ignore = false;
-    getPublicQr(tableCode)
+    const request = secureMode
+      ? getSecurePublicQrContext(tableCode).then((context) => {
+          const branding = {
+            displayName: context.tenant.branding.displayName,
+            logoUrl: context.tenant.branding.logoUrl,
+            themeMode: "light" as const,
+            accentPreset: "emerald" as const,
+          };
+          return {
+            qr: {
+              tenant: {
+                id: "resolved-by-token",
+                name: context.tenant.name,
+                slug: "",
+                branding,
+              },
+              table: {
+                id: context.table.id,
+                branchId: context.branchId,
+                code: context.table.code,
+                name: context.table.name,
+                status: context.table.status,
+              },
+            } satisfies PublicQrResponse,
+            menu: {
+              tenant: {
+                id: "resolved-by-token",
+                name: context.tenant.name,
+                slug: "",
+                branding,
+              },
+              categories: context.categories,
+              products: context.products.map((product) => ({
+                ...product,
+                isAvailable: true,
+                isClubEligible: false,
+                bottleVolumeMl: null,
+                defaultDoseMl: 50,
+                spiritType: null,
+              })),
+            } satisfies PublicMenuResponse,
+          };
+        })
+      : getPublicQr(tableCode).then(async (qrResponse) => ({
+          qr: qrResponse,
+          menu: await getPublicMenu(qrResponse.tenant.slug),
+        }));
+    request
       .then(async (qrResponse) => {
-        const menuResponse = await getPublicMenu(qrResponse.tenant.slug);
         if (!ignore) {
-          setQr(qrResponse);
-          setMenu(menuResponse);
+          setQr(qrResponse.qr);
+          setMenu(qrResponse.menu);
+          setFatalError("");
         }
       })
       .catch(() => {
         if (!ignore) {
-          setQr({ ...fallbackQr, table: { ...fallbackQr.table, code: tableCode } });
-          setMenu(fallbackMenu);
+          if (secureMode) {
+            setFatalError("Este QR é inválido, foi revogado ou não pertence mais a esta mesa.");
+            setMenu({ ...fallbackMenu, products: [] });
+          } else {
+            setQr({ ...fallbackQr, table: { ...fallbackQr.table, code: tableCode } });
+            setMenu(fallbackMenu);
+          }
         }
       });
 
     return () => {
       ignore = true;
     };
-  }, [tableCode]);
+  }, [secureMode, tableCode]);
 
   const totalCents = cart.reduce((sum, line) => sum + line.quantity * line.priceCents, 0);
   const categoryOptions = useMemo(
@@ -128,8 +206,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       .filter((product) => categoryFilter === "all" || product.categoryId === categoryFilter)
       .filter((product) =>
         `${product.name} ${product.description ?? ""}`.toLowerCase().includes(normalizedQuery),
-      )
-      .slice(0, 10);
+      );
   }, [categoryFilter, menu.products, productQuery]);
   const branding = qr.tenant.branding ?? menu.tenant.branding ?? fallbackQr.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
@@ -144,9 +221,32 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       }
       return [
         ...current,
-        { productId: product.id, name: product.name, priceCents: product.priceCents, quantity: 1 },
+        {
+          productId: product.id,
+          name: product.name,
+          priceCents: product.priceCents,
+          quantity: 1,
+          modifiers: [],
+        },
       ];
     });
+  }
+
+  function addProductWithModifiers(
+    product: PublicMenuResponse["products"][number],
+    selections: ModifierSelection[],
+  ) {
+    const modifierDelta = selections.reduce((sum, s) => sum + s.priceDeltaCents, 0);
+    setCart((current) => [
+      ...current,
+      {
+        productId: product.id,
+        name: product.name,
+        priceCents: product.priceCents + modifierDelta,
+        quantity: 1,
+        modifiers: selections,
+      },
+    ]);
   }
 
   function removeProduct(productId: string) {
@@ -157,6 +257,80 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         )
         .filter((line) => line.quantity > 0),
     );
+  }
+
+  const openModifierModal = useCallback(async (product: PublicMenuResponse["products"][number]) => {
+    setModifierModalProduct(product);
+    setModifierSelections({});
+    setModifierLoading(true);
+    try {
+      const groups = await getPublicProductModifiers(product.id);
+      setModifierGroups(groups);
+    } catch {
+      setModifierGroups([]);
+    } finally {
+      setModifierLoading(false);
+    }
+  }, []);
+
+  const closeModifierModal = useCallback(() => {
+    setModifierModalProduct(null);
+    setModifierGroups([]);
+    setModifierSelections({});
+  }, []);
+
+  function toggleModifierOption(
+    groupId: string,
+    option: { id: string; name: string; priceDeltaCents: number },
+    group: PublicModifierGroup,
+  ) {
+    setModifierSelections((prev) => {
+      const next = { ...prev };
+      if (group.maxChoices <= 1) {
+        if (next[groupId]?.optionId === option.id) {
+          delete next[groupId];
+        } else {
+          next[groupId] = {
+            groupId,
+            optionId: option.id,
+            name: option.name,
+            priceDeltaCents: option.priceDeltaCents,
+          };
+        }
+      } else {
+        const currentSelections = Object.values(next).filter((s) => s.optionId !== option.id);
+        if (next[`${groupId}__${option.id}`]) {
+          delete next[`${groupId}__${option.id}`];
+        } else {
+          if (currentSelections.length < group.maxChoices) {
+            next[`${groupId}__${option.id}`] = {
+              groupId,
+              optionId: option.id,
+              name: option.name,
+              priceDeltaCents: option.priceDeltaCents,
+            };
+          }
+        }
+      }
+      return next;
+    });
+  }
+
+  function confirmModifierSelection() {
+    if (!modifierModalProduct) return;
+    const selections = Object.values(modifierSelections);
+    const requiredGroups = modifierGroups.filter((g) => g.isRequired);
+    const missingRequired = requiredGroups.filter(
+      (g) => !selections.some((s) => g.options.some((o) => o.id === s.optionId)),
+    );
+    if (missingRequired.length > 0) {
+      setStatus(
+        `Selecione pelo menos uma opção em: ${missingRequired.map((g) => g.name).join(", ")}`,
+      );
+      return;
+    }
+    addProductWithModifiers(modifierModalProduct, selections);
+    closeModifierModal();
   }
 
   async function run(action: () => Promise<void>) {
@@ -175,10 +349,21 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       if (cart.length === 0) {
         throw new Error("Adicione pelo menos um item ao pedido.");
       }
-      const response = await createPublicQrOrder(tableCode, {
-        tenantSlug: qr.tenant.slug,
-        items: cart.map((line) => ({ productId: line.productId, quantity: line.quantity })),
-      });
+      const items = cart.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        modifiers: line.modifiers.map((m) => ({ optionId: m.optionId })),
+      }));
+      const response = secureMode
+        ? await createSecurePublicOrder(
+            tableCode,
+            idempotencyKey(tableCode, "order", JSON.stringify(items)),
+            { items },
+          )
+        : await createPublicQrOrder(tableCode, {
+            tenantSlug: qr.tenant.slug,
+            items,
+          });
       setCart([]);
       setStatus(`Pedido ${response.orderId.slice(0, 8)} enviado para o salão.`);
     });
@@ -186,21 +371,57 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
   function callWaiter() {
     void run(async () => {
-      await requestPublicQrAction(tableCode, "call-waiter", { tenantSlug: qr.tenant.slug });
+      if (secureMode) {
+        await createSecureServiceRequest(tableCode, idempotencyKey(tableCode, "call-waiter"), {
+          type: "call_waiter",
+        });
+      } else {
+        await requestPublicQrAction(tableCode, "call-waiter", { tenantSlug: qr.tenant.slug });
+      }
       setStatus("Garçom chamado. A solicitação ficou registrada no painel.");
     });
   }
 
   function requestPreBill() {
     void run(async () => {
-      await requestPublicQrAction(tableCode, "pre-bill", { tenantSlug: qr.tenant.slug });
+      if (secureMode) {
+        await createSecureServiceRequest(tableCode, idempotencyKey(tableCode, "request-pre-bill"), {
+          type: "request_pre_bill",
+        });
+      } else {
+        await requestPublicQrAction(tableCode, "pre-bill", { tenantSlug: qr.tenant.slug });
+      }
       setStatus("Pré-conta solicitada. O caixa recebeu o pedido de fechamento.");
     });
   }
 
   function openTableSummary() {
     void run(async () => {
-      if (cart.length === 0) {
+      let printLines = cart.map((line) => ({
+        name: line.name,
+        quantity: line.quantity,
+        unitPriceCents: line.priceCents,
+        totalCents: line.priceCents * line.quantity,
+      }));
+      let printTotalCents = totalCents;
+      let documentSubtitle =
+        "Conferência visual do pedido montado pelo cliente antes do envio ou da solicitação de pré-conta.";
+
+      if (secureMode) {
+        const response = await getSecurePublicOrder(tableCode);
+        if (!response.order) {
+          throw new Error("A comanda desta mesa ainda não possui consumo registrado.");
+        }
+        printLines = response.order.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          totalCents: item.totalCents,
+        }));
+        printTotalCents = response.order.totalCents;
+        documentSubtitle =
+          "Resumo da comanda atual, carregado diretamente do atendimento registrado pelo estabelecimento.";
+      } else if (printLines.length === 0) {
         throw new Error("Adicione itens para visualizar o resumo da mesa.");
       }
 
@@ -217,17 +438,22 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         },
         documentLabel: "Resumo da mesa",
         title: `Mesa ${qr.table.code}`,
-        subtitle:
-          "Conferência visual do pedido montado pelo cliente antes do envio ou da solicitação de pré-conta.",
+        subtitle: documentSubtitle,
         metadata: [
           { label: "Mesa", value: qr.table.code },
           { label: "Cliente", value: "Atendimento via QR" },
           { label: "Gerado em", value: new Date().toLocaleString("pt-BR") },
         ],
         metrics: [
-          { label: "Itens", value: String(cart.reduce((sum, line) => sum + line.quantity, 0)) },
-          { label: "Linhas", value: String(cart.length) },
-          { label: "Total estimado", value: formatMoney(totalCents) },
+          {
+            label: "Itens",
+            value: String(printLines.reduce((sum, line) => sum + line.quantity, 0)),
+          },
+          { label: "Linhas", value: String(printLines.length) },
+          {
+            label: secureMode ? "Total da comanda" : "Total estimado",
+            value: formatMoney(printTotalCents),
+          },
         ],
         bodyHtml: `
           <section class="section">
@@ -241,14 +467,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                   <th>Total</th>
                 </tr>
               </thead>
-              <tbody>${cart
+              <tbody>${printLines
                 .map(
                   (line) => `
                     <tr>
                       <td>${escapeHtml(String(line.quantity))}</td>
                       <td>${escapeHtml(line.name)}</td>
-                      <td>${escapeHtml(formatMoney(line.priceCents))}</td>
-                      <td>${escapeHtml(formatMoney(line.priceCents * line.quantity))}</td>
+                      <td>${escapeHtml(formatMoney(line.unitPriceCents))}</td>
+                      <td>${escapeHtml(formatMoney(line.totalCents))}</td>
                     </tr>`,
                 )
                 .join("")}</tbody>
@@ -256,7 +482,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           </section>
         `,
         footerNote:
-          "Resumo visual sem valor fiscal, pensado para transparência do cliente e fluidez do atendimento em mesa.",
+          "Resumo sem valor fiscal, sem dados pessoais e carregado apenas para a mesa identificada pelo QR.",
       });
 
       popup.document.write(html);
@@ -267,14 +493,33 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     });
   }
 
+  if (fatalError) {
+    return (
+      <main className="menu-shell menu-shell-night table-qr-shell">
+        <section className="qr-card" role="alert">
+          <span className="section-kicker">
+            <QrCode size={18} /> QR indisponível
+          </span>
+          <h1>Não foi possível abrir esta mesa</h1>
+          <p>{fatalError}</p>
+          <p>Peça à equipe do estabelecimento um material atualizado.</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main
-      className="menu-shell table-qr-shell"
+      className="menu-shell menu-shell-night table-qr-shell"
       data-theme={branding?.themeMode ?? "light"}
       data-accent={branding?.accentPreset ?? "emerald"}
     >
       <header className="menu-hero table-qr-hero">
-        <a className="brand" href={`/m/${qr.tenant.slug}`} aria-label={branding?.displayName}>
+        <a
+          className="brand"
+          href={secureMode ? "#" : `/m/${qr.tenant.slug}`}
+          aria-label={branding?.displayName}
+        >
           <span
             className={branding?.logoUrl ? "brand-mark brand-mark-logo" : "brand-mark"}
             style={branding?.logoUrl ? { backgroundImage: `url(${branding.logoUrl})` } : undefined}
@@ -297,9 +542,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               <span className="section-kicker">Cardápio</span>
               <h2>Pedido da mesa</h2>
             </div>
-            <a className="button secondary" href={`/m/${qr.tenant.slug}`}>
-              <ClipboardList size={17} /> Cardápio completo
-            </a>
+            {!secureMode ? (
+              <a className="button secondary" href={`/m/${qr.tenant.slug}`}>
+                <ClipboardList size={17} /> Cardápio completo
+              </a>
+            ) : null}
           </div>
           <div className="qr-menu-tools">
             <label className="search-box">
@@ -330,9 +577,27 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                   className="qr-menu-row"
                   type="button"
                   key={product.id}
-                  onClick={() => addProduct(product)}
+                  onClick={() =>
+                    (product.modifierGroupCount ?? 0) > 0
+                      ? openModifierModal(product)
+                      : addProduct(product)
+                  }
                   disabled={isBusy}
                 >
+                  {product.imageUrl && (
+                    // biome-ignore lint/performance/noImgElement: tenant URLs are dynamic and not eligible for a fixed Next Image allowlist.
+                    <img
+                      src={product.imageUrl}
+                      alt={product.name}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        objectFit: "cover",
+                        borderRadius: 6,
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
                   <div>
                     <strong>{product.name}</strong>
                     <span>{product.description}</span>
@@ -358,9 +623,17 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <div className="qr-cart">
             {cart.length === 0 ? <p>Nenhum item selecionado ainda.</p> : null}
             {cart.map((line) => (
-              <div className="qr-cart-row" key={line.productId}>
+              <div
+                className="qr-cart-row"
+                key={`${line.productId}-${line.modifiers.map((m) => m.optionId).join(",")}`}
+              >
                 <div>
                   <strong>{line.name}</strong>
+                  {line.modifiers.length > 0 && (
+                    <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                      {line.modifiers.map((m) => m.name).join(", ")}
+                    </span>
+                  )}
                   <span>
                     {line.quantity} x {formatMoney(line.priceCents)}
                   </span>
@@ -421,6 +694,163 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         </button>
       </section>
       <footer className="qr-note">{status}</footer>
+
+      {modifierModalProduct && (
+        <dialog
+          open
+          className="modifier-modal-overlay"
+          aria-label="Fechar opções do produto"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+            border: 0,
+            width: "auto",
+            maxWidth: "none",
+            maxHeight: "none",
+          }}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeModifierModal();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") closeModifierModal();
+          }}
+        >
+          <div
+            className="modifier-modal"
+            role="dialog"
+            aria-modal="true"
+            style={{
+              background: "#fff",
+              borderRadius: 12,
+              maxWidth: 480,
+              width: "100%",
+              maxHeight: "85vh",
+              overflow: "auto",
+              padding: 24,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "start",
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>{modifierModalProduct.name}</h2>
+                {modifierModalProduct.description && (
+                  <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>
+                    {modifierModalProduct.description}
+                  </p>
+                )}
+                <p style={{ margin: "8px 0 0", fontWeight: 600 }}>
+                  {formatMoney(modifierModalProduct.priceCents)}
+                </p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={closeModifierModal}
+                aria-label="Fechar"
+                style={{ flexShrink: 0 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {modifierLoading ? (
+              <p className="muted-copy" style={{ textAlign: "center", padding: 24 }}>
+                Carregando opções...
+              </p>
+            ) : modifierGroups.length === 0 ? (
+              <p className="muted-copy" style={{ textAlign: "center", padding: 24 }}>
+                Nenhuma opção de personalização disponível.
+              </p>
+            ) : (
+              modifierGroups.map((group) => (
+                <div key={group.id} style={{ marginBottom: 20 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "baseline",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <strong>{group.name}</strong>
+                    <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                      {group.isRequired ? "Obrigatório" : "Opcional"}
+                      {group.maxChoices > 1 ? ` (até ${group.maxChoices})` : ""}
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {group.options.map((option) => {
+                      const isSelected = Object.values(modifierSelections).some(
+                        (s) => s.optionId === option.id,
+                      );
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => toggleModifierOption(group.id, option, group)}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "10px 12px",
+                            border: `1px solid ${isSelected ? "var(--accent-strong, #10b981)" : "var(--line)"}`,
+                            borderRadius: 8,
+                            background: isSelected ? "#f0fdf4" : "#fbfcfa",
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span>{option.name}</span>
+                          {option.priceDeltaCents !== 0 && (
+                            <small style={{ color: "var(--muted)" }}>
+                              {option.priceDeltaCents > 0 ? "+" : ""}
+                              {formatMoney(option.priceDeltaCents)}
+                            </small>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+
+            <button
+              className="button primary full"
+              type="button"
+              onClick={confirmModifierSelection}
+              disabled={modifierLoading}
+              style={{ marginTop: 8 }}
+            >
+              <Plus size={17} /> Adicionar ao pedido
+            </button>
+          </div>
+        </dialog>
+      )}
     </main>
   );
+}
+
+function idempotencyKey(token: string, action: string, payload = "") {
+  const storageKey = `giromesa:qr:${token}:${action}:${payload}`;
+  const existing = window.sessionStorage.getItem(storageKey);
+  if (existing) {
+    return existing;
+  }
+  const value = window.crypto.randomUUID();
+  window.sessionStorage.setItem(storageKey, value);
+  return value;
 }

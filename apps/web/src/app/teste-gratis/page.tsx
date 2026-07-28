@@ -3,42 +3,13 @@
 import { ArrowRight, Check, LockKeyhole, Mail, Phone, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { LanguageSwitcher } from "../../components/LanguageSwitcher";
 import { ApiError, startTrial } from "../../lib/giromesa-api";
-
-const setupItems = [
-  "Ambiente próprio por 7 dias",
-  "Sem cartão na criação da conta",
-  "Painel, PDV, mesas, caixa e relatórios liberados",
-  "Ativação de cobrança apenas para continuar após o teste",
-] as const;
-
-const activationSteps = [
-  "Criamos seu ambiente isolado e a filial inicial.",
-  "Você entra direto no assistente de implantação.",
-  "Seu time testa PDV, salão, QR, KDS e fechamento.",
-  "A assinatura só é ativada se você decidir continuar.",
-] as const;
-
-const trialPlans = {
-  starter: {
-    name: "Starter",
-    price: "R$ 149/mês após o teste",
-    detail: "1 unidade",
-  },
-  professional: {
-    name: "Professional",
-    price: "R$ 299/mês após o teste",
-    detail: "Operação completa",
-  },
-  premium: {
-    name: "Premium",
-    price: "R$ 499/mês após o teste",
-    detail: "Multiunidade",
-  },
-} as const;
+import { useTranslation } from "../../lib/i18n";
 
 export default function TrialSignupPage() {
   const router = useRouter();
+  const { locale, setLocale, t, tArray } = useTranslation();
   const [form, setForm] = useState({
     establishmentName: "",
     ownerName: "",
@@ -82,12 +53,33 @@ export default function TrialSignupPage() {
     } catch (trialError) {
       const message =
         trialError instanceof ApiError && trialError.status === 400
-          ? "Confira os dados informados. O nome do ambiente ou e-mail podem já estar em uso."
-          : "Não foi possível criar seu teste grátis agora. Tente novamente em instantes.";
+          ? t("trial.dataConflict")
+          : t("trial.afterSignupError");
       setError(message);
       setStatus("idle");
     }
   }
+
+  const setupItems = tArray("trial.setupItems");
+  const activationSteps = tArray("trial.activationSteps");
+
+  const trialPlans = {
+    starter: {
+      name: t("plans.starter.name"),
+      price: t("plans.starter.trialPrice"),
+      detail: t("plans.starter.trialDetail"),
+    },
+    professional: {
+      name: t("plans.professional.name"),
+      price: t("plans.professional.trialPrice"),
+      detail: t("plans.professional.trialDetail"),
+    },
+    premium: {
+      name: t("plans.premium.name"),
+      price: t("plans.premium.trialPrice"),
+      detail: t("plans.premium.trialDetail"),
+    },
+  };
 
   return (
     <main className="login-page trial-signup-page">
@@ -96,16 +88,14 @@ export default function TrialSignupPage() {
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
+        <LanguageSwitcher currentLocale={locale} onLocaleChange={setLocale} />
         <div className="login-copy">
-          <span className="eyebrow">Teste grátis de 7 dias</span>
-          <h1>Crie o ambiente do seu estabelecimento.</h1>
-          <p>
-            Sem cartão na entrada. Você testa a operação real do GiroMesa e só ativa a cobrança se
-            decidir continuar depois do período gratuito.
-          </p>
+          <span className="eyebrow">{t("trial.sevenDayTrial")}</span>
+          <h1>{t("trial.startWithoutCard")}</h1>
+          <p>{t("trial.trialDescription")}</p>
         </div>
         <ul className="trial-checklist">
-          {setupItems.map((item) => (
+          {setupItems.map((item: string) => (
             <li key={item}>
               <Check size={16} /> {item}
             </li>
@@ -115,13 +105,13 @@ export default function TrialSignupPage() {
       <section className="login-panel">
         <form className="form trial-form" onSubmit={handleSubmit}>
           <div>
-            <span className="section-kicker">Comece sem cartão</span>
-            <h2>Teste grátis GiroMesa</h2>
-            <p>Preencha os dados para liberar seu painel inicial.</p>
+            <span className="section-kicker">{t("trial.startWithoutCard")}</span>
+            <h2>{t("trial.trialTitle")}</h2>
+            <p>{t("trial.trialSubtitle")}</p>
           </div>
 
           <label className="field">
-            <span>Nome do estabelecimento</span>
+            <span>{t("trial.establishmentName")}</span>
             <span className="input-shell">
               <Store size={18} />
               <input
@@ -136,7 +126,7 @@ export default function TrialSignupPage() {
           </label>
 
           <label className="field">
-            <span>Seu nome</span>
+            <span>{t("trial.ownerName")}</span>
             <span className="input-shell">
               <Store size={18} />
               <input
@@ -151,7 +141,7 @@ export default function TrialSignupPage() {
           </label>
 
           <label className="field">
-            <span>E-mail de acesso</span>
+            <span>{t("trial.ownerEmail")}</span>
             <span className="input-shell">
               <Mail size={18} />
               <input
@@ -167,7 +157,7 @@ export default function TrialSignupPage() {
           </label>
 
           <label className="field">
-            <span>Telefone comercial</span>
+            <span>{t("trial.phone")}</span>
             <span className="input-shell">
               <Phone size={18} />
               <input
@@ -181,7 +171,7 @@ export default function TrialSignupPage() {
           </label>
 
           <label className="field">
-            <span>Senha</span>
+            <span>{t("auth.password")}</span>
             <span className="input-shell">
               <LockKeyhole size={18} />
               <input
@@ -197,7 +187,7 @@ export default function TrialSignupPage() {
           </label>
 
           <fieldset className="trial-plan-selector">
-            <legend>Plano inicial</legend>
+            <legend>{t("trial.initialPlan")}</legend>
             {(["starter", "professional", "premium"] as const).map((plan) => (
               <button
                 key={plan}
@@ -225,18 +215,18 @@ export default function TrialSignupPage() {
             disabled={!isHydrated || status !== "idle"}
           >
             {!isHydrated
-              ? "Carregando cadastro..."
+              ? t("trial.loadingSignup")
               : status === "loading"
-                ? "Criando ambiente..."
-                : "Começar teste grátis"}{" "}
+                ? t("trial.creatingEnvironment")
+                : t("trial.startFreeTrial")}{" "}
             <ArrowRight size={18} />
           </button>
           <a className="button ghost full" href="/login">
-            Já tenho conta
+            {t("trial.alreadyHaveAccount")}
           </a>
           <aside className="trial-next-steps">
-            <strong>Depois do cadastro</strong>
-            {activationSteps.map((step, index) => (
+            <strong>{t("trial.afterSignup")}</strong>
+            {activationSteps.map((step: string, index: number) => (
               <span key={step}>
                 {index + 1}. {step}
               </span>
