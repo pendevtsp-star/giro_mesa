@@ -1,4 +1,4 @@
-import { kdsStations, kdsTickets, orders } from "@giromesa/db";
+import { diningTables, kdsStations, kdsTickets, orders } from "@giromesa/db";
 import { type OrderItemStatus, stateMachines, type TenantContext } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
@@ -29,6 +29,7 @@ export class KdsService {
         branchId: kdsTickets.branchId,
         stationName: kdsStations.name,
         orderId: kdsTickets.orderId,
+        tableCode: diningTables.code,
         orderChannel: orders.channel,
         orderStatus: orders.status,
         status: kdsTickets.status,
@@ -39,6 +40,7 @@ export class KdsService {
       .from(kdsTickets)
       .innerJoin(kdsStations, eq(kdsStations.id, kdsTickets.stationId))
       .innerJoin(orders, eq(orders.id, kdsTickets.orderId))
+      .leftJoin(diningTables, eq(diningTables.id, orders.tableId))
       .where(eq(kdsTickets.tenantId, context.tenantId));
   }
 

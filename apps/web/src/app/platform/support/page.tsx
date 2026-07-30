@@ -306,7 +306,7 @@ export default function PlatformSupportPage() {
   }
 
   return (
-    <main className="app-layout">
+    <main className="app-layout app-layout-night">
       <aside className="sidebar">
         <a className="brand" href="/platform">
           <span className="brand-mark">G</span>

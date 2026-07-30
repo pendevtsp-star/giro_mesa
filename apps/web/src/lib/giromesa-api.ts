@@ -1,7 +1,8 @@
 const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
 
-// Use relative URLs - Next.js rewrites proxy /api/* to the real API server
-export const apiBaseUrl = configuredApiBaseUrl ?? "";
+// Browser requests stay same-origin so cookies and CSRF are handled consistently.
+// Server-side calls may still use the configured absolute API URL.
+export const apiBaseUrl = typeof window === "undefined" ? (configuredApiBaseUrl ?? "") : "";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -143,6 +144,7 @@ export type KdsTicket = {
   branchId: string;
   stationName: string;
   orderId: string;
+  tableCode: string | null;
   orderChannel: string;
   orderStatus: string;
   status: string;
@@ -1110,8 +1112,11 @@ export type ClubWhiskyIntegrationConfig = {
   provider: "club_whisky";
   status: string;
   branchId?: string | null;
+  remoteClientId?: string | null;
   scopes: string[];
   webhookUrl?: string | null;
+  contractVersion?: string | null;
+  inventoryAuthority?: "giromesa" | string;
   apiKeyLastFour?: string | null;
   apiKeyCreatedAt?: string | null;
   hasApiKey: boolean;
@@ -2548,12 +2553,17 @@ export function getClubWhiskyConfig() {
   return apiRequest<ClubWhiskyIntegrationConfig>("/api/v1/integrations/club-whisky/config");
 }
 
-export function configureClubWhiskyIntegration(branchId?: string, rotateKey = false) {
+export function configureClubWhiskyIntegration(input?: {
+  branchId?: string;
+  remoteClientId?: string;
+  webhookUrl?: string;
+  rotateKey?: boolean;
+}) {
   return apiRequest<ClubWhiskyConfigureResponse>("/api/v1/integrations/club-whisky/configure", {
     method: "POST",
     body: {
-      branchId,
-      rotateKey,
+      ...input,
+      rotateKey: input?.rotateKey ?? false,
     },
   });
 }

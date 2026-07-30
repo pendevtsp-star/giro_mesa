@@ -29,13 +29,13 @@ import {
   RecentAlertsSection,
   ShiftPriorities,
 } from "../../features/dashboard/DashboardOverview";
-import type { AppStatus } from "../../features/dashboard/dashboard-types";
-import { demoTables, demoTickets } from "../../lib/fixtures/app-dashboard-demo";
+import type { AppStatus, DashboardMetric } from "../../features/dashboard/dashboard-types";
 import { readOperatorProfile, readStatusTitle } from "../../lib/formatters/app-dashboard";
 import {
   type ApiError,
   type CashSessionSummary,
   type CurrentShiftResponse,
+  type DiningTable,
   formatMoney,
   getCashSessionSummary,
   getCurrentShift,
@@ -45,6 +45,7 @@ import {
   getSession,
   getTenantBranding,
   type InventoryAlert,
+  type KdsTicket,
   listInventoryAlerts,
   listKdsTickets,
   listQrPendingOrders,
@@ -99,8 +100,8 @@ export default function AppDashboardPage() {
   const [cashSummary, setCashSummary] = useState<CashSessionSummary | null>(null);
   const [inventoryAlerts, setInventoryAlerts] = useState<InventoryAlert[]>([]);
   const [qrPendingOrders, setQrPendingOrders] = useState<QrPendingOrder[]>([]);
-  const [tables, setTables] = useState<typeof demoTables>([]);
-  const [tickets, setTickets] = useState<typeof demoTickets>([]);
+  const [tables, setTables] = useState<DiningTable[]>([]);
+  const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [branding, setBranding] = useState<TenantBranding>({
     displayName: "GiroMesa",
     logoUrl: null,
@@ -129,6 +130,17 @@ export default function AppDashboardPage() {
   );
   const operatorProfile = useMemo(() => readOperatorProfile(session?.permissions ?? []), [session]);
   const activeBranding = branding;
+  const permissions = session?.permissions ?? [];
+  const canManageTenant = permissions.includes("tenant:manage");
+  const canOperatePos = permissions.includes("pos:operate");
+  const canOperateKds = permissions.includes("kds:operate");
+  const canManageCash = permissions.includes("cash:manage");
+  const canReadReports = permissions.includes("reports:read");
+  const canManageInventory = permissions.includes("inventory:manage");
+  const accessibleQuickLinks = useMemo(() => {
+    const accessibleHrefs = new Set(visibleNav.map((item) => item.href));
+    return quickLinks.filter((link) => accessibleHrefs.has(link.href));
+  }, [visibleNav]);
 
   useEffect(() => {
     let ignore = false;
@@ -138,6 +150,7 @@ export default function AppDashboardPage() {
         const context = await getSession();
         if (ignore) return;
         setSession(context);
+        const can = (permission: string) => context.permissions.includes(permission);
 
         if (
           context.billing?.status === "payment_required" ||
@@ -160,26 +173,28 @@ export default function AppDashboardPage() {
           tableRows,
         ] = await Promise.all([
           getTenantBranding(),
-          context.branchId
+          context.branchId && can("pos:operate")
             ? getDashboardSummary(context.branchId).catch(() => null)
             : Promise.resolve(null),
-          context.branchId
+          context.branchId && can("tenant:manage")
             ? getOnboardingStatus(context.branchId).catch(() => null)
             : Promise.resolve(null),
-          context.branchId
+          context.branchId && (can("pos:operate") || can("cash:manage"))
             ? getCurrentShift(context.branchId).catch(() => null)
             : Promise.resolve(null),
-          context.branchId
+          context.branchId && can("cash:manage")
             ? getCashSessionSummary(context.branchId).catch(() => null)
             : Promise.resolve(null),
-          context.branchId
+          context.branchId && can("inventory:manage")
             ? listInventoryAlerts(context.branchId).catch(() => [])
             : Promise.resolve([]),
-          context.branchId
+          context.branchId && can("pos:qr_review")
             ? listQrPendingOrders(context.branchId).catch(() => [])
             : Promise.resolve([]),
-          listKdsTickets().catch(() => []),
-          context.branchId ? listTables(context.branchId).catch(() => []) : Promise.resolve([]),
+          can("kds:operate") ? listKdsTickets().catch(() => []) : Promise.resolve([]),
+          context.branchId && can("pos:operate")
+            ? listTables(context.branchId).catch(() => [])
+            : Promise.resolve([]),
         ]);
 
         setBranding(tenantBranding);
@@ -189,10 +204,10 @@ export default function AppDashboardPage() {
         setCashSummary(cash);
         setInventoryAlerts(alerts);
         setQrPendingOrders(qrOrders);
-        setTickets(kdsTickets.length > 0 ? kdsTickets : context.isDemo ? demoTickets : []);
-        setTables(tableRows.length > 0 ? tableRows : context.isDemo ? demoTables : []);
+        setTickets(kdsTickets);
+        setTables(tableRows);
 
-        if (context.branchId) {
+        if (context.branchId && can("reports:read")) {
           const endDate = new Date().toISOString();
           const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
           const salesData = await getSalesByPeriod({
@@ -241,24 +256,47 @@ export default function AppDashboardPage() {
   const occupiedLabel =
     dashboardSummary?.occupiedTables ?? `${occupiedCount}/${Math.max(tables.length, 1)}`;
 
-  const metrics = useMemo(
-    () =>
-      [
-        [
-          t("dashboard.salesToday"),
-          dashboardSummary ? formatMoney(dashboardSummary.salesToday) : "R$ 0,00",
-          dashboardSummary?.shiftOpen ? t("dashboard.openShift") : t("dashboard.currentOrder"),
-        ],
-        [t("dashboard.activeOrders"), String(Math.max(activeOrderCount, 0)), "QR + KDS"],
-        [t("dashboard.occupiedTables"), occupiedLabel, t("dashboard.salonNow")],
-        [
-          t("dashboard.currentCash"),
-          dashboardSummary ? formatMoney(dashboardSummary.cashBalance) : "R$ 0,00",
-          dashboardSummary?.cashOpen ? t("dashboard.openCash") : t("dashboard.closed"),
-        ],
-      ] as const,
-    [dashboardSummary, activeOrderCount, occupiedLabel, t],
-  );
+  const metrics = useMemo(() => {
+    const rows: DashboardMetric[] = [];
+    if (canReadReports) {
+      rows.push([
+        t("dashboard.salesToday"),
+        dashboardSummary ? formatMoney(dashboardSummary.salesToday) : "R$ 0,00",
+        dashboardSummary?.shiftOpen
+          ? t("dashboard.openShift")
+          : (dashboardSummary?.salesToday ?? 0) > 0
+            ? t("dashboard.confirmedRevenue")
+            : t("dashboard.noSalesToday"),
+      ] as const);
+    }
+    if (canOperatePos || canOperateKds) {
+      rows.push([
+        canOperateKds && !canOperatePos ? "Tickets em produção" : t("dashboard.activeOrders"),
+        String(Math.max(activeOrderCount, 0)),
+        canOperateKds && !canOperatePos ? "KDS" : "QR + operação",
+      ]);
+    }
+    if (canOperatePos) {
+      rows.push([t("dashboard.occupiedTables"), occupiedLabel, t("dashboard.salonNow")]);
+    }
+    if (canManageCash) {
+      rows.push([
+        t("dashboard.currentCash"),
+        dashboardSummary ? formatMoney(dashboardSummary.cashBalance) : "R$ 0,00",
+        dashboardSummary?.cashOpen ? t("dashboard.openCash") : t("dashboard.closed"),
+      ]);
+    }
+    return rows;
+  }, [
+    activeOrderCount,
+    canManageCash,
+    canOperateKds,
+    canOperatePos,
+    canReadReports,
+    dashboardSummary,
+    occupiedLabel,
+    t,
+  ]);
 
   const billingBlocked =
     session?.billing?.status === "payment_required" ||
@@ -279,6 +317,8 @@ export default function AppDashboardPage() {
       currentPath="/app"
       navigationItems={visibleNav}
       isPosWorkspace={false}
+      canOpenPos={canOperatePos}
+      operatorLabel={operatorProfile.title}
       onLogout={status === "ready" ? () => void handleLogout() : undefined}
       locale={locale}
       onLocaleChange={setLocale}
@@ -306,7 +346,7 @@ export default function AppDashboardPage() {
         </section>
       ) : null}
 
-      {!billingBlocked ? <OperationalSummaryCards metrics={metrics} /> : null}
+      {!billingBlocked && metrics.length > 0 ? <OperationalSummaryCards metrics={metrics} /> : null}
 
       {!billingBlocked ? (
         <div className="trial-status-strip">
@@ -315,7 +355,9 @@ export default function AppDashboardPage() {
               ? t("dashboard.trialDaysRemaining").replace("{{days}}", String(trialDaysLeft))
               : t("dashboard.subscriptionActive")}
           </span>
-          <a href="/app/settings/branding">{t("dashboard.prepareEnvironment")}</a>
+          {canManageTenant ? (
+            <a href="/app/settings/branding">{t("dashboard.prepareEnvironment")}</a>
+          ) : null}
         </div>
       ) : null}
 
@@ -359,12 +401,18 @@ export default function AppDashboardPage() {
             activeOrderCount={activeOrderCount}
             ticketCount={tickets.length}
             inventoryAlertCount={inventoryAlerts.length}
+            canOperatePos={canOperatePos}
+            canOperateKds={canOperateKds}
+            canReadReports={canReadReports}
+            canManageInventory={canManageInventory}
           />
           <hr className="dashboard-divider" />
         </>
       ) : null}
 
-      {widgetPrefs.readiness && !billingBlocked ? (
+      {widgetPrefs.readiness &&
+      !billingBlocked &&
+      (canManageTenant || canManageCash || canOperatePos) ? (
         <OperationalReadinessPanel
           onboardingStatus={onboardingStatus}
           currentShift={currentShift}
@@ -372,6 +420,9 @@ export default function AppDashboardPage() {
           onOpenPos={() => {
             window.location.href = "/app/pos";
           }}
+          canManageOnboarding={canManageTenant}
+          canManageCash={canManageCash}
+          canOpenPos={canOperatePos}
         />
       ) : null}
 
@@ -390,7 +441,7 @@ export default function AppDashboardPage() {
             </div>
           </div>
           <div className="quick-links-grid">
-            {quickLinks.map((link) => (
+            {accessibleQuickLinks.map((link) => (
               <a className="quick-link-card" href={link.href} key={link.href}>
                 <link.icon size={24} style={{ color: link.color }} />
                 <strong>{t(link.labelKey)}</strong>

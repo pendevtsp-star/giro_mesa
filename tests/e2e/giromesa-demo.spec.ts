@@ -128,8 +128,15 @@ test.describe("GiroMesa commercial and operational flows", () => {
     const table = ((await tables.json()).data as { id: string; code: string }[])[0];
     expect(table?.id).toBeTruthy();
 
+    const currentFloorPlan = await api.get(`/api/v1/pos/floor-plan?branchId=${context.branchId}`);
+    expect(currentFloorPlan.ok()).toBe(true);
+    const currentFloorPlanPayload = (await currentFloorPlan.json()) as { version: number };
     const floorPlan = await api.patch("/api/v1/pos/floor-plan", {
-      data: { branchId: context.branchId, layout: { [table.id]: { x: 18, y: 24 } } },
+      data: {
+        branchId: context.branchId,
+        expectedVersion: currentFloorPlanPayload.version,
+        layout: { [table.id]: { x: 18, y: 24 } },
+      },
     });
     expect(floorPlan.ok()).toBe(true);
     const floorPlanRead = await api.get(`/api/v1/pos/floor-plan?branchId=${context.branchId}`);

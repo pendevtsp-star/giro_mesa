@@ -127,11 +127,7 @@ export class PosRepository {
       .select({ id: floorPlans.id, version: floorPlans.version })
       .from(floorPlans)
       .where(
-        and(
-          eq(floorPlans.tenantId, context.tenantId),
-          eq(floorPlans.branchId, input.branchId),
-          eq(floorPlans.name, "Salão principal"),
-        ),
+        and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, input.branchId)),
       )
       .limit(1);
     let plan: typeof floorPlans.$inferSelect | undefined;

@@ -14,6 +14,7 @@ import { calculateOrderTotal } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
+import { enqueueClubWhiskyProductUpdated } from "../integrations/club-whisky-events";
 
 export type CreateCategoryInput = {
   branchId?: string | undefined;
@@ -187,69 +188,95 @@ export class CatalogService {
   }
 
   async createProduct(context: TenantContext, input: CreateProductInput) {
-    const [product] = await this.database.db
-      .insert(products)
-      .values({
-        tenantId: context.tenantId,
-        categoryId: input.categoryId,
-        name: input.name,
-        description: input.description,
-        sku: input.sku,
-        priceCents: input.priceCents,
-        costCents: input.costCents ?? 0,
-        imageUrl: input.imageUrl,
-        isAvailable: input.isAvailable ?? true,
-        isClubEligible: input.isClubEligible ?? false,
-        bottleVolumeMl: input.bottleVolumeMl,
-        defaultDoseMl: input.defaultDoseMl ?? 50,
-        spiritType: input.spiritType,
-        channels: input.channels ?? ["pos", "qr"],
-        fiscalNcm: input.fiscalNcm,
-        fiscalCfop: input.fiscalCfop,
-        fiscalCest: input.fiscalCest,
-        fiscalOrigin: input.fiscalOrigin,
-        fiscalCst: input.fiscalCst,
-        fiscalCsosn: input.fiscalCsosn,
-      })
-      .returning();
+    return this.database.db.transaction(async (tx) => {
+      const [product] = await tx
+        .insert(products)
+        .values({
+          tenantId: context.tenantId,
+          categoryId: input.categoryId,
+          name: input.name,
+          description: input.description,
+          sku: input.sku,
+          priceCents: input.priceCents,
+          costCents: input.costCents ?? 0,
+          imageUrl: input.imageUrl,
+          isAvailable: input.isAvailable ?? true,
+          isClubEligible: input.isClubEligible ?? false,
+          bottleVolumeMl: input.bottleVolumeMl,
+          defaultDoseMl: input.defaultDoseMl ?? 50,
+          spiritType: input.spiritType,
+          channels: input.channels ?? ["pos", "qr"],
+          fiscalNcm: input.fiscalNcm,
+          fiscalCfop: input.fiscalCfop,
+          fiscalCest: input.fiscalCest,
+          fiscalOrigin: input.fiscalOrigin,
+          fiscalCst: input.fiscalCst,
+          fiscalCsosn: input.fiscalCsosn,
+        })
+        .returning();
 
-    return product;
+      if (!product) {
+        throw new Error("Failed to create product");
+      }
+
+      if (product.isClubEligible) {
+        await enqueueClubWhiskyProductUpdated(tx, context, product, "created");
+      }
+
+      return product;
+    });
   }
 
   async updateProduct(context: TenantContext, productId: string, input: UpdateProductInput) {
-    const [product] = await this.database.db
-      .update(products)
-      .set({
-        ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.sku !== undefined ? { sku: input.sku } : {}),
-        ...(input.priceCents !== undefined ? { priceCents: input.priceCents } : {}),
-        ...(input.costCents !== undefined ? { costCents: input.costCents } : {}),
-        ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.isAvailable !== undefined ? { isAvailable: input.isAvailable } : {}),
-        ...(input.isClubEligible !== undefined ? { isClubEligible: input.isClubEligible } : {}),
-        ...(input.bottleVolumeMl !== undefined ? { bottleVolumeMl: input.bottleVolumeMl } : {}),
-        ...(input.defaultDoseMl !== undefined ? { defaultDoseMl: input.defaultDoseMl } : {}),
-        ...(input.spiritType !== undefined ? { spiritType: input.spiritType } : {}),
-        ...(input.channels !== undefined ? { channels: input.channels } : {}),
-        ...(input.fiscalNcm !== undefined ? { fiscalNcm: input.fiscalNcm } : {}),
-        ...(input.fiscalCfop !== undefined ? { fiscalCfop: input.fiscalCfop } : {}),
-        ...(input.fiscalCest !== undefined ? { fiscalCest: input.fiscalCest } : {}),
-        ...(input.fiscalOrigin !== undefined ? { fiscalOrigin: input.fiscalOrigin } : {}),
-        ...(input.fiscalCst !== undefined ? { fiscalCst: input.fiscalCst } : {}),
-        ...(input.fiscalCsosn !== undefined ? { fiscalCsosn: input.fiscalCsosn } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(products.tenantId, context.tenantId), eq(products.id, productId)))
-      .returning();
+    return this.database.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ isClubEligible: products.isClubEligible })
+        .from(products)
+        .where(and(eq(products.tenantId, context.tenantId), eq(products.id, productId)))
+        .limit(1);
 
-    if (!product) {
-      throw new NotFoundException("Product not found");
-    }
+      if (!existing) {
+        throw new NotFoundException("Product not found");
+      }
 
-    return product;
+      const [product] = await tx
+        .update(products)
+        .set({
+          ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.sku !== undefined ? { sku: input.sku } : {}),
+          ...(input.priceCents !== undefined ? { priceCents: input.priceCents } : {}),
+          ...(input.costCents !== undefined ? { costCents: input.costCents } : {}),
+          ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+          ...(input.isAvailable !== undefined ? { isAvailable: input.isAvailable } : {}),
+          ...(input.isClubEligible !== undefined ? { isClubEligible: input.isClubEligible } : {}),
+          ...(input.bottleVolumeMl !== undefined ? { bottleVolumeMl: input.bottleVolumeMl } : {}),
+          ...(input.defaultDoseMl !== undefined ? { defaultDoseMl: input.defaultDoseMl } : {}),
+          ...(input.spiritType !== undefined ? { spiritType: input.spiritType } : {}),
+          ...(input.channels !== undefined ? { channels: input.channels } : {}),
+          ...(input.fiscalNcm !== undefined ? { fiscalNcm: input.fiscalNcm } : {}),
+          ...(input.fiscalCfop !== undefined ? { fiscalCfop: input.fiscalCfop } : {}),
+          ...(input.fiscalCest !== undefined ? { fiscalCest: input.fiscalCest } : {}),
+          ...(input.fiscalOrigin !== undefined ? { fiscalOrigin: input.fiscalOrigin } : {}),
+          ...(input.fiscalCst !== undefined ? { fiscalCst: input.fiscalCst } : {}),
+          ...(input.fiscalCsosn !== undefined ? { fiscalCsosn: input.fiscalCsosn } : {}),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(products.tenantId, context.tenantId), eq(products.id, productId)))
+        .returning();
+
+      if (!product) {
+        throw new NotFoundException("Product not found");
+      }
+
+      if (existing.isClubEligible || product.isClubEligible) {
+        await enqueueClubWhiskyProductUpdated(tx, context, product, "updated");
+      }
+
+      return product;
+    });
   }
 
   async getPublicMenu(tenantSlug: string) {

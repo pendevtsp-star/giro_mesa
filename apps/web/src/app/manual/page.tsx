@@ -272,7 +272,7 @@ export default function ManualPage() {
         ))}
       </section>
 
-      <section className="manual-support">
+      <section className="manual-support" id="suporte">
         <LifeBuoy size={22} />
         <div>
           <h2>Ao pedir suporte</h2>

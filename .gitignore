@@ -5,6 +5,7 @@ node_modules/
 # Builds
 dist/
 .next/
+**/.next-e2e/
 .turbo/
 **/.turbo/
 coverage/
@@ -37,6 +38,7 @@ artifacts/
 
 # Logs
 *.log
+*.err
 npm-debug.log*
 pnpm-debug.log*
 

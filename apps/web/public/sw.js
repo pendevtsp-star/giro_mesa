@@ -1,7 +1,7 @@
-const _CACHE_NAME = "giromesa-v1";
-const STATIC_CACHE = "giromesa-static-v1";
+const _CACHE_NAME = "giromesa-v2";
+const STATIC_CACHE = "giromesa-static-v2";
 
-const STATIC_ASSETS = ["/", "/login", "/icon.png", "/offline"];
+const STATIC_ASSETS = ["/", "/login", "/icon.png", "/images/giromesa-symbol.svg", "/offline"];
 
 const API_CACHE = "giromesa-api-v1";
 

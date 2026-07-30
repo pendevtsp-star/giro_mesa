@@ -354,7 +354,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   }
 
   return (
-    <main className="app-layout platform-detail-page">
+    <main className="app-layout app-layout-night platform-detail-page">
       <aside className="sidebar">
         <a className="brand" href="/platform">
           <span className="brand-mark">G</span>

@@ -2,7 +2,7 @@
 import { LayoutGrid, Link2, Plus, Save, Undo2, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { FloorWorkspace } from "../../../features/floor/FloorWorkspace";
-import { moveTablesInLayout } from "../../../features/floor/salon-layout";
+import { arrangeTablesForMerge, moveTablesInLayout } from "../../../features/floor/salon-layout";
 import { TableActionPopup } from "../../../features/floor/TableActionPopup";
 import {
   acknowledgeServiceRequest,
@@ -21,8 +21,9 @@ import {
 } from "../../../lib/giromesa-api";
 
 type Position = { x: number; y: number };
-const TABLE_W = 150;
-const _TABLE_GAP = 12;
+const TABLE_W = 175;
+const TABLE_H = 136;
+const TABLE_GAP = 12;
 const GROUP_COLORS = ["#f97316", "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6", "#f43f5e"];
 
 function groupColor(groupId: string): string {
@@ -61,7 +62,6 @@ export default function SalonPage() {
 
   // Drag state
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const dragRef = useRef({
     startX: 0,
     startY: 0,
@@ -205,9 +205,10 @@ export default function SalonPage() {
   }, []);
 
   // === Table drag ===
-  const CLICK_THRESHOLD = 5;
+  const CLICK_THRESHOLD = 10;
 
   function handleTablePointerDown(e: React.PointerEvent<HTMLButtonElement>, table: DiningTable) {
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -235,7 +236,8 @@ export default function SalonPage() {
   }
 
   const handleDragMove = useCallback(
-    (e: React.PointerEvent) => {
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
       if (!draggingId) return;
 
       const dx = Math.abs(e.clientX - dragRef.current.startX);
@@ -253,81 +255,70 @@ export default function SalonPage() {
       dragRef.current.lastX = e.clientX;
       dragRef.current.lastY = e.clientY;
 
-      setLayout((currentLayout) => {
-        const nextLayout = moveTablesInLayout(currentLayout, tables, draggingId, delta);
-        const dragged = tables.find((table) => table.id === draggingId);
-        const draggedPosition = nextLayout[draggingId];
-        if (!dragged || !draggedPosition) return nextLayout;
-
-        let closest: string | null = null;
-        let minDist = Infinity;
-        tables.forEach((table, index) => {
-          if (table.id === draggingId || (dragged.groupId && table.groupId === dragged.groupId)) {
-            return;
-          }
-          const position = nextLayout[table.id] ?? {
-            x: (index % 4) * 24 + 4,
-            y: Math.floor(index / 4) * 28 + 4,
-          };
-          const dist = Math.hypot(
-            ((position.x - draggedPosition.x) / 100) * board.clientWidth,
-            ((position.y - draggedPosition.y) / 100) * board.clientHeight,
-          );
-          if (dist < 150 && dist < minDist) {
-            minDist = dist;
-            closest = table.id;
-          }
-        });
-        setDropTargetId(closest);
-        return nextLayout;
-      });
+      setLayout((currentLayout) =>
+        moveTablesInLayout(currentLayout, tables, draggingId, delta, {
+          maxX: Math.max(0, 100 - (TABLE_W / board.clientWidth) * 100),
+          maxY: Math.max(0, 100 - (TABLE_H / board.clientHeight) * 100),
+        }),
+      );
     },
     [draggingId, scale, tables],
   );
 
-  const handleMergeDrop = useCallback(
-    async (dragId: string, targetId: string) => {
-      if (!branchId) return;
+  const arrangeAndPersistMergedTables = useCallback(
+    async (tableIds: string[], successMessage: string) => {
+      const board = containerRef.current;
+      if (!board || !branchId) return;
+      const nextLayout = arrangeTablesForMerge(layout, tableIds, {
+        width: board.clientWidth,
+        height: board.clientHeight,
+        tableWidth: TABLE_W,
+        tableHeight: TABLE_H,
+        gap: TABLE_GAP,
+      });
+      setLayoutHistory((history) => [...history.slice(-19), layout]);
+      setLayout(nextLayout);
+
       try {
-        const result = await mergeTables(branchId, [dragId, targetId]);
-        setTables(result.data);
-        setMessage(
-          `${tables.find((t) => t.id === dragId)?.code} e ${tables.find((t) => t.id === targetId)?.code} foram juntadas.`,
-        );
+        const saved = await saveFloorPlan(branchId, nextLayout, planVersion);
+        setPlanVersion(saved.version);
+        setSavedLayout(nextLayout);
+        setLayoutHistory([]);
+        setMessage(successMessage);
       } catch {
-        setMessage("Erro ao juntar mesas.");
+        setMessage(`${successMessage} A posição ficou pendente; use “Salvar mapa”.`);
       }
     },
-    [branchId, tables],
+    [branchId, layout, planVersion],
   );
 
   const handleDragUp = useCallback(
-    (e: React.PointerEvent) => {
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
       if (!draggingId) return;
       const wasClick = !dragRef.current.wasDrag;
       const tableId = dragRef.current.tableId;
 
       setDraggingId(null);
-      setDropTargetId(null);
 
       if (wasClick) {
         setLayoutHistory((history) => history.slice(0, -1));
         // Click - show popup
         const table = tables.find((t) => t.id === tableId);
         if (table) {
-          const rect = (e.target as HTMLElement).closest(".salon-table")?.getBoundingClientRect();
-          if (rect) {
-            setPopupTable(table);
-            setPopupPos({ x: rect.right + 8, y: rect.top });
-          }
+          const rect = e.currentTarget.getBoundingClientRect();
+          setPopupTable(table);
+          setPopupPos({ x: rect.right + 8, y: rect.top });
         }
-      } else if (dropTargetId) {
-        // Drag onto another table - merge
-        handleMergeDrop(draggingId, dropTargetId);
       }
     },
-    [draggingId, tables, dropTargetId, handleMergeDrop],
+    [draggingId, tables],
   );
+
+  const handleDragCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    setDraggingId(null);
+  }, []);
 
   // === Popup actions ===
   const handlePopupAction = useCallback(
@@ -389,11 +380,15 @@ export default function SalonPage() {
   async function confirmMerge() {
     if (selectedTables.size < 2 || !branchId) return;
     try {
-      const result = await mergeTables(branchId, Array.from(selectedTables));
+      const tableIds = Array.from(selectedTables);
+      const result = await mergeTables(branchId, tableIds);
       setTables(result.data);
       setMergeMode(false);
       setSelectedTables(new Set());
-      setMessage(`${selectedTables.size} mesas juntadas com sucesso.`);
+      await arrangeAndPersistMergedTables(
+        tableIds,
+        `${tableIds.length} mesas juntadas, alinhadas e salvas.`,
+      );
     } catch {
       setMessage("Erro ao juntar mesas.");
     }
@@ -616,18 +611,9 @@ export default function SalonPage() {
         }}
         onWheel={handleWheel}
         onPointerDown={handlePanPointerDown}
-        onPointerMove={(e) => {
-          handlePanPointerMove(e);
-          handleDragMove(e);
-        }}
-        onPointerUp={(e) => {
-          handlePanPointerUp();
-          handleDragUp(e);
-        }}
-        onPointerCancel={(e) => {
-          handlePanPointerUp();
-          handleDragUp(e);
-        }}
+        onPointerMove={handlePanPointerMove}
+        onPointerUp={handlePanPointerUp}
+        onPointerCancel={handlePanPointerUp}
         onDragOver={(event) => event.preventDefault()}
       >
         <div
@@ -670,29 +656,28 @@ export default function SalonPage() {
             const x = layout[table.id]?.x ?? (index % 4) * 24 + 4;
             const y = layout[table.id]?.y ?? Math.floor(index / 4) * 28 + 4;
             const isSelected = selectedTables.has(table.id);
-            const isDropTarget = dropTargetId === table.id;
             const gColor = table.groupId ? groupColor(table.groupId) : undefined;
 
             return (
               <button
                 key={table.id}
                 type="button"
+                data-table-id={table.id}
                 className={`salon-table salon-positioned ${tones[table.status] ?? "reserved"} ${isSelected ? "selected" : ""}`}
                 style={{
                   left: `${x}%`,
                   top: `${y}%`,
                   borderColor: gColor,
-                  boxShadow: isDropTarget
-                    ? "0 0 0 3px #f97316, 0 0 0 6px #f9731640"
-                    : table.groupId
-                      ? `0 0 0 2px ${gColor}20`
-                      : undefined,
+                  boxShadow: table.groupId ? `0 0 0 2px ${gColor}20` : undefined,
                   outline: isSelected ? "3px solid #f97316" : undefined,
                   outlineOffset: isSelected ? "3px" : undefined,
                   opacity: draggingId === table.id ? 0.6 : 1,
                   transition: draggingId ? "none" : "opacity 150ms",
                 }}
                 onPointerDown={(e) => handleTablePointerDown(e, table)}
+                onPointerMove={handleDragMove}
+                onPointerUp={handleDragUp}
+                onPointerCancel={handleDragCancel}
                 onKeyDown={(event) => {
                   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
                     event.preventDefault();
@@ -749,7 +734,7 @@ export default function SalonPage() {
                       right: -8,
                       padding: "2px 6px",
                       borderRadius: 4,
-                      color: "#fff",
+                      color: "#07111b",
                       fontSize: "0.6rem",
                       fontWeight: 800,
                     }}
@@ -801,7 +786,7 @@ export default function SalonPage() {
             flexDirection: "column",
             gap: 4,
             zIndex: 50,
-            background: "#fff",
+            background: "var(--surface)",
             borderRadius: 10,
             boxShadow: "0 2px 12px rgba(0,0,0,0.1)",
             overflow: "hidden",

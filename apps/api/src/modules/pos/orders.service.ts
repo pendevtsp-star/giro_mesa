@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { DatabaseService } from "../database/database.service";
 import { FiscalService } from "../fiscal/fiscal.service";
+import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/club-whisky-events";
 import { createPrintProvider } from "../printing/print-provider";
 import { OrderRepository } from "./order.repository";
 import { PosRepository } from "./pos.repository";
@@ -469,6 +470,7 @@ export class OrdersService {
       );
 
       let stockMovementsCreated = 0;
+      const changedInventoryItemIds = new Set<string>();
       for (const item of activeItems) {
         const recipe = productRecipes.find((entry) => entry.productId === item.productId);
         if (!recipe) {
@@ -492,8 +494,15 @@ export class OrdersService {
             tx,
           );
           stockMovementsCreated += 1;
+          changedInventoryItemIds.add(ingredient.inventoryItemId);
         }
       }
+
+      await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
+        branchId: order.branchId,
+        inventoryItemIds: [...changedInventoryItemIds],
+        movementType: "sale",
+      });
 
       if (order.tableId) {
         await this.orderRepository.updateDiningTable(

@@ -36,17 +36,32 @@ export function readOperatorProfile(permissions: string[]): OperatorProfile {
   const canReadReports = permissions.includes("reports:read");
   const canManageCash = permissions.includes("cash:manage");
   const canOperatePos = permissions.includes("pos:operate");
+  const canOperateKds = permissions.includes("kds:operate");
   const canManageInventory = permissions.includes("inventory:manage");
+  const canManageApprovals = permissions.includes("approvals:manage");
 
-  if (canManageTenant || canReadReports) {
+  if (canManageTenant) {
     return {
       kicker: "Perfil recomendado",
-      title: "Dono ou gerente",
+      title: "Dono ou administrador",
       description: "Priorize relatórios, equipe, configurações e indicadores do turno.",
       actions: [
-        { label: "Ver relatórios", href: "/app/reports" },
+        ...(canReadReports ? [{ label: "Ver relatórios", href: "/app/reports" }] : []),
         { label: "Equipe", href: "/app/team" },
         { label: "Personalizar", href: "/app/settings/branding" },
+      ],
+    };
+  }
+
+  if (canManageApprovals) {
+    return {
+      kicker: "Perfil recomendado",
+      title: "Gerente",
+      description: "Acompanhe o salão, indicadores e políticas de aprovação do turno.",
+      actions: [
+        ...(canOperatePos ? [{ label: "Abrir salão", href: "/app/salon" }] : []),
+        ...(canReadReports ? [{ label: "Ver relatórios", href: "/app/reports" }] : []),
+        { label: "Políticas", href: "/app/settings/operation" },
       ],
     };
   }
@@ -57,9 +72,18 @@ export function readOperatorProfile(permissions: string[]): OperatorProfile {
       title: "Caixa",
       description: "Acompanhe pagamentos, pré-contas, fechamento e pendências fiscais.",
       actions: [
-        { label: "Fechar turno", href: "/app#caixa" },
-        { label: "Relatórios", href: "/app/reports" },
+        { label: "Abrir caixa", href: "/app/cash" },
+        ...(canReadReports ? [{ label: "Relatórios", href: "/app/reports" }] : []),
       ],
+    };
+  }
+
+  if (canOperateKds) {
+    return {
+      kicker: "Perfil recomendado",
+      title: "Cozinha ou bar",
+      description: "Acompanhe a fila de produção e sinalize os itens prontos para o salão.",
+      actions: [{ label: "Abrir KDS", href: "/app/kds" }],
     };
   }
 
@@ -70,7 +94,7 @@ export function readOperatorProfile(permissions: string[]): OperatorProfile {
       description: "Use a tela mobile para abrir mesa, lançar itens e enviar para a cozinha.",
       actions: [
         { label: "Modo garçom", href: "/app/waiter" },
-        { label: "QR mesa M03", href: "/q/M03" },
+        { label: "Abrir salão", href: "/app/salon" },
       ],
     };
   }
@@ -80,7 +104,7 @@ export function readOperatorProfile(permissions: string[]): OperatorProfile {
       kicker: "Perfil recomendado",
       title: "Estoque",
       description: "Revise alertas, ficha tecnica e movimentos auditados.",
-      actions: [{ label: "Ver estoque", href: "/app#estoque" }],
+      actions: [{ label: "Ver estoque", href: "/app/inventory" }],
     };
   }
 

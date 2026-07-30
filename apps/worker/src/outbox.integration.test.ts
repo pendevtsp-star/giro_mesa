@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import * as schema from "@giromesa/db";
 import { integrationAccounts, outboxEvents, tenants } from "@giromesa/db";
@@ -33,6 +34,8 @@ runIntegration("club whisky outbox publisher", () => {
   let db: Db;
   let server: Server;
   let receivedPayload: Record<string, unknown> | undefined;
+  let receivedHeaders: Record<string, string | string[] | undefined> | undefined;
+  let receivedRawBody: string | undefined;
   let tenantId: string;
 
   beforeAll(async () => {
@@ -45,6 +48,8 @@ runIntegration("club whisky outbox publisher", () => {
         body += chunk.toString();
       });
       request.on("end", () => {
+        receivedHeaders = request.headers;
+        receivedRawBody = body;
         receivedPayload = JSON.parse(body);
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({ ok: true }));
@@ -53,7 +58,7 @@ runIntegration("club whisky outbox publisher", () => {
 
     const port = await listen(server);
     process.env.CLUB_WHISKY_API_BASE_URL = `http://127.0.0.1:${port}`;
-    process.env.CLUB_WHISKY_API_KEY = "worker-test-api-key";
+    process.env.CLUB_WHISKY_WEBHOOK_SECRET = "worker-test-webhook-secret";
   });
 
   afterAll(async () => {
@@ -87,8 +92,11 @@ runIntegration("club whisky outbox publisher", () => {
       tenantId,
       provider: "club_whisky",
       status: "active",
-      config: { scopes: ["events:read"] },
-      secretRef: "CLUB_WHISKY_API_KEY",
+      config: {
+        scopes: ["events:read"],
+        remoteClientId: "dose-club-tenant-a",
+      },
+      secretRef: "CLUB_WHISKY_WEBHOOK_SECRET",
     });
 
     const [event] = await db
@@ -114,6 +122,20 @@ runIntegration("club whisky outbox publisher", () => {
 
     expect(result.scanned).toBeGreaterThanOrEqual(1);
     expect(receivedPayload?.id).toBe(event.id);
+    expect(receivedPayload?.event).toBe("club.stock_movement.created");
+    expect(receivedPayload?.contractVersion).toBe("2026-07-30");
+    expect(receivedPayload?.correlationId).toBe(event.id);
+    expect(receivedPayload?.data).toEqual({ movementType: "club_bottle_sale" });
+    expect(receivedPayload).not.toHaveProperty("tenantId");
+    expect(receivedHeaders?.["x-giromesa-client-id"]).toBe("dose-club-tenant-a");
+    expect(receivedHeaders?.["x-giromesa-contract-version"]).toBe("2026-07-30");
+    expect(receivedHeaders?.["x-giromesa-correlation-id"]).toBe(event.id);
+    expect(receivedHeaders?.["x-giromesa-event-id"]).toBe(event.id);
+    expect(receivedHeaders?.["x-giromesa-signature"]).toBe(
+      `sha256=${createHmac("sha256", "worker-test-webhook-secret")
+        .update(receivedRawBody ?? "")
+        .digest("hex")}`,
+    );
     expect(storedEvent?.status).toBe("processed");
     expect(storedEvent?.processedAt).toBeInstanceOf(Date);
   });

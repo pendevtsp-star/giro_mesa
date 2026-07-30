@@ -61,10 +61,38 @@ test.describe("Auth: login flow", () => {
     await page.goto("/login", { waitUntil: "networkidle" });
 
     await page.locator('input[name="email"]').fill(adminEmail);
-    // The reset button is a <button type="button"> with ghost class
-    await page.locator('button.ghost[type="button"]').last().click();
+    await page.getByRole("button", { name: /reset de senha/i }).click();
 
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByRole("status")).toContainText("Solicitação registrada", {
+      timeout: 8_000,
+    });
+  });
+
+  test("guides an empty reset request without calling the API", async ({ page }) => {
+    await page.goto("/login", { waitUntil: "networkidle" });
+    let resetRequests = 0;
+    page.on("request", (request) => {
+      if (request.url().includes("/api/v1/auth/password/reset/request")) resetRequests += 1;
+    });
+
+    await page.getByRole("button", { name: /reset de senha/i }).click();
+
+    await expect(page.locator(".form-alert[role='alert']")).toContainText(
+      "Digite um e-mail válido",
+    );
+    expect(resetRequests).toBe(0);
+  });
+
+  test("opens the in-product support center instead of the email client", async ({ page }) => {
+    await page.goto("/login", { waitUntil: "networkidle" });
+    const supportLink = page.getByRole("link", { name: "Suporte" });
+    await expect(supportLink).toHaveAttribute("href", "/suporte");
+
+    await supportLink.click();
+    await expect(page).toHaveURL(/\/suporte$/);
+    await expect(
+      page.getByRole("heading", { name: "Resolva o acesso sem sair do GiroMesa." }),
+    ).toBeVisible();
   });
 
   test("resets password via token link", async ({ page }) => {
@@ -96,5 +124,17 @@ test.describe("Auth: login flow", () => {
     await expect(page).toHaveURL(/\/login/);
     // Verify the login form is visible
     await expect(page.getByTestId("login-submit")).toBeVisible();
+  });
+
+  test("shows connected session as status instead of a login link", async ({ page }) => {
+    await skipWhenApiUnavailable();
+    await authenticateBrowserPage(page);
+
+    await expect(page.getByRole("status", { name: "Sessão conectada" })).toHaveText("Conectado");
+    await expect(page.getByRole("link", { name: "Sessão ativa" })).toHaveCount(0);
+    await expect(page.locator(".sidebar .brand-mark")).toHaveCSS(
+      "background-image",
+      /giromesa-symbol\.svg/,
+    );
   });
 });

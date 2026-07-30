@@ -33,6 +33,7 @@ import {
   ApprovalsService,
 } from "../approvals/approvals.service";
 import { DatabaseService } from "../database/database.service";
+import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/club-whisky-events";
 import { appendCancellationNotice, buildStockReversals } from "./cancellation-propagation";
 import { CashService } from "./cash.service";
 import { decideDiscountFlow, requiresCancellationApproval } from "./operational-exceptions";
@@ -1059,6 +1060,11 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
                 reason: `Estorno do item cancelado ${item.id}`,
               })),
             );
+            await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
+              branchId: order.branchId,
+              inventoryItemIds: reversals.map((reversal) => reversal.inventoryItemId),
+              movementType: "sale_reversal",
+            });
           }
         }
 

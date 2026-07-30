@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeDollarSign, Bell, LogOut } from "lucide-react";
+import { BadgeDollarSign, CircleCheck, LogOut } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AppStatus } from "../../features/dashboard/dashboard-types";
 import type { TenantBranding } from "../../lib/giromesa-api";
@@ -17,6 +17,8 @@ export function AppShell({
   currentPath,
   navigationItems,
   isPosWorkspace,
+  canOpenPos,
+  operatorLabel,
   onLogout,
   locale,
   onLocaleChange,
@@ -29,13 +31,14 @@ export function AppShell({
   currentPath: string;
   navigationItems: readonly AppNavigationItem[];
   isPosWorkspace: boolean;
+  canOpenPos: boolean;
+  operatorLabel: string;
   onLogout?: (() => void) | undefined;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const brandingInitial = branding.displayName.slice(0, 1).toUpperCase() || "G";
 
   return (
     <main
@@ -64,7 +67,7 @@ export function AppShell({
                   aria-hidden="true"
                 />
               ) : (
-                brandingInitial
+                <span className="tenant-logo brand-symbol" aria-hidden="true" />
               )}
             </span>
             <div>
@@ -88,25 +91,33 @@ export function AppShell({
                     className="user-avatar-logo"
                   />
                 ) : (
-                  <span className="user-avatar-initial">{brandingInitial}</span>
+                  <span className="user-avatar-logo brand-symbol" aria-hidden="true" />
                 )}
               </div>
               <div className="user-avatar-info">
                 <span className="user-avatar-name">{branding.displayName}</span>
-                <span className="user-avatar-role">Operador</span>
+                <span className="user-avatar-role">{operatorLabel}</span>
               </div>
             </div>
-            <a className="button secondary" href="/login">
-              <Bell size={18} /> {status === "ready" ? "Sessão ativa" : "Entrar"}
-            </a>
+            {status === "ready" ? (
+              <span className="session-status" role="status" aria-label="Sessão conectada">
+                <CircleCheck size={17} /> Conectado
+              </span>
+            ) : (
+              <a className="button secondary" href="/login">
+                Entrar
+              </a>
+            )}
             {status === "ready" && onLogout && (
               <button className="button secondary" type="button" onClick={onLogout}>
                 <LogOut size={18} /> Sair
               </button>
             )}
-            <a className="button primary" href="/app/pos" data-testid="open-pos">
-              <BadgeDollarSign size={18} /> Abrir PDV
-            </a>
+            {status === "ready" && canOpenPos ? (
+              <a className="button primary" href="/app/pos" data-testid="open-pos">
+                <BadgeDollarSign size={18} /> Abrir PDV
+              </a>
+            ) : null}
           </div>
         </header>
 
@@ -133,7 +144,7 @@ export function AppShell({
           />
         ) : null}
 
-        {children}
+        {status === "ready" ? children : null}
       </section>
     </main>
   );

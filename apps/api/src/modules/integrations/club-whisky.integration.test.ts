@@ -14,13 +14,15 @@ import {
   tenants,
   webhookEvents,
 } from "@giromesa/db";
-import { ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createIntegrationApiKey } from "../../common/integration-key";
+import { CatalogService } from "../catalog/catalog.service";
 import type { DatabaseService } from "../database/database.service";
+import { InventoryService } from "../inventory/inventory.service";
 import { ClubWhiskyService } from "./club-whisky.service";
 import { IntegrationAuthService } from "./integration-auth.service";
 
@@ -202,8 +204,10 @@ async function createTenantFixture(
 runIntegration("club whisky integration database behavior", () => {
   let pool: Pool;
   let db: Db;
+  let catalogService: CatalogService;
   let clubWhiskyService: ClubWhiskyService;
   let integrationAuthService: IntegrationAuthService;
+  let inventoryService: InventoryService;
   let tenantA: Awaited<ReturnType<typeof createTenantFixture>>;
   let tenantB: Awaited<ReturnType<typeof createTenantFixture>>;
 
@@ -211,8 +215,10 @@ runIntegration("club whisky integration database behavior", () => {
     pool = new Pool({ connectionString: databaseUrl });
     db = drizzle(pool, { schema });
     const databaseService = { db } as DatabaseService;
+    catalogService = new CatalogService(databaseService);
     clubWhiskyService = new ClubWhiskyService(databaseService);
     integrationAuthService = new IntegrationAuthService(databaseService);
+    inventoryService = new InventoryService(databaseService);
 
     tenantA = await createTenantFixture(db, {
       slug: `club-it-a-${Date.now()}`,
@@ -224,6 +230,7 @@ runIntegration("club whisky integration database behavior", () => {
         "stock:read",
         "club_sales:write",
         "club_consumption:write",
+        "club_consumption:reverse",
         "customers:link",
       ],
     });
@@ -282,6 +289,7 @@ runIntegration("club whisky integration database behavior", () => {
     await expect(
       clubWhiskyService.registerClubSale(context, {
         branchId: tenantA.otherBranch.id,
+        saleType: "individual",
         productId: tenantA.product.id,
         quantityBottles: 1,
         externalClubId: "club-forbidden-branch",
@@ -290,7 +298,7 @@ runIntegration("club whisky integration database behavior", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it("keeps club sale idempotent and records dose consumption without double stock decrement", async () => {
+  it("records the commercial sale without stock movement and decrements only the served dose", async () => {
     const context = await integrationAuthService.resolveContext(
       { "x-giromesa-integration-key": tenantA.apiKey },
       "club_whisky",
@@ -299,6 +307,7 @@ runIntegration("club whisky integration database behavior", () => {
 
     const saleInput = {
       branchId: tenantA.mainBranch.id,
+      saleType: "individual" as const,
       productId: tenantA.product.id,
       quantityBottles: 1,
       externalClubId: "club-idempotent-sale",
@@ -326,17 +335,25 @@ runIntegration("club whisky integration database behavior", () => {
         ),
       );
 
-    expect(saleMovement?.count).toBe(1);
-    expect(Number(saleMovement?.total)).toBe(-1000);
+    expect(saleMovement?.count).toBe(0);
+    expect(Number(saleMovement?.total)).toBe(0);
 
-    await clubWhiskyService.registerDoseConsumption(context, {
+    const consumptionInput = {
       branchId: tenantA.mainBranch.id,
       productId: tenantA.product.id,
       externalClubId: "club-idempotent-sale",
       externalConsumptionId: "consumption-001",
       doseMl: 50,
       idempotencyKey: "club-dose-consumed-key",
-    });
+    };
+    const firstConsumption = await clubWhiskyService.registerDoseConsumption(
+      context,
+      consumptionInput,
+    );
+    const duplicateConsumption = await clubWhiskyService.registerDoseConsumption(
+      context,
+      consumptionInput,
+    );
 
     const [stockTotal] = await db
       .select({
@@ -366,8 +383,179 @@ runIntegration("club whisky integration database behavior", () => {
         ),
       );
 
-    expect(Number(stockTotal?.total)).toBe(0);
+    expect(
+      "stockQuantityEffect" in firstConsumption ? firstConsumption.stockQuantityEffect : undefined,
+    ).toBe(-50);
+    expect(duplicateConsumption.duplicate).toBe(true);
+    expect(Number(stockTotal?.total)).toBe(950);
     expect(doseMovement?.count).toBe(1);
-    expect(Number(doseMovement?.total)).toBe(0);
+    expect(Number(doseMovement?.total)).toBe(-50);
+
+    const reversal = await clubWhiskyService.reverseDoseConsumption(context, {
+      branchId: tenantA.mainBranch.id,
+      productId: tenantA.product.id,
+      externalClubId: "club-idempotent-sale",
+      externalConsumptionId: "consumption-001",
+      externalReversalId: "reversal-001",
+      originalIdempotencyKey: "club-dose-consumed-key",
+      doseMl: 50,
+      reason: "Lancamento operacional incorreto",
+      idempotencyKey: "club-dose-reversal-key",
+    });
+    const duplicateReversal = await clubWhiskyService.reverseDoseConsumption(context, {
+      branchId: tenantA.mainBranch.id,
+      productId: tenantA.product.id,
+      externalClubId: "club-idempotent-sale",
+      externalConsumptionId: "consumption-001",
+      externalReversalId: "reversal-001",
+      originalIdempotencyKey: "club-dose-consumed-key",
+      doseMl: 50,
+      reason: "Lancamento operacional incorreto",
+      idempotencyKey: "club-dose-reversal-key",
+    });
+
+    const [stockAfterReversal] = await db
+      .select({
+        total: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)`,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.branchId, tenantA.mainBranch.id),
+          eq(stockMovements.inventoryItemId, tenantA.inventoryItem.id),
+        ),
+      );
+
+    expect("stockQuantityEffect" in reversal ? reversal.stockQuantityEffect : undefined).toBe(50);
+    expect(duplicateReversal.duplicate).toBe(true);
+    expect(Number(stockAfterReversal?.total)).toBe(1000);
+  });
+
+  it("rejects an idempotency key reused with a different payload", async () => {
+    const context = await integrationAuthService.resolveContext(
+      { "x-giromesa-integration-key": tenantA.apiKey },
+      "club_whisky",
+      "club_sales:write",
+    );
+
+    await clubWhiskyService.registerClubSale(context, {
+      branchId: tenantA.mainBranch.id,
+      saleType: "individual",
+      productId: tenantA.product.id,
+      quantityBottles: 1,
+      externalClubId: "club-idempotency-conflict",
+      idempotencyKey: "club-idempotency-conflict-key",
+    });
+
+    await expect(
+      clubWhiskyService.registerClubSale(context, {
+        branchId: tenantA.mainBranch.id,
+        saleType: "individual",
+        productId: tenantA.product.id,
+        quantityBottles: 2,
+        externalClubId: "club-idempotency-conflict",
+        idempotencyKey: "club-idempotency-conflict-key",
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("serializes concurrent consumptions and never creates negative stock", async () => {
+    const context = await integrationAuthService.resolveContext(
+      { "x-giromesa-integration-key": tenantA.apiKey },
+      "club_whisky",
+      "club_consumption:write",
+    );
+
+    const results = await Promise.allSettled([
+      clubWhiskyService.registerDoseConsumption(context, {
+        branchId: tenantA.mainBranch.id,
+        productId: tenantA.product.id,
+        externalClubId: "club-concurrent",
+        externalConsumptionId: "consumption-concurrent-a",
+        doseMl: 600,
+        idempotencyKey: "club-concurrent-consumption-a",
+      }),
+      clubWhiskyService.registerDoseConsumption(context, {
+        branchId: tenantA.mainBranch.id,
+        productId: tenantA.product.id,
+        externalClubId: "club-concurrent",
+        externalConsumptionId: "consumption-concurrent-b",
+        doseMl: 600,
+        idempotencyKey: "club-concurrent-consumption-b",
+      }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")?.reason).toBeInstanceOf(
+      ConflictException,
+    );
+
+    const [stockTotal] = await db
+      .select({
+        total: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)`,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.branchId, tenantA.mainBranch.id),
+          eq(stockMovements.inventoryItemId, tenantA.inventoryItem.id),
+        ),
+      );
+
+    expect(Number(stockTotal?.total)).toBe(400);
+  });
+
+  it("emits transactional product and stock snapshots for an active Dose Club integration", async () => {
+    await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantA.tenant.id));
+
+    const context = {
+      tenantId: tenantA.tenant.id,
+      branchId: tenantA.mainBranch.id,
+      requestId: "club-producer-test",
+      permissions: ["catalog:manage", "inventory:manage"],
+    };
+
+    await catalogService.updateProduct(context, tenantA.product.id, {
+      priceCents: tenantA.product.priceCents + 100,
+    });
+
+    await inventoryService.adjustStock(context, {
+      branchId: tenantA.mainBranch.id,
+      inventoryItemId: tenantA.inventoryItem.id,
+      type: "manual_adjustment",
+      quantity: "25",
+      reason: "Ajuste para validar evento Dose Club",
+    });
+
+    const events = await db
+      .select({
+        topic: outboxEvents.topic,
+        payload: outboxEvents.payload,
+      })
+      .from(outboxEvents)
+      .where(eq(outboxEvents.tenantId, tenantA.tenant.id));
+
+    const productEvent = events.find((event) => event.topic === "product.updated");
+    const stockEvent = events.find((event) => event.topic === "stock.updated");
+
+    expect(productEvent?.payload).toMatchObject({
+      contractVersion: "2026-07-30",
+      correlationId: "club-producer-test",
+      productId: tenantA.product.id,
+      reason: "updated",
+    });
+    expect(stockEvent?.payload).toMatchObject({
+      contractVersion: "2026-07-30",
+      correlationId: "club-producer-test",
+      productId: tenantA.product.id,
+      branchId: tenantA.mainBranch.id,
+      inventoryItemId: tenantA.inventoryItem.id,
+      movementType: "manual_adjustment",
+      unit: "ml",
+    });
+    expect(Number(stockEvent?.payload.availableMl)).toBe(425);
   });
 });

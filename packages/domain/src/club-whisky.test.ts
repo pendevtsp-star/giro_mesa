@@ -18,6 +18,7 @@ describe("club whisky integration contract", () => {
     expect(clubWhiskyEventTopics).toContain("order.closed");
     expect(clubWhiskyEventTopics).toContain("payment.confirmed");
     expect(clubWhiskyEventTopics).toContain("customer.updated");
+    expect(clubWhiskyEventTopics).toContain("club.sale.registered");
     expect(clubWhiskyEventTopics).toContain("club.stock_movement.created");
   });
 });

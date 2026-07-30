@@ -9,9 +9,9 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/icon.png",
+      "src": "/images/giromesa-symbol.svg",
       "sizes": "any",
-      "type": "image/png",
+      "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ],

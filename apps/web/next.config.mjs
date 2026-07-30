@@ -7,6 +7,7 @@ const apiUrl = process.env.API_URL ?? "http://localhost:3333";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   transpilePackages: ["@giromesa/ui", "@giromesa/domain", "@giromesa/config"],
   typedRoutes: true,
   outputFileTracingRoot: path.join(dirname, "../.."),

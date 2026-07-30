@@ -7,6 +7,7 @@ const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testIgnore: ["**/debug-*.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

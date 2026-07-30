@@ -401,8 +401,8 @@
 }
 
 .branding-page[data-accent="amber"] {
-  --accent: #b97014;
-  --accent-strong: #83500d;
+  --accent: #facc15;
+  --accent-strong: #eab308;
 }
 
 .branding-page[data-accent="rose"] {

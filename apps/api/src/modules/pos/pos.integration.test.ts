@@ -284,6 +284,46 @@ runIntegration("POS QR conference behavior", () => {
     expect(current.version).toBe(1);
   });
 
+  it("updates a legacy floor plan without creating a second plan for the branch", async () => {
+    const context = {
+      tenantId: fixture.tenant.id,
+      branchId: fixture.otherBranch.id,
+      userId: fixture.user.id,
+      requestId: "legacy-floor-plan-name",
+      permissions: ["pos:operate"],
+    };
+    const [legacyPlan] = await db
+      .insert(floorPlans)
+      .values({
+        tenantId: fixture.tenant.id,
+        branchId: fixture.otherBranch.id,
+        name: "Mapa principal",
+        layout: {},
+        version: 3,
+      })
+      .returning();
+    expect(legacyPlan).toBeDefined();
+
+    const saved = await posService.saveFloorPlan(context, {
+      branchId: fixture.otherBranch.id,
+      expectedVersion: 3,
+      layout: { legacy: { x: 24, y: 32 } },
+    });
+    expect(saved.id).toBe(legacyPlan?.id);
+    expect(saved.version).toBe(4);
+
+    const plans = await db
+      .select()
+      .from(floorPlans)
+      .where(
+        and(
+          eq(floorPlans.tenantId, fixture.tenant.id),
+          eq(floorPlans.branchId, fixture.otherBranch.id),
+        ),
+      );
+    expect(plans).toHaveLength(1);
+  });
+
   it("cancels a single QR item, keeps the order pending and sends only active items to KDS", async () => {
     const context = {
       tenantId: fixture.tenant.id,

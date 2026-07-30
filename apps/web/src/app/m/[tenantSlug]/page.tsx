@@ -55,22 +55,26 @@ const fallbackMenu: PublicMenuResponse = {
 export default function MenuPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = use(params);
   const [menu, setMenu] = useState<PublicMenuResponse>(fallbackMenu);
+  const [isLoadingMenu, setIsLoadingMenu] = useState(true);
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState("all");
   const [visibleCount, setVisibleCount] = useState(20);
 
   useEffect(() => {
     let ignore = false;
+    setIsLoadingMenu(true);
     getPublicMenu(tenantSlug)
       .then((response) => {
         if (!ignore) {
           setMenu(response);
           setCategoryId("all");
+          setIsLoadingMenu(false);
         }
       })
       .catch(() => {
         if (!ignore) {
           setMenu(fallbackMenu);
+          setIsLoadingMenu(false);
         }
       });
 
@@ -137,6 +141,8 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
               className={categoryId === category.id ? "filter active" : "filter"}
               type="button"
               key={category.id}
+              disabled={isLoadingMenu}
+              aria-busy={isLoadingMenu}
               onClick={() => {
                 setCategoryId(category.id);
                 setVisibleCount(20);

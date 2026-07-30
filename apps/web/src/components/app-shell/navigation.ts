@@ -1,5 +1,6 @@
 import {
   Banknote,
+  Cable,
   ChefHat,
   ClipboardList,
   CreditCard,
@@ -64,7 +65,7 @@ export const appNavigationItems = [
     icon: ChefHat,
     labelKey: "nav.kds",
     href: "/app/kds",
-    permissions: ["pos:kds_send", "kds:operate"],
+    permissions: ["kds:operate"],
   },
   {
     group: "management",
@@ -85,7 +86,7 @@ export const appNavigationItems = [
     icon: Banknote,
     labelKey: "nav.cash",
     href: "/app/cash",
-    permissions: ["pos:payment_manage"],
+    permissions: ["cash:manage"],
   },
   {
     group: "management",
@@ -106,7 +107,7 @@ export const appNavigationItems = [
     icon: QrCode,
     labelKey: "nav.catalog",
     href: "/app/catalog",
-    permissions: ["catalog:manage", "pos:qr_review"],
+    permissions: ["catalog:manage"],
   },
   {
     group: "settings",
@@ -134,6 +135,13 @@ export const appNavigationItems = [
     icon: CreditCard,
     labelKey: "nav.billing",
     href: "/app/billing",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "settings",
+    icon: Cable,
+    labelKey: "nav.doseClub",
+    href: "/app/integrations/dose-club",
     permissions: ["tenant:manage"],
   },
   {
@@ -198,11 +206,32 @@ export function filterNavigationByPermissions(
   permissions: readonly string[],
   items: readonly AppNavigationItem[] = appNavigationItems,
 ) {
-  return items.filter((item) =>
-    item.permissions.length === 0
-      ? true
-      : item.permissions.some((permission) => permissions.includes(permission)),
+  return items.filter((item) => canAccessNavigationItem(item, permissions));
+}
+
+export function canAccessNavigationItem(item: AppNavigationItem, permissions: readonly string[]) {
+  return (
+    item.permissions.length === 0 ||
+    item.permissions.some((permission) => permissions.includes(permission))
   );
+}
+
+export function requiredNavigationItemForPath(
+  currentPath: string,
+  items: readonly AppNavigationItem[] = appNavigationItems,
+) {
+  return [...items]
+    .filter((item) => item.href !== "/app")
+    .sort((first, second) => second.href.length - first.href.length)
+    .find((item) => currentPath === item.href || currentPath.startsWith(`${item.href}/`));
+}
+
+export function canAccessAppPath(currentPath: string, permissions: readonly string[]) {
+  if (currentPath === "/app") {
+    return true;
+  }
+  const item = requiredNavigationItemForPath(currentPath);
+  return item ? canAccessNavigationItem(item, permissions) : false;
 }
 
 export function groupNavigationItems(items: readonly AppNavigationItem[]) {

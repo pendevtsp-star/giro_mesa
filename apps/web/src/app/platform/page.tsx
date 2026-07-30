@@ -552,7 +552,7 @@ export default function PlatformPage() {
   }
 
   return (
-    <main className="app-layout">
+    <main className="app-layout app-layout-night">
       <aside className="sidebar">
         <a className="brand" href="/">
           <span className="brand-mark">G</span>

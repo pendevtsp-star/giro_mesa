@@ -1,177 +1,306 @@
-# Integracao Dose Club
+# Integracao GiroMesa + Dose Club
 
-## Objetivo
+Contrato funcional: `2026-07-30`.
 
-Preparar o GiroMesa para integrar com a plataforma externa Dose Club sem fundir produtos, sem compartilhar banco de dados e sem transformar o Dose Club em modulo interno.
+## Limites dos produtos
 
-O GiroMesa permanece como fonte de verdade operacional do estabelecimento. O Dose Club fica responsavel pela experiencia e regras comerciais de clubes, saldos de doses, carteira do cliente final e compras online de clubes.
+GiroMesa e Dose Club continuam sendo produtos, interfaces, APIs, bancos e assinaturas
+independentes. Nenhum dos dois acessa o banco do outro.
 
-## Fontes de verdade
+Quando o estabelecimento possui os dois produtos e habilita a integracao:
 
-| Dado | Fonte de verdade | Observacao |
-| --- | --- | --- |
-| Tenant, filial e permissoes operacionais | GiroMesa | A integracao nunca envia `tenant_id`; o backend resolve pelo contexto autenticado. |
-| Produtos e elegibilidade para Dose Club | GiroMesa | Produtos elegiveis usam `is_club_eligible`, `bottle_volume_ml`, `default_dose_ml` e `spirit_type`. |
-| Estoque fisico | GiroMesa | Baixa real de estoque ocorre no GiroMesa por venda, ajuste, estorno ou movimento operacional permitido. |
-| Dose Club, saldo de doses e experiencia do cliente | Dose Club | O Dose Club controla saldo contratado e historico visivel ao cliente. |
-| Caixa e pagamento presencial | GiroMesa | Pagamentos presenciais continuam no PDV/caixa do GiroMesa. |
-| Pagamento online de clubes | Dose Club | Pode usar Asaas proprio do Dose Club; GiroMesa recebe eventos operacionais idempotentes. |
-| Auditoria operacional | Ambos | GiroMesa audita impactos em estoque/produto/cliente; Dose Club audita saldos e acoes no portal do cliente. |
+- GiroMesa e a fonte de verdade do estoque fisico;
+- Dose Club e a fonte de verdade de ofertas, combos, memberships, saldo de doses e
+  historico do cliente;
+- a compra de um clube ou combo nao movimenta estoque;
+- cada dose servida informa o rotulo real e movimenta exatamente `doseMl` no GiroMesa;
+- um combo pode alternar entre qualquer rotulo elegivel, sem reservar garrafa por cliente;
+- estornos sao compensatorios e append-only.
 
-## Schema preparado no GiroMesa
+Quando o estabelecimento possui somente Dose Club, ele permanece no modo de estoque
+standalone do proprio produto.
 
-Produtos possuem campos especificos para elegibilidade:
+## Modelo fisico no GiroMesa
 
-- `is_club_eligible`: habilita o produto para consulta e venda via integracao.
-- `bottle_volume_ml`: volume da garrafa em ml.
-- `default_dose_ml`: dose padrao, inicialmente 50 ml.
-- `spirit_type`: categoria operacional como `whisky`, `gin`, `vodka`, `rum` ou similar.
+Um produto elegivel deve possuir:
 
-Todo dado operacional continua com `tenant_id` obrigatorio. Quando aplicavel, a filial usa `branch_id`.
+- `is_club_eligible = true`;
+- `bottle_volume_ml`;
+- `default_dose_ml`;
+- `spirit_type`;
+- uma unica ficha tecnica ligada a um unico insumo;
+- insumo e item da ficha tecnica medidos em `ml`.
 
-## Provider e conta de integracao
+O saldo fisico e a soma append-only de `stock_movements`. Consumos concorrentes do mesmo
+insumo/filial sao serializados por advisory lock transacional. Se `allow_negative = false`,
+o GiroMesa rejeita consumo sem saldo com HTTP `409` e `error = insufficient_stock`.
 
-O dominio declara a porta `ClubWhiskyProvider`, preparada para publicacao de eventos e validacao de vinculos de cliente.
+## Autenticacao e isolamento
 
-O provider registrado em `integration_accounts` e:
+Dose Club chama o GiroMesa com:
 
-- `provider`: `club_whisky`
-- `status`: `disabled`, `active` ou outro estado operacional futuro.
-- `apiKeyHash`: hash da chave usada pelo Dose Club para chamar a API do GiroMesa.
-- `apiKeyLastFour`: ultimos caracteres para identificacao operacional.
-- `config.webhookSecretRef`: referencia para `CLUB_WHISKY_WEBHOOK_SECRET`.
-- `config.branchId`: unidade vinculada, quando a integracao for por filial.
-- `config.scopes`: permissoes autorizadas, por exemplo `products:read`, `stock:read`, `club_sales:write`, `club_consumption:write` e `customers:link`.
-
-A API key e retornada apenas uma vez no provisionamento ou rotacao via `POST /api/v1/integrations/club-whisky/configure`. O banco armazena somente hash e ultimos caracteres. Logs e payloads persistidos nao devem conter chaves.
-
-## Endpoints preparados
-
-Base interna versionavel no GiroMesa:
-
-- `GET /api/v1/integrations/club-whisky/branches`
-- `GET /api/v1/integrations/club-whisky/products`
-- `GET /api/v1/integrations/club-whisky/stock?branchId=...`
-- `POST /api/v1/integrations/club-whisky/sales`
-- `POST /api/v1/integrations/club-whisky/dose-consumptions`
-- `POST /api/v1/integrations/club-whisky/customer-links`
-- `POST /api/v1/integrations/club-whisky/configure`
-
-Observacao de roteamento: a aplicacao Nest atual usa prefixo global `api/v1`.
-
-### Regras de seguranca dos endpoints
-
-- O tenant e resolvido no backend pelo contexto autenticado.
-- Corpos contendo `tenantId` ou `tenant_id` sao rejeitados.
-- Endpoints de consumo externo exigem header `x-giromesa-integration-key`.
-- A API key resolve `tenant_id`, `branch_id` autorizado e scopes no backend.
-- `POST /api/v1/integrations/club-whisky/configure` exige sessao GiroMesa com `tenant:manage`.
-- Operacoes sensiveis geram auditoria append-only.
-- Operacoes de escrita usam `idempotencyKey`.
-
-## Webhook receiver
-
-Endpoint preparado:
-
-- `POST /webhooks/club-whisky`
-
-Headers esperados:
-
-- `x-club-whisky-signature`: assinatura HMAC em formato `sha256=<hex>`.
-- `x-club-whisky-timestamp`: timestamp usado na assinatura.
-- `x-webhook-id` ou `x-event-id`: id unico do evento.
-
-Assinatura:
-
-```text
-HMAC_SHA256(secret, timestamp + "." + eventId + "." + rawBody)
+```http
+x-giromesa-integration-key: <chave retornada uma unica vez>
 ```
 
-O GiroMesa rejeita assinaturas invalidas e timestamps fora da tolerancia configurada no helper de verificacao. A aplicacao Nest/Fastify esta configurada com `rawBody: true` para evitar divergencia de serializacao entre plataformas.
+A chave resolve tenant, filial e scopes no backend. O cliente nunca envia `tenantId` ou
+`tenant_id`; esses campos sao rejeitados. As chaves ficam armazenadas somente como hash.
 
-Eventos recebidos sao registrados em `webhook_events` com idempotencia por `provider + external_event_id` e processados de forma preparada para fila/outbox.
+Scopes:
 
-## Eventos de saida
+- `branches:read`
+- `products:read`
+- `stock:read`
+- `club_sales:write`
+- `club_consumption:write`
+- `club_consumption:reverse`
+- `customers:link`
 
-Eventos preparados para `outbox_events`:
+## Configuracao administrativa
+
+`POST /api/v1/integrations/club-whisky/configure` exige sessao GiroMesa com
+`tenant:manage`.
+
+```json
+{
+  "branchId": "uuid-da-filial",
+  "remoteClientId": "client-id-da-conta-giromesa-no-dose",
+  "webhookUrl": "https://doseclube.giromesa.com.br/v1/webhooks/giromesa",
+  "webhookSecretRef": "CLUB_WHISKY_WEBHOOK_SECRET_TENANT_A",
+  "rotateKey": false
+}
+```
+
+O retorno inclui `apiKey` somente na criacao ou rotacao. O segredo HMAC de webhook e
+provisionado fora do repositorio. `webhookSecretRef` aceita apenas nomes com prefixo
+`CLUB_WHISKY_WEBHOOK_SECRET`; quando omitido, usa `CLUB_WHISKY_WEBHOOK_SECRET`. Em
+producao, prefira uma referencia diferente por tenant e configure o mesmo valor secreto
+nos dois ambientes.
+
+## Endpoints chamados pelo Dose Club
+
+Base: `https://<host-giromesa>/api/v1/integrations/club-whisky`.
+
+### Catalogo e estoque
+
+- `GET /branches`
+- `GET /products`
+- `GET /stock?branchId=<uuid>&productId=<uuid opcional>`
+
+`GET /stock` retorna o vinculo produto-insumo e `quantityMl`. Produtos sem ficha tecnica
+aparecem sem item de estoque e nao aceitam consumo.
+
+### Registrar venda comercial
+
+`POST /sales`
+
+Individual:
+
+```json
+{
+  "branchId": "uuid",
+  "saleType": "individual",
+  "productId": "uuid",
+  "quantityBottles": 1,
+  "doseMl": 50,
+  "externalClubId": "membership-id",
+  "externalOfferId": "offer-id",
+  "externalCustomerId": "customer-id",
+  "idempotencyKey": "sale:order-id"
+}
+```
+
+Combo:
+
+```json
+{
+  "branchId": "uuid",
+  "saleType": "combo_pool",
+  "eligibleProductIds": ["uuid-rotulo-a", "uuid-rotulo-b"],
+  "quantityBottles": 1,
+  "totalDoses": 20,
+  "doseMl": 50,
+  "externalClubId": "membership-id",
+  "externalOfferId": "combo-id",
+  "externalCustomerId": "customer-id",
+  "idempotencyKey": "sale:order-id"
+}
+```
+
+A resposta confirma `stockMovementCreated = false` e `stockQuantityEffect = 0`.
+
+### Consumir dose
+
+`POST /dose-consumptions`
+
+```json
+{
+  "branchId": "uuid",
+  "productId": "uuid-do-rotulo-real-servido",
+  "externalClubId": "membership-id",
+  "externalOfferId": "offer-ou-combo-id",
+  "offerType": "combo_pool",
+  "externalConsumptionId": "consumption-id",
+  "doseMl": 50,
+  "employeeRef": "employee-id",
+  "idempotencyKey": "consumption:consumption-id"
+}
+```
+
+Sucesso retorna o insumo, efeito negativo e saldo fisico restante. O Dose Club so finaliza
+a baixa do saldo de doses depois dessa confirmacao. Em indisponibilidade ou `409`, permanece
+em `pending_stock`/falha recuperavel e nao reduz o saldo do cliente.
+
+### Estornar dose
+
+`POST /dose-consumptions/reversals`
+
+```json
+{
+  "branchId": "uuid",
+  "productId": "uuid",
+  "externalClubId": "membership-id",
+  "externalConsumptionId": "consumption-id",
+  "externalReversalId": "reversal-id",
+  "originalIdempotencyKey": "consumption:consumption-id",
+  "doseMl": 50,
+  "reason": "Lancamento duplicado",
+  "idempotencyKey": "reversal:reversal-id"
+}
+```
+
+O GiroMesa confere os dados contra o consumo original e permite apenas um estorno fisico
+por `originalIdempotencyKey`.
+
+### Vincular cliente
+
+`POST /customer-links`
+
+O vinculo e opcional para estoque, mas obrigatorio quando uma venda originada no PDV deve
+ativar membership para um cliente do Dose Club.
+
+## Webhooks GiroMesa para Dose Club
+
+Destino padrao: `POST /v1/webhooks/giromesa`.
+
+Headers:
+
+```http
+x-giromesa-client-id: <remoteClientId configurado>
+x-giromesa-contract-version: 2026-07-30
+x-giromesa-correlation-id: <requestId de origem ou eventId>
+x-giromesa-event-id: <uuid do outbox>
+x-giromesa-signature: sha256=<HMAC SHA-256 do raw body>
+```
+
+Envelope:
+
+```json
+{
+  "id": "uuid",
+  "event": "club.stock_movement.created",
+  "source": "giromesa",
+  "contractVersion": "2026-07-30",
+  "correlationId": "request-ou-event-id",
+  "occurredAt": "2026-07-30T00:00:00.000Z",
+  "data": {}
+}
+```
+
+O envelope nao envia `tenantId`. Dose Club resolve o tenant por `x-giromesa-client-id`.
+Eventos usam outbox, idempotencia por event id, timeout de 10 segundos e retry
+exponencial com jitter. Erros `408`, `425`, `429`, `5xx`, timeout e rede sao retentaveis.
+Erros permanentes e eventos que excedem oito tentativas terminam em `dead_letter`.
+Operadores com `tenant:manage` podem reenviar um evento do proprio tenant por
+`POST /api/v1/integrations/outbox/:eventId/retry`; o replay e auditado.
+
+Topicos:
 
 - `product.updated`
 - `stock.updated`
 - `order.closed`
 - `payment.confirmed`
 - `customer.updated`
+- `club.sale.registered`
 - `club.stock_movement.created`
 
-O worker futuro deve publicar esses eventos para o Dose Club quando a conta `club_whisky` estiver ativa e autorizada.
+`product.updated` e criado na mesma transacao da criacao/alteracao de um produto
+elegivel. O `data` inclui:
 
-## Movimentos de estoque
-
-Tipos preparados:
-
-- `club_bottle_sale`
-- `club_combo_sale`
-- `club_dose_consumed`
-- `club_adjustment`
-- `club_refund`
-
-Regra critica: evitar baixa dupla.
-
-Na venda de garrafa/clube, o GiroMesa pode baixar o estoque fisico com base na ficha tecnica do produto elegivel. No consumo posterior de dose, o GiroMesa registra um movimento operacional `club_dose_consumed` com efeito zero em quantidade fisica, porque a garrafa ja foi baixada na venda do Dose Club.
-
-## Fluxos
-
-### Venda presencial no GiroMesa
-
-1. Operador vende produto elegivel no PDV.
-2. GiroMesa fecha pedido/pagamento no caixa.
-3. GiroMesa baixa estoque fisico conforme receita/ficha tecnica.
-4. GiroMesa cria eventos `order.closed`, `payment.confirmed`, `stock.updated` e, quando aplicavel, `club.stock_movement.created`.
-5. Dose Club recebe evento e cria/atualiza saldo de doses do cliente vinculado.
-
-### Compra online no Dose Club
-
-1. Cliente compra um clube no ambiente do Dose Club.
-2. Dose Club confirma pagamento online.
-3. Dose Club chama `POST /api/v1/integrations/club-whisky/sales` com `idempotencyKey`.
-4. GiroMesa valida contexto, permissao, produto elegivel e filial.
-5. GiroMesa registra movimento `club_bottle_sale`, baixa estoque fisico se houver ficha tecnica e audita a operacao.
-
-### Consumo posterior de dose
-
-1. Cliente consome dose no estabelecimento.
-2. Dose Club chama `POST /api/v1/integrations/club-whisky/dose-consumptions`.
-3. GiroMesa registra `club_dose_consumed` com quantidade zero para nao baixar estoque duas vezes.
-4. GiroMesa audita a operacao e publica `club.stock_movement.created`.
-
-### Ajuste ou estorno
-
-1. Operador autorizado faz ajuste/estorno no sistema responsavel pelo saldo.
-2. GiroMesa deve receber ou emitir evento idempotente conforme a origem.
-3. Se houver impacto fisico real, usar `club_adjustment` ou `club_refund` com movimento reverso claro.
-4. Toda alteracao deve ser auditavel, sem edicao destrutiva do historico.
-
-## Variaveis de ambiente
-
-```env
-CLUB_WHISKY_API_BASE_URL=https://club.example.com
-CLUB_WHISKY_API_KEY=replace-with-club-api-key
-CLUB_WHISKY_WEBHOOK_SECRET=replace-with-club-webhook-secret
+```json
+{
+  "contractVersion": "2026-07-30",
+  "correlationId": "request-id",
+  "reason": "created",
+  "productId": "uuid",
+  "name": "Whisky 1000ml",
+  "priceCents": 42000,
+  "isActive": true,
+  "isAvailable": true,
+  "isClubEligible": true,
+  "bottleVolumeMl": 1000,
+  "defaultDoseMl": 50,
+  "spiritType": "whisky",
+  "channels": ["pos"]
+}
 ```
 
-`CLUB_WHISKY_API_KEY` e reservado para chamadas de saida do GiroMesa para o Dose Club. A chave usada pelo Dose Club para chamar o GiroMesa e gerada por tenant/filial e armazenada como hash em `integration_accounts`.
+`stock.updated` e criado na mesma transacao de ajustes manuais, entrada, perda,
+inventario, fechamento de pedido, cancelamento, consumo Dose Club e estorno. Apenas
+produtos elegiveis ligados a exatamente um insumo em `ml` geram o evento:
 
-## Testes obrigatorios
+```json
+{
+  "contractVersion": "2026-07-30",
+  "correlationId": "request-id",
+  "productId": "uuid",
+  "branchId": "uuid",
+  "inventoryItemId": "uuid",
+  "availableMl": 850,
+  "unit": "ml",
+  "movementType": "sale",
+  "movementId": "uuid-opcional",
+  "changedAt": "2026-07-30T00:00:00.000Z"
+}
+```
 
-- Isolamento multi-tenant.
-- Rejeicao de `tenant_id` vindo da integracao.
-- Idempotencia por evento/chave externa.
-- Rejeicao de webhook com assinatura invalida.
-- Movimento `club_dose_consumed` sem baixa dupla de estoque.
+## Ordem distribuida do consumo
 
-## Riscos e decisoes pendentes
+1. Dose Club valida membership, combo, rotulo permitido e saldo de doses.
+2. Dose Club cria operacao local `pending_stock` com idempotency key.
+3. Dose Club chama o GiroMesa.
+4. GiroMesa trava o insumo, valida saldo, grava movimento, auditoria e outbox na mesma
+   transacao.
+5. Dose Club confirma o ledger de doses somente depois do HTTP 2xx.
+6. Retry repete a mesma idempotency key.
+7. Estorno usa endpoint compensatorio; nenhum sistema apaga historico.
 
-- Definir modelo de identidade entre cliente GiroMesa e cliente Dose Club: vinculo manual, telefone validado, CPF, e-mail ou conta federada.
-- Definir se compra online no Dose Club sempre baixa estoque no momento da compra ou se pode reservar estoque ate retirada/abertura da garrafa.
-- Definir tratamento de combos com multiplos rotulos: baixa proporcional, escolha livre por dose ou carteira separada por produto.
-- Definir politica de retry, assinatura e expiracao de eventos de saida.
-- Definir painel operacional para reconciliar divergencias entre saldo do Dose Club e estoque fisico do GiroMesa.
+Nao existe transacao distribuida nem acesso cruzado a banco.
+
+## Criterios de aceite conjunto
+
+- compra individual e combo nao alteram estoque;
+- dose individual e combo baixam o rotulo servido em ml;
+- rotulos podem alternar dentro do mesmo combo;
+- falta de estoque nao reduz saldo do cliente;
+- requests simultaneos nao deixam estoque negativo;
+- retry identico nao duplica movimento;
+- mesma chave com payload diferente retorna `409`;
+- estorno restaura ml uma unica vez;
+- tenant/filial cruzados sao rejeitados;
+- Dose-only e Giro-only continuam funcionando sem a integracao.
+
+## Checklist antes de ativar uma filial
+
+1. provisionar URLs HTTPS, chave de API, segredo de webhook e `remoteClientId` por ambiente;
+2. rejeitar placeholders e reiniciar API/worker depois de qualquer rotacao de segredo;
+3. restringir conta, escopos e filial; mapear apenas produtos elegiveis em `ml`;
+4. testar venda sem baixa, consumo individual/combo, alternancia de rotulo e estorno;
+5. testar idempotencia, payload divergente, estoque insuficiente, concorrencia e isolamento;
+6. validar HMAC correto, HMAC incorreto, evento duplicado e processamento assincrono;
+7. reenviar um `dead_letter` pelo endpoint administrativo e conferir o audit log;
+8. executar migrations, lint, typecheck, testes, build, E2E aplicavel e `git diff --check`
+   nos dois repositorios.
+
+O repositorio guarda somente nomes de referencias de segredo. Valores reais devem existir no
+gerenciador de segredos do ambiente e nunca em arquivos versionados.

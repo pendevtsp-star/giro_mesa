@@ -95,7 +95,7 @@ export function PeriodSalesCard({ salesData }: { salesData: SalesByPeriodRespons
         </article>
       </div>
 
-      {topProducts.length > 0 ? (
+      {summary.totalOrders > 0 && topProducts.length > 0 ? (
         <div className="top-products-section">
           <span className="section-kicker">Produtos mais vendidos</span>
           <div className="top-products-list">
@@ -112,7 +112,9 @@ export function PeriodSalesCard({ salesData }: { salesData: SalesByPeriodRespons
             ))}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <p className="muted-copy">Nenhuma venda concluída nos últimos 7 dias.</p>
+      )}
     </section>
   );
 }
@@ -176,53 +178,70 @@ export function ShiftPriorities({
   activeOrderCount,
   ticketCount,
   inventoryAlertCount,
+  canOperatePos,
+  canOperateKds,
+  canReadReports,
+  canManageInventory,
 }: {
   activeOrderCount: number;
   ticketCount: number;
   inventoryAlertCount: number;
+  canOperatePos: boolean;
+  canOperateKds: boolean;
+  canReadReports: boolean;
+  canManageInventory: boolean;
 }) {
+  if (!canOperatePos && !canOperateKds && !canReadReports && !canManageInventory) {
+    return null;
+  }
+
   return (
     <section className="dashboard-command-center" aria-label="Prioridades do turno">
-      <article className="dashboard-focus-card">
-        <span className="section-kicker">Atendimento</span>
-        <strong>{activeOrderCount} pedido(s) em andamento</strong>
-        <p>Abra o PDV para atender mesas, balcao e pagamentos sem distrair a gestao.</p>
-        <a className="button primary compact" href="/app/pos">
-          Abrir PDV <BadgeDollarSign size={15} />
-        </a>
-      </article>
-      <article className="dashboard-focus-card">
-        <span className="section-kicker">Producao</span>
-        <strong>{ticketCount} ticket(s) em acompanhamento</strong>
-        <p>
-          {ticketCount
-            ? "Acompanhe cozinha e bar antes de criar novo gargalo."
-            : "Nenhuma fila critica no KDS agora."}
-        </p>
-        {ticketCount > 0 ? (
-          <a className="button primary compact" href="/app/waiter">
-            Acompanhar salao
+      {canOperatePos ? (
+        <article className="dashboard-focus-card">
+          <span className="section-kicker">Atendimento</span>
+          <strong>{activeOrderCount} pedido(s) em andamento</strong>
+          <p>Abra o PDV para atender mesas, balcao e pagamentos sem distrair a gestao.</p>
+          <a className="button primary compact" href="/app/pos">
+            Abrir PDV <BadgeDollarSign size={15} />
           </a>
-        ) : (
-          <span className="gm-badge gm-badge-good">Tudo em ordem</span>
-        )}
-      </article>
-      <article className="dashboard-focus-card">
-        <span className="section-kicker">Gestao</span>
-        <strong>
-          {inventoryAlertCount > 0
-            ? `${inventoryAlertCount} alerta(s) de estoque`
-            : "Estoque em dia"}
-        </strong>
-        <p>
-          {inventoryAlertCount > 0
-            ? "Itens abaixo do minimo precisam de reposicao urgente."
-            : "Relatorios, caixa e pendencias administrativas ficam disponiveis sem poluir o turno."}
-        </p>
-        <a className="button secondary compact" href="/app/reports">
-          Ver relatorios
-        </a>
-      </article>
+        </article>
+      ) : null}
+      {canOperateKds ? (
+        <article className="dashboard-focus-card">
+          <span className="section-kicker">Producao</span>
+          <strong>{ticketCount} ticket(s) em acompanhamento</strong>
+          <p>
+            {ticketCount
+              ? "Acompanhe cozinha e bar antes de criar novo gargalo."
+              : "Nenhuma fila critica no KDS agora."}
+          </p>
+          <a className="button primary compact" href="/app/kds">
+            Abrir KDS
+          </a>
+        </article>
+      ) : null}
+      {canReadReports || canManageInventory ? (
+        <article className="dashboard-focus-card">
+          <span className="section-kicker">Gestao</span>
+          <strong>
+            {canManageInventory && inventoryAlertCount > 0
+              ? `${inventoryAlertCount} alerta(s) de estoque`
+              : "Indicadores disponíveis"}
+          </strong>
+          <p>
+            {canManageInventory && inventoryAlertCount > 0
+              ? "Itens abaixo do minimo precisam de reposicao urgente."
+              : "Acompanhe os indicadores liberados para o seu perfil."}
+          </p>
+          <a
+            className="button secondary compact"
+            href={canReadReports ? "/app/reports" : "/app/inventory"}
+          >
+            {canReadReports ? "Ver relatórios" : "Ver estoque"}
+          </a>
+        </article>
+      ) : null}
     </section>
   );
 }
@@ -232,21 +251,29 @@ export function OperationalReadinessPanel({
   currentShift,
   cashSummary,
   onOpenPos,
+  canManageOnboarding,
+  canManageCash,
+  canOpenPos,
 }: {
   onboardingStatus: OnboardingStatus | null;
   currentShift: CurrentShiftResponse | null;
   cashSummary: CashSessionSummary | null;
   onOpenPos: () => void;
+  canManageOnboarding: boolean;
+  canManageCash: boolean;
+  canOpenPos: boolean;
 }) {
   const readiness = onboardingStatus?.readiness ?? "pending";
   const nextAction =
-    readiness !== "ready"
+    canManageOnboarding && readiness !== "ready"
       ? "concluir onboarding"
-      : !currentShift?.shift
+      : canManageCash && !currentShift?.shift
         ? "abrir turno"
-        : cashSummary?.session?.status !== "open"
+        : canManageCash && cashSummary?.session?.status !== "open"
           ? "abrir caixa"
-          : "operar PDV";
+          : canOpenPos
+            ? "operar PDV"
+            : "acompanhar operação";
 
   return (
     <section className="panel operational-readiness-panel">
@@ -260,42 +287,48 @@ export function OperationalReadinessPanel({
         </Badge>
       </div>
       <div className="readiness-grid">
-        <div className="readiness-item">
-          <span className="readiness-label">Onboarding</span>
-          <span className="readiness-value">
-            {readiness === "ready" ? "completo" : "em implantacao"}
-          </span>
-        </div>
-        <div className="readiness-item">
-          <span className="readiness-label">Turno</span>
-          <span className="readiness-value">{currentShift?.shift ? "aberto" : "fechado"}</span>
-        </div>
-        <div className="readiness-item">
-          <span className="readiness-label">Caixa</span>
-          <span className="readiness-value">
-            {cashSummary?.session?.status === "open" ? "aberto" : "fechado"}
-          </span>
-        </div>
+        {canManageOnboarding ? (
+          <div className="readiness-item">
+            <span className="readiness-label">Onboarding</span>
+            <span className="readiness-value">
+              {readiness === "ready" ? "completo" : "em implantacao"}
+            </span>
+          </div>
+        ) : null}
+        {canManageCash ? (
+          <>
+            <div className="readiness-item">
+              <span className="readiness-label">Turno</span>
+              <span className="readiness-value">{currentShift?.shift ? "aberto" : "fechado"}</span>
+            </div>
+            <div className="readiness-item">
+              <span className="readiness-label">Caixa</span>
+              <span className="readiness-value">
+                {cashSummary?.session?.status === "open" ? "aberto" : "fechado"}
+              </span>
+            </div>
+          </>
+        ) : null}
         <div className="readiness-item">
           <span className="readiness-label">Proxima acao</span>
           <span className="readiness-value">{nextAction}</span>
         </div>
       </div>
       <div className="ticket-actions">
-        {readiness !== "ready" ? (
+        {canManageOnboarding && readiness !== "ready" ? (
           <a className="button secondary compact" href="/app/onboarding">
             Abrir onboarding
           </a>
         ) : null}
-        {!currentShift?.shift || cashSummary?.session?.status !== "open" ? (
+        {canManageCash && (!currentShift?.shift || cashSummary?.session?.status !== "open") ? (
           <a className="button primary compact" href="/app/cash">
             Turno e caixa
           </a>
-        ) : (
+        ) : canOpenPos ? (
           <button className="button primary compact" type="button" onClick={onOpenPos}>
             Abrir PDV
           </button>
-        )}
+        ) : null}
       </div>
     </section>
   );

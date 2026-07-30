@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import {
   auditLogs,
   branches,
@@ -15,22 +16,29 @@ import {
 import type { TenantContext } from "@giromesa/domain";
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createIntegrationApiKey } from "../../common/integration-key";
 import { DatabaseService } from "../database/database.service";
+import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "./club-whisky-events";
 
-type InsertClient = Pick<DatabaseService["db"], "insert">;
+type DatabaseClient = Pick<DatabaseService["db"], "execute" | "insert" | "select" | "update">;
 
 export type ClubSaleInput = {
   branchId: string;
-  productId: string;
+  saleType: "individual" | "combo_pool";
+  productId?: string | undefined;
+  eligibleProductIds?: string[] | undefined;
   quantityBottles: number;
+  totalDoses?: number | undefined;
+  doseMl?: number | undefined;
   externalClubId: string;
+  externalOfferId?: string | undefined;
   externalCustomerId?: string | undefined;
   idempotencyKey: string;
 };
@@ -39,9 +47,23 @@ export type ClubDoseConsumptionInput = {
   branchId: string;
   productId: string;
   externalClubId: string;
+  externalOfferId?: string | undefined;
+  offerType?: "individual" | "combo_pool" | undefined;
   externalConsumptionId: string;
   doseMl: number;
   employeeRef?: string | undefined;
+  idempotencyKey: string;
+};
+
+export type ClubDoseConsumptionReversalInput = {
+  branchId: string;
+  productId: string;
+  externalClubId: string;
+  externalConsumptionId: string;
+  externalReversalId: string;
+  originalIdempotencyKey: string;
+  doseMl: number;
+  reason: string;
   idempotencyKey: string;
 };
 
@@ -53,6 +75,9 @@ export type CustomerLinkInput = {
 
 export type ConfigureClubWhiskyInput = {
   branchId?: string | undefined;
+  remoteClientId?: string | undefined;
+  webhookSecretRef?: string | undefined;
+  webhookUrl?: string | undefined;
   rotateKey?: boolean;
 };
 
@@ -100,15 +125,36 @@ export class ClubWhiskyService {
       );
   }
 
-  async listStockAvailability(context: TenantContext, branchId: string) {
+  async listStockAvailability(context: TenantContext, branchId: string, productId?: string) {
+    this.assertBranchAccess(context, branchId);
+    await this.assertExistingBranch(this.database.db, context, branchId);
+
     return this.database.db
       .select({
+        productId: products.id,
+        productName: products.name,
         inventoryItemId: inventoryItems.id,
-        name: inventoryItems.name,
+        inventoryItemName: inventoryItems.name,
         unit: inventoryItems.unit,
-        quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)`,
+        quantityMl: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)`,
+        allowNegative: inventoryItems.allowNegative,
       })
-      .from(inventoryItems)
+      .from(products)
+      .leftJoin(
+        recipes,
+        and(eq(recipes.tenantId, context.tenantId), eq(recipes.productId, products.id)),
+      )
+      .leftJoin(
+        recipeItems,
+        and(eq(recipeItems.tenantId, context.tenantId), eq(recipeItems.recipeId, recipes.id)),
+      )
+      .leftJoin(
+        inventoryItems,
+        and(
+          eq(inventoryItems.tenantId, context.tenantId),
+          eq(inventoryItems.id, recipeItems.inventoryItemId),
+        ),
+      )
       .leftJoin(
         stockMovements,
         and(
@@ -117,20 +163,28 @@ export class ClubWhiskyService {
           eq(stockMovements.branchId, branchId),
         ),
       )
-      .where(eq(inventoryItems.tenantId, context.tenantId))
-      .groupBy(inventoryItems.id);
+      .where(
+        and(
+          eq(products.tenantId, context.tenantId),
+          eq(products.isActive, true),
+          eq(products.isClubEligible, true),
+          ...(productId ? [eq(products.id, productId)] : []),
+        ),
+      )
+      .groupBy(products.id, inventoryItems.id);
   }
 
   async registerClubSale(context: TenantContext, input: ClubSaleInput) {
     this.assertBranchAccess(context, input.branchId);
 
     return this.database.db.transaction(async (tx) => {
+      await this.assertExistingBranch(tx, context, input.branchId);
       const idempotency = await this.reserveIdempotency(
         tx,
         context.tenantId,
         input.idempotencyKey,
         {
-          action: "club_bottle_sale",
+          action: "club_sale_registered",
           input,
         },
       );
@@ -138,99 +192,65 @@ export class ClubWhiskyService {
         return idempotency;
       }
 
-      const [product] = await tx
+      const requestedProductIds =
+        input.saleType === "combo_pool"
+          ? [...new Set(input.eligibleProductIds ?? [])]
+          : input.productId
+            ? [input.productId]
+            : [];
+
+      if (
+        (input.saleType === "individual" && requestedProductIds.length !== 1) ||
+        (input.saleType === "combo_pool" && requestedProductIds.length < 2)
+      ) {
+        throw new BadRequestException("Invalid products for the selected club sale type");
+      }
+
+      const eligibleProducts = await tx
         .select()
         .from(products)
         .where(
           and(
             eq(products.tenantId, context.tenantId),
-            eq(products.id, input.productId),
             eq(products.isClubEligible, true),
+            inArray(products.id, requestedProductIds),
           ),
-        )
-        .limit(1);
+        );
 
-      if (!product) {
-        throw new NotFoundException("Club-eligible product not found");
-      }
-
-      const [defaultLocation] = await tx
-        .select()
-        .from(stockLocations)
-        .where(
-          and(
-            eq(stockLocations.tenantId, context.tenantId),
-            eq(stockLocations.branchId, input.branchId),
-          ),
-        )
-        .limit(1);
-
-      const [recipe] = await tx
-        .select()
-        .from(recipes)
-        .where(and(eq(recipes.tenantId, context.tenantId), eq(recipes.productId, product.id)))
-        .limit(1);
-
-      const ingredients = recipe
-        ? await tx
-            .select()
-            .from(recipeItems)
-            .where(
-              and(eq(recipeItems.tenantId, context.tenantId), eq(recipeItems.recipeId, recipe.id)),
-            )
-        : [];
-
-      if (ingredients.length === 0) {
-        await tx.insert(outboxEvents).values({
-          tenantId: context.tenantId,
-          topic: "club.stock_movement.created",
-          payload: {
-            integration: "club_whisky",
-            movementType: "club_bottle_sale",
-            productId: product.id,
-            branchId: input.branchId,
-            externalClubId: input.externalClubId,
-            warning: "product_has_no_recipe_for_stock_decrement",
-          },
-        });
-      }
-
-      for (const ingredient of ingredients) {
-        await tx.insert(stockMovements).values({
-          tenantId: context.tenantId,
-          branchId: input.branchId,
-          inventoryItemId: ingredient.inventoryItemId,
-          stockLocationId: defaultLocation?.id,
-          type: "club_bottle_sale",
-          quantity: String(-Number(ingredient.quantity) * input.quantityBottles),
-          sourceType: "club_whisky",
-          sourceId: product.id,
-          reason: `Venda de clube ${input.externalClubId}; idempotency=${input.idempotencyKey}`,
-        });
+      if (eligibleProducts.length !== requestedProductIds.length) {
+        throw new NotFoundException("One or more club-eligible products were not found");
       }
 
       await tx.insert(outboxEvents).values({
         tenantId: context.tenantId,
-        topic: "club.stock_movement.created",
+        topic: "club.sale.registered",
         payload: {
           integration: "club_whisky",
-          movementType: "club_bottle_sale",
-          productId: product.id,
+          saleType: input.saleType,
+          productIds: requestedProductIds,
           branchId: input.branchId,
           externalClubId: input.externalClubId,
+          externalOfferId: input.externalOfferId,
           quantityBottles: input.quantityBottles,
-          ingredientsMoved: ingredients.length,
+          totalDoses: input.totalDoses,
+          doseMl: input.doseMl,
+          stockQuantityEffect: 0,
         },
       });
 
       await this.audit(tx, context, {
         branchId: input.branchId,
         action: "club_whisky.club_sale_registered",
-        entityType: "product",
-        entityId: product.id,
+        entityType: "club_membership",
         metadata: {
           externalClubId: input.externalClubId,
+          externalOfferId: input.externalOfferId,
+          saleType: input.saleType,
+          productIds: requestedProductIds,
           quantityBottles: input.quantityBottles,
+          totalDoses: input.totalDoses,
+          doseMl: input.doseMl,
+          stockQuantityEffect: 0,
           idempotencyKey: input.idempotencyKey,
         },
       });
@@ -238,9 +258,11 @@ export class ClubWhiskyService {
       return {
         accepted: true,
         duplicate: false,
-        movementType: "club_bottle_sale",
-        productId: product.id,
-        ingredientsMoved: ingredients.length,
+        eventType: "club_sale_registered",
+        saleType: input.saleType,
+        productIds: requestedProductIds,
+        stockMovementCreated: false,
+        stockQuantityEffect: 0,
         idempotency: "provider_external_event_id",
       };
     });
@@ -250,6 +272,7 @@ export class ClubWhiskyService {
     this.assertBranchAccess(context, input.branchId);
 
     return this.database.db.transaction(async (tx) => {
+      await this.assertExistingBranch(tx, context, input.branchId);
       const idempotency = await this.reserveIdempotency(
         tx,
         context.tenantId,
@@ -279,39 +302,45 @@ export class ClubWhiskyService {
         throw new NotFoundException("Club-eligible product not found");
       }
 
-      const [recipe] = await tx
-        .select()
-        .from(recipes)
-        .where(and(eq(recipes.tenantId, context.tenantId), eq(recipes.productId, product.id)))
-        .limit(1);
+      const target = await this.resolveClubInventoryTarget(tx, context, input.branchId, product.id);
+      await this.lockStockTarget(tx, context, input.branchId, target.inventoryItemId);
+      const availableMl = await this.currentStock(
+        tx,
+        context,
+        input.branchId,
+        target.inventoryItemId,
+      );
 
-      const [ingredient] = recipe
-        ? await tx
-            .select()
-            .from(recipeItems)
-            .where(
-              and(eq(recipeItems.tenantId, context.tenantId), eq(recipeItems.recipeId, recipe.id)),
-            )
-            .limit(1)
-        : [];
-
-      if (!ingredient) {
-        throw new BadRequestException(
-          "Product must have a recipe to record club dose consumption marker",
-        );
+      if (!target.allowNegative && availableMl < input.doseMl) {
+        throw new ConflictException({
+          error: "insufficient_stock",
+          productId: product.id,
+          inventoryItemId: target.inventoryItemId,
+          availableMl,
+          requestedMl: input.doseMl,
+        });
       }
 
-      await tx.insert(stockMovements).values({
-        tenantId: context.tenantId,
-        branchId: input.branchId,
-        inventoryItemId: ingredient.inventoryItemId,
-        type: "club_dose_consumed",
-        quantity: "0",
-        sourceType: "club_whisky",
-        sourceId: product.id,
-        reason: `Consumo operacional de ${input.doseMl}ml do clube ${input.externalClubId}; sem baixa dupla de estoque; consumption=${input.externalConsumptionId}`,
-      });
+      const [movement] = await tx
+        .insert(stockMovements)
+        .values({
+          tenantId: context.tenantId,
+          branchId: input.branchId,
+          inventoryItemId: target.inventoryItemId,
+          stockLocationId: target.stockLocationId,
+          type: "club_dose_consumed",
+          quantity: String(-input.doseMl),
+          sourceType: "club_whisky",
+          sourceId: product.id,
+          reason: `Consumo de ${input.doseMl}ml do clube ${input.externalClubId}; consumption=${input.externalConsumptionId}`,
+        })
+        .returning({ id: stockMovements.id });
 
+      if (!movement) {
+        throw new Error("Failed to create club stock movement");
+      }
+
+      const remainingMl = availableMl - input.doseMl;
       await tx.insert(outboxEvents).values({
         tenantId: context.tenantId,
         topic: "club.stock_movement.created",
@@ -323,8 +352,16 @@ export class ClubWhiskyService {
           externalClubId: input.externalClubId,
           externalConsumptionId: input.externalConsumptionId,
           doseMl: input.doseMl,
-          stockQuantityEffect: 0,
+          unit: "ml",
+          stockQuantityEffect: -input.doseMl,
+          remainingMl,
         },
+      });
+      await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
+        branchId: input.branchId,
+        inventoryItemIds: [target.inventoryItemId],
+        movementType: "club_dose_consumed",
+        movementId: movement.id,
       });
 
       await this.audit(tx, context, {
@@ -334,8 +371,13 @@ export class ClubWhiskyService {
         entityId: product.id,
         metadata: {
           externalClubId: input.externalClubId,
+          externalOfferId: input.externalOfferId,
+          offerType: input.offerType,
           externalConsumptionId: input.externalConsumptionId,
           doseMl: input.doseMl,
+          inventoryItemId: target.inventoryItemId,
+          stockQuantityEffect: -input.doseMl,
+          remainingMl,
           idempotencyKey: input.idempotencyKey,
         },
       });
@@ -344,8 +386,168 @@ export class ClubWhiskyService {
         accepted: true,
         duplicate: false,
         movementType: "club_dose_consumed",
-        stockQuantityEffect: 0,
+        inventoryItemId: target.inventoryItemId,
+        unit: "ml",
+        stockQuantityEffect: -input.doseMl,
+        remainingMl,
         idempotency: "provider_external_event_id",
+      };
+    });
+  }
+
+  async reverseDoseConsumption(context: TenantContext, input: ClubDoseConsumptionReversalInput) {
+    this.assertBranchAccess(context, input.branchId);
+
+    return this.database.db.transaction(async (tx) => {
+      await this.assertExistingBranch(tx, context, input.branchId);
+      const originalExternalEventId = this.idempotencyEventId(
+        context.tenantId,
+        input.originalIdempotencyKey,
+      );
+      const [originalEvent] = await tx
+        .select()
+        .from(webhookEvents)
+        .where(
+          and(
+            eq(webhookEvents.provider, "club_whisky"),
+            eq(webhookEvents.tenantId, context.tenantId),
+            eq(webhookEvents.externalEventId, originalExternalEventId),
+          ),
+        )
+        .limit(1);
+
+      const originalPayload = originalEvent?.payload;
+      const originalInput =
+        originalPayload &&
+        originalPayload.action === "club_dose_consumed" &&
+        typeof originalPayload.input === "object" &&
+        originalPayload.input
+          ? (originalPayload.input as Record<string, unknown>)
+          : undefined;
+
+      if (
+        !originalInput ||
+        originalInput.branchId !== input.branchId ||
+        originalInput.productId !== input.productId ||
+        originalInput.externalClubId !== input.externalClubId ||
+        originalInput.externalConsumptionId !== input.externalConsumptionId ||
+        originalInput.doseMl !== input.doseMl
+      ) {
+        throw new ConflictException({
+          error: "original_consumption_mismatch",
+          originalIdempotencyKey: input.originalIdempotencyKey,
+        });
+      }
+
+      const idempotency = await this.reserveIdempotency(
+        tx,
+        context.tenantId,
+        `reversal:${input.originalIdempotencyKey}`,
+        {
+          action: "club_dose_reversed",
+          input,
+        },
+      );
+      if (idempotency.duplicate) {
+        return idempotency;
+      }
+
+      const [product] = await tx
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.tenantId, context.tenantId),
+            eq(products.id, input.productId),
+            eq(products.isClubEligible, true),
+          ),
+        )
+        .limit(1);
+
+      if (!product) {
+        throw new NotFoundException("Club-eligible product not found");
+      }
+
+      const target = await this.resolveClubInventoryTarget(tx, context, input.branchId, product.id);
+      await this.lockStockTarget(tx, context, input.branchId, target.inventoryItemId);
+      const availableMl = await this.currentStock(
+        tx,
+        context,
+        input.branchId,
+        target.inventoryItemId,
+      );
+
+      const [movement] = await tx
+        .insert(stockMovements)
+        .values({
+          tenantId: context.tenantId,
+          branchId: input.branchId,
+          inventoryItemId: target.inventoryItemId,
+          stockLocationId: target.stockLocationId,
+          type: "club_refund",
+          quantity: String(input.doseMl),
+          sourceType: "club_whisky",
+          sourceId: product.id,
+          reason: `Estorno de ${input.doseMl}ml; consumption=${input.externalConsumptionId}; reversal=${input.externalReversalId}; ${input.reason}`,
+        })
+        .returning({ id: stockMovements.id });
+
+      if (!movement) {
+        throw new Error("Failed to create club stock reversal");
+      }
+
+      const remainingMl = availableMl + input.doseMl;
+      await tx.insert(outboxEvents).values({
+        tenantId: context.tenantId,
+        topic: "club.stock_movement.created",
+        payload: {
+          integration: "club_whisky",
+          movementType: "club_refund",
+          productId: product.id,
+          branchId: input.branchId,
+          externalClubId: input.externalClubId,
+          externalConsumptionId: input.externalConsumptionId,
+          externalReversalId: input.externalReversalId,
+          doseMl: input.doseMl,
+          unit: "ml",
+          stockQuantityEffect: input.doseMl,
+          remainingMl,
+        },
+      });
+      await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
+        branchId: input.branchId,
+        inventoryItemIds: [target.inventoryItemId],
+        movementType: "club_refund",
+        movementId: movement.id,
+      });
+
+      await this.audit(tx, context, {
+        branchId: input.branchId,
+        action: "club_whisky.dose_consumption_reversed",
+        entityType: "product",
+        entityId: product.id,
+        metadata: {
+          externalClubId: input.externalClubId,
+          externalConsumptionId: input.externalConsumptionId,
+          externalReversalId: input.externalReversalId,
+          originalIdempotencyKey: input.originalIdempotencyKey,
+          inventoryItemId: target.inventoryItemId,
+          doseMl: input.doseMl,
+          reason: input.reason,
+          stockQuantityEffect: input.doseMl,
+          remainingMl,
+        },
+      });
+
+      return {
+        accepted: true,
+        duplicate: false,
+        movementType: "club_refund",
+        inventoryItemId: target.inventoryItemId,
+        unit: "ml",
+        stockQuantityEffect: input.doseMl,
+        remainingMl,
+        idempotency: "original_consumption_once",
       };
     });
   }
@@ -420,17 +622,24 @@ export class ClubWhiskyService {
     const issuedKey = shouldIssueKey ? createIntegrationApiKey("club_whisky") : undefined;
 
     const config = {
-      branchId: input.branchId,
+      branchId: input.branchId ?? existingAccount?.config.branchId,
       scopes: [
         "branches:read",
         "products:read",
         "stock:read",
         "club_sales:write",
         "club_consumption:write",
+        "club_consumption:reverse",
         "customers:link",
       ],
-      webhookUrl: null,
-      webhookSecretRef: "CLUB_WHISKY_WEBHOOK_SECRET",
+      remoteClientId: input.remoteClientId ?? existingAccount?.config.remoteClientId ?? null,
+      webhookUrl: input.webhookUrl ?? existingAccount?.config.webhookUrl ?? null,
+      webhookSecretRef:
+        input.webhookSecretRef ??
+        existingAccount?.config.webhookSecretRef ??
+        "CLUB_WHISKY_WEBHOOK_SECRET",
+      contractVersion: "2026-07-30",
+      inventoryAuthority: "giromesa",
     };
 
     const [account] = await this.database.db
@@ -481,6 +690,7 @@ export class ClubWhiskyService {
         provider: "club_whisky",
         scopes: config.scopes,
         keyLastFour: issuedKey?.lastFour ?? account?.apiKeyLastFour,
+        webhookSecretConfigured: Boolean(config.webhookSecretRef),
       },
     });
 
@@ -525,8 +735,16 @@ export class ClubWhiskyService {
       provider: account.provider,
       status: account.status,
       branchId: typeof account.config.branchId === "string" ? account.config.branchId : null,
+      remoteClientId:
+        typeof account.config.remoteClientId === "string" ? account.config.remoteClientId : null,
       scopes: Array.isArray(account.config.scopes) ? account.config.scopes : [],
       webhookUrl: typeof account.config.webhookUrl === "string" ? account.config.webhookUrl : null,
+      contractVersion:
+        typeof account.config.contractVersion === "string" ? account.config.contractVersion : null,
+      inventoryAuthority:
+        typeof account.config.inventoryAuthority === "string"
+          ? account.config.inventoryAuthority
+          : "giromesa",
       apiKeyLastFour: account.apiKeyLastFour,
       apiKeyCreatedAt: account.apiKeyCreatedAt,
       hasApiKey: Boolean(account.apiKeyLastFour),
@@ -535,22 +753,46 @@ export class ClubWhiskyService {
   }
 
   private async reserveIdempotency(
-    client: InsertClient,
+    client: DatabaseClient,
     tenantId: string,
     idempotencyKey: string,
     payload: Record<string, unknown>,
   ) {
+    const externalEventId = this.idempotencyEventId(tenantId, idempotencyKey);
     const [event] = await client
       .insert(webhookEvents)
       .values({
         provider: "club_whisky",
         tenantId,
-        externalEventId: idempotencyKey,
+        externalEventId,
         payload,
         status: "received",
       })
       .onConflictDoNothing()
       .returning();
+
+    if (!event) {
+      const [existing] = await client
+        .select({
+          payload: webhookEvents.payload,
+        })
+        .from(webhookEvents)
+        .where(
+          and(
+            eq(webhookEvents.provider, "club_whisky"),
+            eq(webhookEvents.tenantId, tenantId),
+            eq(webhookEvents.externalEventId, externalEventId),
+          ),
+        )
+        .limit(1);
+
+      if (!existing || !isDeepStrictEqual(existing.payload, payload)) {
+        throw new ConflictException({
+          error: "idempotency_key_reused_with_different_payload",
+          idempotencyKey,
+        });
+      }
+    }
 
     return {
       accepted: true,
@@ -562,7 +804,7 @@ export class ClubWhiskyService {
   }
 
   private async audit(
-    tx: InsertClient,
+    tx: DatabaseClient,
     context: TenantContext,
     input: {
       branchId?: string;
@@ -588,5 +830,117 @@ export class ClubWhiskyService {
     if (context.branchId && context.branchId !== branchId) {
       throw new ForbiddenException("Integration key is not authorized for this branch");
     }
+  }
+
+  private idempotencyEventId(tenantId: string, idempotencyKey: string) {
+    return `${tenantId}:${idempotencyKey}`;
+  }
+
+  private async assertExistingBranch(
+    client: DatabaseClient,
+    context: TenantContext,
+    branchId: string,
+  ) {
+    const [branch] = await client
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, branchId)))
+      .limit(1);
+
+    if (!branch) {
+      throw new NotFoundException("Branch not found");
+    }
+  }
+
+  private async resolveClubInventoryTarget(
+    client: DatabaseClient,
+    context: TenantContext,
+    branchId: string,
+    productId: string,
+  ) {
+    const [recipe] = await client
+      .select({ id: recipes.id })
+      .from(recipes)
+      .where(and(eq(recipes.tenantId, context.tenantId), eq(recipes.productId, productId)))
+      .limit(1);
+
+    if (!recipe) {
+      throw new BadRequestException(
+        "Club-eligible product must have one milliliter-based inventory recipe",
+      );
+    }
+
+    const targets = await client
+      .select({
+        inventoryItemId: inventoryItems.id,
+        inventoryUnit: inventoryItems.unit,
+        recipeUnit: recipeItems.unit,
+        allowNegative: inventoryItems.allowNegative,
+      })
+      .from(recipeItems)
+      .innerJoin(
+        inventoryItems,
+        and(
+          eq(inventoryItems.tenantId, context.tenantId),
+          eq(inventoryItems.id, recipeItems.inventoryItemId),
+        ),
+      )
+      .where(and(eq(recipeItems.tenantId, context.tenantId), eq(recipeItems.recipeId, recipe.id)));
+
+    if (
+      targets.length !== 1 ||
+      targets[0]?.inventoryUnit.toLowerCase() !== "ml" ||
+      targets[0]?.recipeUnit.toLowerCase() !== "ml"
+    ) {
+      throw new BadRequestException(
+        "Club-eligible product must map to exactly one inventory item measured in ml",
+      );
+    }
+
+    const [stockLocation] = await client
+      .select({ id: stockLocations.id })
+      .from(stockLocations)
+      .where(
+        and(eq(stockLocations.tenantId, context.tenantId), eq(stockLocations.branchId, branchId)),
+      )
+      .limit(1);
+
+    return {
+      inventoryItemId: targets[0].inventoryItemId,
+      allowNegative: targets[0].allowNegative,
+      stockLocationId: stockLocation?.id,
+    };
+  }
+
+  private async lockStockTarget(
+    client: DatabaseClient,
+    context: TenantContext,
+    branchId: string,
+    inventoryItemId: string,
+  ) {
+    const lockKey = `club-stock:${context.tenantId}:${branchId}:${inventoryItemId}`;
+    await client.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+  }
+
+  private async currentStock(
+    client: DatabaseClient,
+    context: TenantContext,
+    branchId: string,
+    inventoryItemId: string,
+  ) {
+    const [result] = await client
+      .select({
+        quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)`,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, context.tenantId),
+          eq(stockMovements.branchId, branchId),
+          eq(stockMovements.inventoryItemId, inventoryItemId),
+        ),
+      );
+
+    return Number(result?.quantity ?? 0);
   }
 }

@@ -13,6 +13,9 @@ import type { TenantContext } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
+import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/club-whisky-events";
+
+type InventoryDatabaseClient = Pick<DatabaseService["db"], "insert" | "select" | "update">;
 
 export type InventoryItemInput = {
   name: string;
@@ -195,75 +198,90 @@ export class InventoryService {
   async adjustStock(context: TenantContext, input: StockAdjustmentInput) {
     await this.assertBranch(context, input.branchId);
 
-    const [item] = await this.database.db
-      .select()
-      .from(inventoryItems)
-      .where(
-        and(
-          eq(inventoryItems.tenantId, context.tenantId),
-          eq(inventoryItems.id, input.inventoryItemId),
-        ),
-      )
-      .limit(1);
-
-    if (!item) {
-      throw new NotFoundException("Inventory item not found");
-    }
-
-    const currentQuantity = await this.currentQuantity(context, input.branchId, item.id);
-    if (input.supplierId) {
-      const [supplier] = await this.database.db
-        .select({ id: suppliers.id })
-        .from(suppliers)
-        .where(and(eq(suppliers.tenantId, context.tenantId), eq(suppliers.id, input.supplierId)))
+    return this.database.db.transaction(async (tx) => {
+      const [item] = await tx
+        .select()
+        .from(inventoryItems)
+        .where(
+          and(
+            eq(inventoryItems.tenantId, context.tenantId),
+            eq(inventoryItems.id, input.inventoryItemId),
+          ),
+        )
         .limit(1);
-      if (!supplier) throw new NotFoundException("Supplier not found");
-    }
-    const quantity = this.normalizeMovementQuantity(input.type, input.quantity, currentQuantity);
-    const stockLocationId =
-      input.stockLocationId ?? (await this.defaultLocationId(context, input.branchId));
-    const [movement] = await this.database.db
-      .insert(stockMovements)
-      .values({
-        tenantId: context.tenantId,
+
+      if (!item) {
+        throw new NotFoundException("Inventory item not found");
+      }
+
+      const currentQuantity = await this.currentQuantity(context, input.branchId, item.id, tx);
+      if (input.supplierId) {
+        const [supplier] = await tx
+          .select({ id: suppliers.id })
+          .from(suppliers)
+          .where(and(eq(suppliers.tenantId, context.tenantId), eq(suppliers.id, input.supplierId)))
+          .limit(1);
+        if (!supplier) throw new NotFoundException("Supplier not found");
+      }
+      const quantity = this.normalizeMovementQuantity(input.type, input.quantity, currentQuantity);
+      const stockLocationId =
+        input.stockLocationId ?? (await this.defaultLocationId(context, input.branchId, tx));
+      const [movement] = await tx
+        .insert(stockMovements)
+        .values({
+          tenantId: context.tenantId,
+          branchId: input.branchId,
+          inventoryItemId: item.id,
+          stockLocationId,
+          ...(input.supplierId ? { supplierId: input.supplierId } : {}),
+          type: input.type,
+          quantity,
+          unitCostCents: input.unitCostCents ?? item.averageCostCents,
+          sourceType: input.type === "purchase_receipt" ? "purchase" : "manual",
+          reason: input.reason,
+        })
+        .returning();
+
+      if (!movement) {
+        throw new Error("Failed to create stock movement");
+      }
+
+      if (input.type === "purchase_receipt" && input.unitCostCents !== undefined) {
+        await tx
+          .update(inventoryItems)
+          .set({ averageCostCents: input.unitCostCents, updatedAt: new Date() })
+          .where(
+            and(eq(inventoryItems.tenantId, context.tenantId), eq(inventoryItems.id, item.id)),
+          );
+      }
+
+      await this.audit(
+        context,
+        {
+          branchId: input.branchId,
+          action: `inventory.${input.type}`,
+          entityType: "stock_movement",
+          entityId: movement.id,
+          metadata: {
+            inventoryItemId: item.id,
+            quantity,
+            type: input.type,
+            supplierId: input.supplierId,
+            reason: input.reason,
+          },
+        },
+        tx,
+      );
+
+      await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
         branchId: input.branchId,
-        inventoryItemId: item.id,
-        stockLocationId,
-        ...(input.supplierId ? { supplierId: input.supplierId } : {}),
-        type: input.type,
-        quantity,
-        unitCostCents: input.unitCostCents ?? item.averageCostCents,
-        sourceType: input.type === "purchase_receipt" ? "purchase" : "manual",
-        reason: input.reason,
-      })
-      .returning();
+        inventoryItemIds: [item.id],
+        movementType: input.type,
+        movementId: movement.id,
+      });
 
-    if (!movement) {
-      throw new Error("Failed to create stock movement");
-    }
-
-    if (input.type === "purchase_receipt" && input.unitCostCents !== undefined) {
-      await this.database.db
-        .update(inventoryItems)
-        .set({ averageCostCents: input.unitCostCents, updatedAt: new Date() })
-        .where(and(eq(inventoryItems.tenantId, context.tenantId), eq(inventoryItems.id, item.id)));
-    }
-
-    await this.audit(context, {
-      branchId: input.branchId,
-      action: `inventory.${input.type}`,
-      entityType: "stock_movement",
-      entityId: movement.id,
-      metadata: {
-        inventoryItemId: item.id,
-        quantity,
-        type: input.type,
-        supplierId: input.supplierId,
-        reason: input.reason,
-      },
+      return movement;
     });
-
-    return movement;
   }
 
   async upsertRecipe(context: TenantContext, input: RecipeInput) {
@@ -337,8 +355,12 @@ export class InventoryService {
     });
   }
 
-  private async defaultLocationId(context: TenantContext, branchId: string) {
-    const [location] = await this.database.db
+  private async defaultLocationId(
+    context: TenantContext,
+    branchId: string,
+    client: InventoryDatabaseClient = this.database.db,
+  ) {
+    const [location] = await client
       .select()
       .from(stockLocations)
       .where(
@@ -350,7 +372,7 @@ export class InventoryService {
       return location.id;
     }
 
-    const [created] = await this.database.db
+    const [created] = await client
       .insert(stockLocations)
       .values({
         tenantId: context.tenantId,
@@ -363,8 +385,13 @@ export class InventoryService {
     return created?.id;
   }
 
-  private async currentQuantity(context: TenantContext, branchId: string, inventoryItemId: string) {
-    const [row] = await this.database.db
+  private async currentQuantity(
+    context: TenantContext,
+    branchId: string,
+    inventoryItemId: string,
+    client: InventoryDatabaseClient = this.database.db,
+  ) {
+    const [row] = await client
       .select({ quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)` })
       .from(stockMovements)
       .where(
@@ -413,8 +440,9 @@ export class InventoryService {
       entityId?: string;
       metadata?: Record<string, unknown>;
     },
+    client: InventoryDatabaseClient = this.database.db,
   ) {
-    await this.database.db.insert(auditLogs).values({
+    await client.insert(auditLogs).values({
       tenantId: context.tenantId,
       branchId: input.branchId ?? context.branchId,
       userId: context.userId,

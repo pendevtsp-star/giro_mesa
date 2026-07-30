@@ -183,12 +183,23 @@
   color: var(--muted);
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1600px) {
   .floor-operations-grid {
     grid-template-columns: 1fr;
   }
 
   .floor-inline-form {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .floor-inline-form .button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .floor-inline-form {
+    grid-template-columns: 1fr;
   }
 }

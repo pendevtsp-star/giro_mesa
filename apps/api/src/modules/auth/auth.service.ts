@@ -1719,10 +1719,13 @@ export class AuthService {
         metadata: { email: user.email, delivery: emailDelivery.provider },
       });
 
+      const exposeDevelopmentResetLink =
+        loadEnv().NODE_ENV !== "production" && emailDelivery.provider === "mock";
+
       return {
         requested: true,
         delivery: emailDelivery.provider,
-        ...(token
+        ...(exposeDevelopmentResetLink && token
           ? { resetUrl: this.publicAppUrl(`/reset/${token}`), tokenReturnedOnce: token }
           : {}),
       };
@@ -1731,9 +1734,6 @@ export class AuthService {
     return {
       requested: true,
       delivery: "email_provider_mock",
-      ...(token
-        ? { resetUrl: this.publicAppUrl(`/reset/${token}`), tokenReturnedOnce: token }
-        : {}),
     };
   }
 

@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png" }],
+    icon: [{ url: "/images/giromesa-symbol.svg", type: "image/svg+xml" }],
     apple: [{ url: "/icon.png", type: "image/png" }],
   },
   manifest: "/manifest.json",

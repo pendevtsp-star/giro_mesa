@@ -181,7 +181,9 @@ export default function KdsPage() {
             <div>
               <span>{ticket.stationName}</span>
               <strong>
-                {ticket.orderChannel === "table" ? "Mesa" : "Pedido"} {ticket.orderId.slice(0, 5)}
+                {ticket.tableCode
+                  ? `Mesa ${ticket.tableCode}`
+                  : `Pedido ${ticket.orderId.slice(0, 5)}`}
               </strong>
               <small>
                 <Clock3 size={14} /> {readAge(ticket.createdAt)}

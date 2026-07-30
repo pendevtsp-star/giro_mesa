@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, Inject, Query } from "@nestjs/common";
+import { Controller, Get, Headers, Inject, Param, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 import type { HeaderRecord } from "../../common/http";
 import { requirePermission } from "../../common/security";
@@ -26,5 +26,12 @@ export class OutboxController {
     return {
       data: await this.outboxService.listEvents(context, input),
     };
+  }
+
+  @Post(":eventId/retry")
+  async retryEvent(@Headers() headers: HeaderRecord, @Param("eventId") eventId: string) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "tenant:manage");
+    return this.outboxService.retryEvent(context, eventId);
   }
 }

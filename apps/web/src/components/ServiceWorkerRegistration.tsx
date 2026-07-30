@@ -4,31 +4,42 @@ import { useEffect } from "react";
 
 export function ServiceWorkerRegistration() {
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((registration) => {
-          registration.addEventListener("updatefound", () => {
-            const newWorker = registration.installing;
-            if (newWorker) {
-              newWorker.addEventListener("statechange", () => {
-                if (newWorker.state === "activated") {
-                  window.location.reload();
-                }
-              });
-            }
-          });
-        })
-        .catch((err) => {
-          console.error("SW registration failed:", err);
-        });
-
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data?.type === "SYNC_STARTED") {
-          console.log("Background sync started");
-        }
-      });
+    const serviceWorker = navigator.serviceWorker;
+    if (!serviceWorker?.register) {
+      return;
     }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "SYNC_STARTED") {
+        console.info("Background sync started");
+      }
+    };
+
+    serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        if (!registration) {
+          return;
+        }
+        registration.addEventListener("updatefound", () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener("statechange", () => {
+              if (newWorker.state === "activated") {
+                window.location.reload();
+              }
+            });
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        console.warn("Service worker indisponível; o sistema continuará online.", error);
+      });
+
+    serviceWorker.addEventListener?.("message", handleMessage);
+    return () => {
+      serviceWorker.removeEventListener?.("message", handleMessage);
+    };
   }, []);
 
   return null;

@@ -16,35 +16,138 @@ import { AuthService } from "../auth/auth.service";
 import { ClubWhiskyService } from "./club-whisky.service";
 import { IntegrationAuthService } from "./integration-auth.service";
 
-const clubSaleSchema = z.object({
-  branchId: z.string().min(1),
-  productId: z.string().min(1),
-  quantityBottles: z.number().int().positive(),
-  externalClubId: z.string().min(1),
-  externalCustomerId: z.string().optional(),
-  idempotencyKey: z.string().min(8),
+export const clubSaleSchema = z
+  .object({
+    branchId: z.string().min(1).max(180),
+    saleType: z.enum(["individual", "combo_pool"]).default("individual"),
+    productId: z.string().min(1).max(180).optional(),
+    eligibleProductIds: z.array(z.string().min(1).max(180)).min(2).max(100).optional(),
+    quantityBottles: z.number().int().positive().default(1),
+    totalDoses: z.number().int().positive().optional(),
+    doseMl: z.number().int().positive().max(5_000).optional(),
+    externalClubId: z.string().min(1).max(180),
+    externalOfferId: z.string().min(1).max(180).optional(),
+    externalCustomerId: z.string().min(1).max(180).optional(),
+    idempotencyKey: z.string().min(8).max(180),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.saleType === "individual") {
+      if (!input.productId) {
+        context.addIssue({
+          code: "custom",
+          message: "productId is required for an individual club sale",
+          path: ["productId"],
+        });
+      }
+      if (input.eligibleProductIds !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "eligibleProductIds must be omitted for an individual club sale",
+          path: ["eligibleProductIds"],
+        });
+      }
+    }
+
+    if (input.saleType === "combo_pool") {
+      if (input.productId !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "productId must be omitted for a combo sale",
+          path: ["productId"],
+        });
+      }
+      if (!input.eligibleProductIds || input.eligibleProductIds.length < 2) {
+        context.addIssue({
+          code: "custom",
+          message: "eligibleProductIds must contain at least two products for a combo",
+          path: ["eligibleProductIds"],
+        });
+      } else if (new Set(input.eligibleProductIds).size < 2) {
+        context.addIssue({
+          code: "custom",
+          message: "eligibleProductIds must contain at least two distinct products",
+          path: ["eligibleProductIds"],
+        });
+      }
+      if (!input.totalDoses) {
+        context.addIssue({
+          code: "custom",
+          message: "totalDoses is required for a combo sale",
+          path: ["totalDoses"],
+        });
+      }
+    }
+  });
+
+export const doseConsumptionSchema = z.strictObject({
+  branchId: z.string().min(1).max(180),
+  productId: z.string().min(1).max(180),
+  externalClubId: z.string().min(1).max(180),
+  externalOfferId: z.string().min(1).max(180).optional(),
+  offerType: z.enum(["individual", "combo_pool"]).optional(),
+  externalConsumptionId: z.string().min(1).max(180),
+  doseMl: z.number().int().positive().max(5_000).default(50),
+  employeeRef: z.string().max(180).optional(),
+  idempotencyKey: z.string().min(8).max(180),
 });
 
-const doseConsumptionSchema = z.object({
-  branchId: z.string().min(1),
-  productId: z.string().min(1),
-  externalClubId: z.string().min(1),
-  externalConsumptionId: z.string().min(1),
-  doseMl: z.number().int().positive().default(50),
-  employeeRef: z.string().optional(),
-  idempotencyKey: z.string().min(8),
+export const doseConsumptionReversalSchema = z.strictObject({
+  branchId: z.string().min(1).max(180),
+  productId: z.string().min(1).max(180),
+  externalClubId: z.string().min(1).max(180),
+  externalConsumptionId: z.string().min(1).max(180),
+  externalReversalId: z.string().min(1).max(180),
+  originalIdempotencyKey: z.string().min(8).max(180),
+  doseMl: z.number().int().positive().max(5_000),
+  reason: z.string().trim().min(3).max(500),
+  idempotencyKey: z.string().min(8).max(180),
 });
 
-const customerLinkSchema = z.object({
-  customerId: z.string().min(1),
-  externalCustomerId: z.string().min(1),
-  idempotencyKey: z.string().min(8),
+export const customerLinkSchema = z.strictObject({
+  customerId: z.string().min(1).max(180),
+  externalCustomerId: z.string().min(1).max(180),
+  idempotencyKey: z.string().min(8).max(180),
 });
 
-const configureSchema = z.object({
+export const configureSchema = z.strictObject({
   branchId: z.string().optional(),
+  remoteClientId: z.string().trim().min(1).max(160).optional(),
+  webhookSecretRef: z
+    .string()
+    .trim()
+    .regex(
+      /^CLUB_WHISKY_WEBHOOK_SECRET(?:_[A-Z0-9_]+)?$/,
+      "Webhook secret reference must use the CLUB_WHISKY_WEBHOOK_SECRET prefix",
+    )
+    .optional(),
+  webhookUrl: z
+    .url()
+    .refine(isAllowedDoseClubWebhookUrl, "Webhook URL is not allowed for Dose Club")
+    .optional(),
   rotateKey: z.boolean().optional().default(false),
 });
+
+function isAllowedDoseClubWebhookUrl(value: string) {
+  const target = new URL(value);
+  const configuredBaseUrl = process.env.CLUB_WHISKY_API_BASE_URL;
+  if (
+    configuredBaseUrl &&
+    target.origin === new URL(configuredBaseUrl).origin &&
+    (process.env.NODE_ENV !== "production" || target.protocol === "https:")
+  ) {
+    return true;
+  }
+
+  if (
+    process.env.NODE_ENV !== "production" &&
+    ["localhost", "127.0.0.1", "::1"].includes(target.hostname)
+  ) {
+    return true;
+  }
+
+  return target.protocol === "https:" && target.hostname === "doseclube.giromesa.com.br";
+}
 
 @Controller("integrations/club-whisky")
 export class ClubWhiskyController {
@@ -79,12 +182,14 @@ export class ClubWhiskyController {
   async listStockAvailability(
     @Headers() headers: HeaderRecord,
     @Query("branchId") branchId: string,
+    @Query("productId") productId?: string,
   ) {
     const context = await this.integrationContext(headers, "stock:read");
     return {
       data: await this.clubWhiskyService.listStockAvailability(
         context,
         this.authorizedBranchId(context.branchId, branchId),
+        productId,
       ),
     };
   }
@@ -103,6 +208,16 @@ export class ClubWhiskyController {
     return this.clubWhiskyService.registerDoseConsumption(
       context,
       doseConsumptionSchema.parse(body),
+    );
+  }
+
+  @Post("dose-consumptions/reversals")
+  async reverseDoseConsumption(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.integrationContext(headers, "club_consumption:reverse");
+    return this.clubWhiskyService.reverseDoseConsumption(
+      context,
+      doseConsumptionReversalSchema.parse(body),
     );
   }
 

@@ -64,7 +64,7 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: #0d1b2a url("/images/giromesa-symbol.png") center / cover no-repeat;
+  background: #0d1b2a url("/images/giromesa-symbol.svg") center / 100% 100% no-repeat;
   color: transparent;
   font-size: 0;
   box-shadow: var(--tight-shadow);
@@ -363,8 +363,8 @@
 }
 
 .app-layout[data-accent="amber"] {
-  --accent: #b97014;
-  --accent-strong: #83500d;
+  --accent: #facc15;
+  --accent-strong: #fde047;
 }
 
 .app-layout[data-accent="rose"] {
@@ -693,6 +693,29 @@
 @media (max-width: 640px) {
   .salon-service-requests {
     padding-inline: 1rem;
+  }
+
+  .salon-tools {
+    align-items: stretch;
+  }
+
+  .salon-create-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .salon-create-form strong {
+    grid-column: 1 / -1;
+  }
+
+  .salon-create-form input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .salon-legend {
+    width: 100%;
   }
 }
 

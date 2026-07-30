@@ -148,12 +148,24 @@ export function TableActionPopup({
     ? ["#f97316", "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6"][0]
     : undefined;
 
-  const popupWidth = 240;
-  const x = Math.min(position.x, window.innerWidth - popupWidth - 16);
-  const y = Math.min(position.y, window.innerHeight - 300);
+  const viewportMargin = 12;
+  const popupWidth = Math.min(280, window.innerWidth - viewportMargin * 2);
+  const popupMaxHeight = Math.min(460, window.innerHeight - viewportMargin * 2);
+  const x = Math.max(
+    viewportMargin,
+    Math.min(position.x, window.innerWidth - popupWidth - viewportMargin),
+  );
+  const y = Math.max(
+    viewportMargin,
+    Math.min(position.y, window.innerHeight - popupMaxHeight - viewportMargin),
+  );
 
   return (
-    <div ref={ref} className="table-action-popup" style={{ left: x, top: y }}>
+    <div
+      ref={ref}
+      className="table-action-popup"
+      style={{ left: x, top: y, width: popupWidth, maxHeight: popupMaxHeight }}
+    >
       <div className="popup-header">
         <div>
           <strong>{table.code}</strong>

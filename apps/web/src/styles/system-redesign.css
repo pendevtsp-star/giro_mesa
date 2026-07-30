@@ -286,11 +286,11 @@ body
   height: 2.15rem;
   place-items: center;
   border-radius: 0.58rem;
-  background: var(--accent);
-  color: #07111b;
-  font-size: 1rem;
+  background: #07111b url("/images/giromesa-symbol.svg") center / 100% 100% no-repeat;
+  color: transparent;
+  font-size: 0;
   font-weight: 900;
-  box-shadow: 0 10px 28px rgba(250, 204, 21, 0.18);
+  box-shadow: 0 10px 28px rgba(1, 8, 18, 0.36);
 }
 
 .login-page-night .login-copy {
@@ -418,6 +418,32 @@ body
   color: #fda4af;
 }
 
+.login-page-night .form-alert-success {
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.1);
+  color: #86efac;
+}
+
+.login-page-night .form-alert-info {
+  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(96, 165, 250, 0.1);
+  color: #93c5fd;
+}
+
+.login-page-night .form-alert span,
+.login-page-night .form-alert-action {
+  display: block;
+}
+
+.login-page-night .form-alert-action {
+  width: fit-content;
+  margin-top: 0.45rem;
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
 .login-page-night .language-switcher {
   border-color: var(--line);
   border-radius: 999px;
@@ -465,11 +491,11 @@ body
   height: 2rem;
   place-items: center;
   border-radius: 0.55rem;
-  background: var(--accent);
-  color: #07111b;
-  font-size: 0.92rem;
+  background: #07111b url("/images/giromesa-symbol.svg") center / 100% 100% no-repeat;
+  color: transparent;
+  font-size: 0;
   font-weight: 900;
-  box-shadow: 0 10px 26px rgba(250, 204, 21, 0.16);
+  box-shadow: 0 10px 26px rgba(1, 8, 18, 0.34);
 }
 
 .app-layout-night .sidebar .language-switcher {
@@ -642,6 +668,25 @@ body
   font-size: 0.64rem;
 }
 
+.brand-symbol {
+  display: block;
+  background: #07111b url("/images/giromesa-symbol.svg") center / 100% 100% no-repeat;
+}
+
+.app-layout-night .session-status {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(74, 222, 128, 0.24);
+  border-radius: 999px;
+  padding: 0 1rem;
+  background: rgba(74, 222, 128, 0.08);
+  color: #86efac;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
 .app-layout-night .live-banner {
   min-height: 3.1rem;
   margin-bottom: 1rem;
@@ -698,6 +743,43 @@ body
 
 .app-layout-night :is(.panel, .metric, .gm-card) :is(p, small, span) {
   color: var(--muted);
+}
+
+.app-layout-night .report-comparison-grid > div {
+  border-color: var(--line);
+  background: rgba(8, 19, 31, 0.72);
+}
+
+.app-layout-night .report-comparison-grid :is(span, small) {
+  color: var(--muted);
+}
+
+.app-layout-night .report-comparison-grid strong {
+  color: var(--ink);
+}
+
+.access-boundary-page {
+  min-height: 100dvh;
+  padding: clamp(1rem, 3vw, 2.5rem);
+}
+
+.access-boundary-page > :is(.app-state, .workspace-heading, .workspace-topbar) {
+  width: min(100%, 62rem);
+  margin-inline: auto;
+}
+
+.access-boundary-page > .app-state {
+  margin-top: 1.25rem;
+}
+
+.access-boundary-help {
+  width: min(100%, 62rem);
+  margin: 1rem auto 0;
+  color: var(--muted);
+}
+
+.access-boundary-help code {
+  color: var(--accent);
 }
 
 .app-layout-night .metrics {
@@ -821,6 +903,137 @@ body
   font-size: 0.82rem;
 }
 
+.app-layout-night :is(.dashboard-kpi-panel, .dashboard-alerts-panel) {
+  display: grid;
+  gap: 1.1rem;
+  margin-top: 1rem;
+  padding: 1.1rem;
+}
+
+.app-layout-night :is(.dashboard-kpi-panel, .dashboard-alerts-panel) .panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-layout-night :is(.dashboard-kpi-panel, .dashboard-alerts-panel) .panel-title h2 {
+  margin: 0.25rem 0 0;
+}
+
+.app-layout-night .kpi-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.app-layout-night .kpi-card {
+  display: grid;
+  min-width: 0;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.app-layout-night .kpi-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.app-layout-night .kpi-card-value {
+  color: var(--ink);
+  font-size: clamp(1.45rem, 2.5vw, 2rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.app-layout-night .kpi-card-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.app-layout-night .top-products-section {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.app-layout-night .top-products-list,
+.app-layout-night .alerts-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.app-layout-night .top-product-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.app-layout-night .top-product-rank {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(250, 204, 21, 0.1);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.app-layout-night .top-product-info {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-layout-night .top-product-info strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-layout-night .top-product-info span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.app-layout-night .alert-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid rgba(250, 204, 21, 0.14);
+  border-radius: 0.7rem;
+  padding: 0.75rem 0.8rem;
+  background: rgba(250, 204, 21, 0.045);
+}
+
+.app-layout-night .alert-row > span:not(.gm-badge) {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
 /* Public QR menu */
 
 .menu-shell.menu-shell-night {
@@ -853,9 +1066,9 @@ body
   height: 2rem;
   place-items: center;
   border-radius: 0.55rem;
-  background: var(--accent);
-  color: #07111b;
-  font-size: 0.9rem;
+  background: #07111b url("/images/giromesa-symbol.svg") center / 100% 100% no-repeat;
+  color: transparent;
+  font-size: 0;
   font-weight: 900;
 }
 
@@ -1213,9 +1426,287 @@ body .report-page .report-filters {
   color: var(--ink);
 }
 
+/*
+ * Semantic compatibility for modules that still own light-theme component
+ * styles. The standalone operational shell is dark, so nested legacy cards
+ * must use dark surfaces instead of inheriting light text over white.
+ */
+body :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page
+  )
+  :is(
+    .cash-figures div,
+    .cash-expected,
+    .printing-metrics article,
+    .cash-readiness-card,
+    .cash-kpi-card,
+    .payment-breakdown div,
+    .permission-toggle,
+    .audit-filters,
+    .team-form,
+    .team-security-card,
+    .secret-box,
+    .recovery-code-grid code,
+    .waiter-shift-card,
+    .waiter-table-card,
+    .waiter-product-row,
+    .waiter-counter-card,
+    .waiter-guidance-card,
+    .waiter-activity-item,
+    .waiter-service-insights div,
+    .waiter-note,
+    .report-status,
+    .report-comparison-grid div,
+    .report-alerts div,
+    .onboarding-quick-grid a,
+    .onboarding-step,
+    .onboarding-note
+  ) {
+  border-color: var(--line);
+  background: rgba(16, 32, 51, 0.82);
+  color: var(--ink);
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  :is(.gm-badge-good, .gm-badge-warn, .gm-badge-info, .gm-badge-danger, .gm-badge-neutral) {
+  border: 1px solid transparent;
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  .gm-badge-good {
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.13);
+  color: #86efac;
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  .gm-badge-warn {
+  border-color: rgba(250, 204, 21, 0.32);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde047;
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  .gm-badge-info {
+  border-color: rgba(92, 133, 242, 0.32);
+  background: rgba(92, 133, 242, 0.14);
+  color: #a9c1ff;
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  .gm-badge-danger {
+  border-color: rgba(251, 113, 133, 0.32);
+  background: rgba(251, 113, 133, 0.13);
+  color: #fda4af;
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  .gm-badge-neutral {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-soft);
+}
+
+body
+  :is(
+    .workspace-page,
+    .pos-workspace,
+    .kds-page,
+    .team-page,
+    .report-page,
+    .billing-page,
+    .onboarding-page,
+    .branding-page,
+    .stepper-container
+  )
+  :is(.brand-mark, .tenant-avatar) {
+  color: #07111b;
+}
+
+body :is(.workspace-page, .report-page, .branding-page) .count-chip {
+  border: 1px solid rgba(74, 222, 128, 0.26);
+  background: rgba(74, 222, 128, 0.12);
+  color: #86efac;
+}
+
+body .report-page .filter {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ink-soft);
+}
+
+body .report-page .filter:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--ink);
+}
+
+body .report-page .filter.selected,
+body .report-page .filter.active {
+  border-color: transparent;
+  background: var(--accent);
+  color: #07111b;
+}
+
+body .salon-page :is(.salon-table, .salon-legend span) {
+  color: #102033;
+}
+
+body .salon-page .salon-table :is(strong, span) {
+  color: #102033;
+}
+
+body .salon-page .salon-table small {
+  color: #52667b;
+}
+
+body .salon-page .salon-zoom-controls {
+  border-color: var(--line);
+  background: #102033;
+  color: var(--ink);
+}
+
+body .salon-page .salon-zoom-controls :is(.button, div) {
+  color: var(--ink);
+}
+
+body .salon-page .table-action-popup {
+  overflow-y: auto;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #102033;
+  color: var(--ink);
+  box-shadow: 0 24px 70px rgba(1, 8, 18, 0.52);
+}
+
+body .salon-page .table-action-popup :is(.popup-header strong, .popup-action-btn) {
+  color: var(--ink);
+}
+
+body .salon-page .table-action-popup :is(.popup-table-name, .popup-meta, .popup-close) {
+  color: var(--muted);
+}
+
+body .salon-page .table-action-popup .popup-action-btn:hover {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+body .salon-page .table-action-popup .popup-action-btn.destructive {
+  color: #fda4af;
+}
+
+body .salon-page .table-action-popup .popup-action-btn.destructive:hover {
+  background: rgba(251, 113, 133, 0.12);
+}
+
+body .salon-page .table-action-popup input {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ink);
+}
+
 body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) select option {
   background: #fff;
   color: #0d1b2a;
+}
+
+/* Platform uses the same administrative shell and semantic surfaces. */
+.app-layout-night :is(.platform-note, .platform-support-item) {
+  border-color: var(--line);
+  background: rgba(16, 32, 51, 0.82);
+  color: var(--ink);
+}
+
+.app-layout-night .platform-support-item:hover {
+  border-color: rgba(250, 204, 21, 0.28);
+  background: rgba(16, 32, 51, 0.96);
+}
+
+.app-layout-night .platform-support-item :is(strong, span, small) {
+  color: inherit;
+}
+
+.app-layout-night .platform-support-item :is(.gm-badge-neutral, .gm-badge-info) {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-soft);
+}
+
+.app-layout-night .platform-support-item .gm-badge-warn {
+  border-color: rgba(250, 204, 21, 0.32);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde047;
 }
 
 /* Waiter stepper belongs to the operational shell even when tenant branding is light. */
@@ -1285,6 +1776,101 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
   color: var(--ink);
 }
 
+.support-page-night {
+  min-height: 100dvh;
+  padding: 0 clamp(1rem, 4vw, 4rem) 4rem;
+  background:
+    radial-gradient(circle at 78% 8%, rgba(250, 204, 21, 0.12), transparent 24rem), #07111b;
+  color: #f8fafc;
+}
+
+.support-topbar {
+  display: flex;
+  min-height: 5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.support-page-night .brand,
+.support-page-night .button.secondary {
+  color: #f8fafc;
+}
+
+.support-page-night .button.secondary {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.support-hero {
+  max-width: 52rem;
+  padding: clamp(3.5rem, 8vw, 7rem) 0 2.5rem;
+}
+
+.support-hero h1 {
+  max-width: 14ch;
+  margin: 0.7rem 0 1rem;
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.support-hero p,
+.support-option p,
+.support-contact p {
+  color: #91a3b8;
+  line-height: 1.7;
+}
+
+.support-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.support-option,
+.support-contact {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  background: #102033;
+  box-shadow: 0 24px 64px rgba(1, 8, 18, 0.3);
+}
+
+.support-option {
+  display: flex;
+  min-height: 19rem;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 1.5rem;
+}
+
+.support-option > svg {
+  color: #facc15;
+}
+
+.support-option h2,
+.support-contact h2 {
+  margin: 1.1rem 0 0.45rem;
+}
+
+.support-option p {
+  flex: 1;
+}
+
+.support-contact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-top: 1rem;
+  padding: 1.5rem;
+}
+
+.support-contact > div {
+  max-width: 48rem;
+}
+
 @media (max-width: 1120px) {
   .app-layout.app-layout-night {
     grid-template-columns: 14.5rem minmax(0, 1fr);
@@ -1318,8 +1904,25 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
 }
 
 @media (max-width: 900px) {
+  .support-options {
+    grid-template-columns: 1fr;
+  }
+
+  .support-option {
+    min-height: 0;
+  }
+
   .login-page.login-page-night {
     grid-template-columns: 1fr;
+  }
+
+  .login-page.trial-signup-page {
+    grid-template-columns: 1fr;
+  }
+
+  .trial-signup-page .login-panel {
+    width: 100%;
+    min-width: 0;
   }
 
   .login-page-night .login-art {
@@ -1386,9 +1989,87 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
   .menu-shell-night .menu-toolbar {
     grid-template-columns: 1fr;
   }
+
+  :is(
+    .cash-layout,
+    .printing-grid,
+    .team-page-grid,
+    .report-layout,
+    .platform-grid,
+    .platform-support-layout,
+    .platform-plan-grid,
+    .manual-grid,
+    .manual-checklist
+  ) {
+    grid-template-columns: 1fr;
+  }
+
+  :is(.workspace-page, .team-page, .onboarding-page, .billing-page, .branding-page, .manual-page)
+    :is(.panel, .workspace-panel, .workspace-form, .workspace-form-grid, .team-page-grid) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .team-page-header,
+  .branding-page-header {
+    grid-template-columns: 1fr;
+  }
+
+  .team-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .team-row-actions {
+    justify-content: flex-start;
+  }
+
+  .audit-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .onboarding-hero,
+  .onboarding-welcome {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-command-row {
+    flex-wrap: wrap;
+  }
+
+  .report-operator-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-page .topbar {
+    flex-wrap: wrap;
+  }
+
+  .manual-page .nav-links {
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 620px) {
+  .support-topbar,
+  .support-contact {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .support-topbar {
+    padding: 1rem 0;
+  }
+
+  .support-hero {
+    padding-top: 3rem;
+  }
+
   .pos-workspace .workspace-topbar {
     flex-wrap: wrap;
   }
@@ -1479,6 +2160,22 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .app-layout-night .kpi-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-layout-night .top-product-info {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .app-layout-night .top-product-info strong {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .menu-shell-night .menu-hero {
     min-height: 24rem;
     padding: 1rem;
@@ -1519,6 +2216,102 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
     justify-content: space-between;
     justify-items: start;
   }
+
+  :is(.workspace-page, .team-page, .billing-page, .branding-page, .onboarding-page) {
+    overflow-wrap: anywhere;
+  }
+
+  .workspace-page
+    :is(.workspace-panel, .workspace-form, .workspace-form-grid, label, input, select),
+  .team-page :is(.team-form, .team-row, .team-security-card, .permission-toggle),
+  .billing-page :is(.panel, .gm-card),
+  .branding-page :is(.panel, .branding-preview-shell, .branding-preview-card) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .workspace-page :is(.panel-heading, .workspace-heading),
+  .cash-card .panel-heading,
+  .billing-page .panel-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .audit-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .team-page,
+  .billing-page,
+  .branding-page {
+    padding: 1rem;
+  }
+
+  .team-page-header,
+  .branding-page-header {
+    gap: 0.75rem;
+  }
+
+  .team-page-header h1,
+  .branding-page-header h1 {
+    overflow-wrap: anywhere;
+    font-size: clamp(2rem, 11vw, 3rem);
+  }
+
+  .onboarding-quick-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-step {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+
+  .onboarding-step > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .team-page .role-shell,
+  .report-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .team-page .permission-toggle {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .team-page .permission-toggle code {
+    grid-column: 2;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .trial-plan-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .trial-signup-page .login-panel {
+    min-width: 0;
+  }
+
+  .manual-checklist,
+  .manual-support {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .manual-support {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.status-page .section-kicker,
+.trial-signup-page .login-panel .section-kicker,
+.trial-signup-page .trial-plan-selector small {
+  color: #825000;
 }
 
 @media (prefers-reduced-motion: reduce) {

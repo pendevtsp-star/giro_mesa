@@ -3,12 +3,17 @@
   "globalPassThroughEnv": [
     "API_URL",
     "DATABASE_URL",
+    "E2E_API_PORT",
+    "E2E_DATABASE_URL",
+    "E2E_WEB_PORT",
+    "NEXT_DIST_DIR",
     "NEXT_PUBLIC_API_URL",
     "npm_execpath",
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
     "WEB_URL",
     "PLAYWRIGHT_SKIP_WEB_SERVER",
-    "PLAYWRIGHT_REUSE_EXISTING_SERVER"
+    "PLAYWRIGHT_REUSE_EXISTING_SERVER",
+    "VISUAL_AUDIT"
   ],
   "tasks": {
     "build": {

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Símbolo GiroMesa</title>
+  <desc id="description">Mesa central envolvida por três setas que representam uma operação integrada.</desc>
+  <defs>
+    <linearGradient id="navy-surface" x1="72" y1="42" x2="438" y2="472" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D1B2A"/>
+      <stop offset="1" stop-color="#07111B"/>
+    </linearGradient>
+    <linearGradient id="yellow-action" x1="122" y1="126" x2="390" y2="402" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFBF1A"/>
+      <stop offset="1" stop-color="#F5A623"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="104" fill="url(#navy-surface)"/>
+
+  <path
+    d="M126 282C117 205 161 132 232 105C253 97 274 94 296 96"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-linecap="round"
+    stroke-width="43"
+  />
+  <path d="M279 61L348 111L280 163Z" fill="#FFFFFF"/>
+
+  <path
+    d="M359 151C400 191 416 246 395 298C388 324 376 345 357 366"
+    fill="none"
+    stroke="url(#yellow-action)"
+    stroke-linecap="round"
+    stroke-width="43"
+  />
+  <path d="M318 356L408 362L352 430Z" fill="url(#yellow-action)"/>
+
+  <path
+    d="M330 395C259 426 178 405 135 345C127 334 120 322 115 310"
+    fill="none"
+    stroke="url(#yellow-action)"
+    stroke-linecap="round"
+    stroke-width="43"
+  />
+  <path d="M73 337L104 258L168 321Z" fill="url(#yellow-action)"/>
+
+  <ellipse cx="256" cy="251" rx="75" ry="30" fill="#FFFFFF"/>
+  <path d="M239 272H273V344H239Z" fill="#FFFFFF"/>
+  <rect x="216" y="337" width="80" height="21" rx="10.5" fill="#FFFFFF"/>
+</svg>

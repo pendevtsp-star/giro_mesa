@@ -16,11 +16,11 @@
   --surface-soft: #fffaf0;
 
   /* Brand Colors */
-  --accent: #f5a623;
-  --accent-strong: #d98b08;
+  --accent: #facc15;
+  --accent-strong: #eab308;
   --blue: #1b263b;
   --red: #bd3f4a;
-  --amber: #f5a623;
+  --amber: #facc15;
   --green: #2e7d32;
   --violet: #6658b7;
 
@@ -87,8 +87,8 @@
 /* Amber (Default) */
 :root,
 :root[data-accent="amber"] {
-  --accent: #f5a623;
-  --accent-strong: #d98b08;
+  --accent: #facc15;
+  --accent-strong: #eab308;
 }
 
 /* Emerald */

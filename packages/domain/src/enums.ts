@@ -116,6 +116,7 @@ export const clubWhiskyEventTopics = [
   "order.closed",
   "payment.confirmed",
   "customer.updated",
+  "club.sale.registered",
   "club.stock_movement.created",
 ] as const;
 

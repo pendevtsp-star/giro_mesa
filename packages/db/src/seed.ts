@@ -1,3 +1,5 @@
+import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
 import argon2 from "argon2";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -38,10 +40,13 @@ import {
   printJobs,
   printRoutes,
   products,
+  publicRequestIdempotency,
+  qrBranchSettings,
   recipeItems,
   recipes,
   reservations,
   roles,
+  serviceRequests,
   sessions,
   stockLocations,
   stockMovements,
@@ -55,6 +60,14 @@ import {
   waitlistEntries,
   webhookEvents,
 } from "./schema";
+
+if (!process.env.DATABASE_URL || !process.env.PASSWORD_PEPPER) {
+  try {
+    loadEnvFile(fileURLToPath(new URL("../../../.env", import.meta.url)));
+  } catch {
+    // CI and production provide environment variables directly.
+  }
+}
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgres://giromesa:giromesa@localhost:55432/giromesa";
@@ -91,6 +104,8 @@ async function resetDemoTenant() {
 
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
   await db.delete(approvalRequests).where(eq(approvalRequests.tenantId, tenantId));
+  await db.delete(publicRequestIdempotency).where(eq(publicRequestIdempotency.tenantId, tenantId));
+  await db.delete(serviceRequests).where(eq(serviceRequests.tenantId, tenantId));
   await db.delete(tableEvents).where(eq(tableEvents.tenantId, tenantId));
   await db.delete(reservations).where(eq(reservations.tenantId, tenantId));
   await db.delete(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId));
@@ -121,6 +136,7 @@ async function resetDemoTenant() {
   await db.delete(products).where(eq(products.tenantId, tenantId));
   await db.delete(categories).where(eq(categories.tenantId, tenantId));
   await db.delete(kdsStations).where(eq(kdsStations.tenantId, tenantId));
+  await db.delete(qrBranchSettings).where(eq(qrBranchSettings.tenantId, tenantId));
   await db.delete(diningTables).where(eq(diningTables.tenantId, tenantId));
   await db.delete(floorAreas).where(eq(floorAreas.tenantId, tenantId));
   await db.delete(floorPlans).where(eq(floorPlans.tenantId, tenantId));
@@ -479,36 +495,60 @@ async function upsertDemo() {
     })
     .returning();
 
+  const [floorPlan] = await db
+    .insert(floorPlans)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      name: "Salão principal",
+      layout: {},
+      version: 1,
+    })
+    .returning();
+
+  if (!floorPlan) {
+    throw new Error("Failed to seed floor plan");
+  }
+
   const tableSeeds = [
     ["M01", "Mesa 1", 4, "free"],
-    ["M02", "Mesa 2", 2, "occupied"],
+    ["M02", "Mesa 2", 2, "free"],
     ["M03", "Mesa 3", 4, "preparing"],
-    ["M04", "Mesa 4", 4, "waiting_payment"],
+    ["M04", "Mesa 4", 4, "free"],
     ["M05", "Mesa 5", 6, "reserved"],
-    ["M06", "Mesa 6", 5, "served"],
+    ["M06", "Mesa 6", 4, "free"],
     ["M07", "Mesa 7", 2, "free"],
-    ["M08", "Mesa 8", 2, "order_sent"],
-    ["M09", "Mesa 9", 4, "free"],
-    ["M10", "Mesa 10", 8, "blocked"],
-    ["M11", "Mesa 11", 2, "waiting_order"],
-    ["M12", "Mesa 12", 4, "occupied"],
+    ["M08", "Mesa 8", 4, "free"],
   ] as const;
 
   const tableByCode = new Map<string, { id: string }>();
-  for (const [code, name, seats, status] of tableSeeds) {
+  const visualLayout: Record<string, { x: number; y: number }> = {};
+  for (const [index, [code, name, seats, status]] of tableSeeds.entries()) {
     const [table] = await db
       .insert(diningTables)
       .values({
         tenantId: tenant.id,
         branchId: branch.id,
+        floorPlanId: floorPlan.id,
         code,
         name,
         seats,
         status,
       })
       .returning({ id: diningTables.id });
-    if (table) tableByCode.set(code, table);
+    if (table) {
+      tableByCode.set(code, table);
+      visualLayout[table.id] = {
+        x: (index % 4) * 24 + 4,
+        y: Math.floor(index / 4) * 30 + 6,
+      };
+    }
   }
+
+  await db
+    .update(floorPlans)
+    .set({ layout: visualLayout, updatedAt: new Date() })
+    .where(eq(floorPlans.id, floorPlan.id));
 
   await db.insert(floorAreas).values({
     tenantId: tenant.id,
@@ -516,6 +556,25 @@ async function upsertDemo() {
     name: "Salão principal",
     sortOrder: 0,
     layout: {},
+  });
+
+  await db.insert(qrBranchSettings).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    capabilities: [
+      "menu",
+      "order",
+      "review_before_kds",
+      "track_preparation",
+      "view_tab",
+      "call_waiter",
+      "request_pre_bill",
+    ],
+    reviewBeforeKds: true,
+    template: "classic",
+    primaryColor: "#FFCC00",
+    instruction: "Aponte a câmera para acessar o cardápio da mesa",
+    showLogo: true,
   });
 
   const managerPinHash = await argon2.hash(`1234${passwordPepper}`, {
@@ -722,6 +781,69 @@ async function upsertDemo() {
   if (!burger || !beer || !pizza || !brownie || !soda || !whiskyBottle) {
     throw new Error("Failed to seed products");
   }
+
+  const activeTable = tableByCode.get("M03");
+  if (!activeTable) {
+    throw new Error("Failed to seed the visual active table");
+  }
+
+  const openedAt = new Date(Date.now() - 18 * 60 * 1000);
+  const [visualOrder] = await db
+    .insert(orders)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      tableId: activeTable.id,
+      channel: "table",
+      status: "preparing",
+      peopleCount: 2,
+      subtotalCents: 4600,
+      totalCents: 4600,
+      openedAt,
+    })
+    .returning();
+
+  if (!visualOrder) {
+    throw new Error("Failed to seed the visual order");
+  }
+
+  await db.insert(orderItems).values([
+    {
+      tenantId: tenant.id,
+      orderId: visualOrder.id,
+      productId: burger.id,
+      nameSnapshot: burger.name,
+      quantity: "1",
+      unitPriceCents: burger.priceCents,
+      totalCents: burger.priceCents,
+      status: "preparing",
+      sentToKitchenAt: openedAt,
+    },
+    {
+      tenantId: tenant.id,
+      orderId: visualOrder.id,
+      productId: beer.id,
+      nameSnapshot: beer.name,
+      quantity: "1",
+      unitPriceCents: beer.priceCents,
+      totalCents: beer.priceCents,
+      status: "preparing",
+      sentToKitchenAt: openedAt,
+    },
+  ]);
+
+  await db.insert(kdsTickets).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    stationId: kitchen.id,
+    orderId: visualOrder.id,
+    status: "preparing",
+    payload: {
+      source: "visual_seed",
+      tableId: activeTable.id,
+      summary: "1 Burger Clássico · 1 Chopp Pilsen",
+    },
+  });
 
   const [pointGroup] = await db
     .insert(modifierGroups)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveTablesInLayout } from "./salon-layout";
+import { arrangeTablesForMerge, moveTablesInLayout } from "./salon-layout";
 
 describe("moveTablesInLayout", () => {
   it("moves only the dragged table when it has no group", () => {
@@ -43,5 +43,43 @@ describe("moveTablesInLayout", () => {
       "table-2": { x: 34, y: 46 },
       "table-3": { x: 50, y: 60 },
     });
+  });
+
+  it("keeps a dragged group inside the visible map bounds", () => {
+    const result = moveTablesInLayout(
+      {
+        "table-1": { x: 75, y: 70 },
+        "table-2": { x: 85, y: 70 },
+      },
+      [
+        { id: "table-1", groupId: "group-a" },
+        { id: "table-2", groupId: "group-a" },
+      ],
+      "table-1",
+      { x: 20, y: 20 },
+      { maxX: 88, maxY: 78 },
+    );
+
+    expect(result).toEqual({
+      "table-1": { x: 78, y: 78 },
+      "table-2": { x: 88, y: 78 },
+    });
+  });
+});
+
+describe("arrangeTablesForMerge", () => {
+  it("places merged tables beside the anchor and inside the viewport", () => {
+    const result = arrangeTablesForMerge(
+      {
+        "table-1": { x: 82, y: 20 },
+        "table-2": { x: 10, y: 70 },
+      },
+      ["table-1", "table-2"],
+      { width: 1_000, height: 600, tableWidth: 175, tableHeight: 136, gap: 12 },
+    );
+
+    expect(result["table-1"]?.y).toBe(result["table-2"]?.y);
+    expect(result["table-2"]?.x).toBeGreaterThan(result["table-1"]?.x ?? 0);
+    expect(result["table-2"]?.x).toBeLessThanOrEqual(82.5);
   });
 });

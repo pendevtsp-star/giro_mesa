@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type AppNavigationItem,
+  canAccessAppPath,
   filterNavigationByPermissions,
   groupNavigationItems,
   isNavigationItemActive,
@@ -33,6 +34,7 @@ describe("app shell navigation", () => {
       groups.find((group) => group.group === "settings")?.items.map((item) => item.labelKey) ?? [];
     expect(settingsItems).toContain("nav.onboarding");
     expect(settingsItems).toContain("nav.billing");
+    expect(settingsItems).toContain("nav.doseClub");
     expect(settingsItems).toContain("nav.branding");
     expect(settingsItems).toContain("nav.security");
     expect(settingsItems).toContain("nav.team");
@@ -53,5 +55,27 @@ describe("app shell navigation", () => {
     expect(isNavigationItemActive(dashboard, "/app/reports")).toBe(false);
     expect(isNavigationItemActive(pos, "/app/pos")).toBe(true);
     expect(isNavigationItemActive(reports, "/app/reports/detail")).toBe(true);
+  });
+
+  it("does not expose administrative production or catalog screens to waiters", () => {
+    const visible = filterNavigationByPermissions([
+      "pos:operate",
+      "pos:kds_send",
+      "pos:qr_review",
+    ]).map((item) => item.labelKey);
+
+    expect(visible).toContain("nav.waiter");
+    expect(visible).not.toContain("nav.kds");
+    expect(visible).not.toContain("nav.catalog");
+    expect(canAccessAppPath("/app/kds", ["pos:kds_send"])).toBe(false);
+    expect(canAccessAppPath("/app/catalog", ["pos:qr_review"])).toBe(false);
+  });
+
+  it("uses the same permission decision for direct and nested routes", () => {
+    expect(canAccessAppPath("/app/cash", ["cash:manage"])).toBe(true);
+    expect(canAccessAppPath("/app/inventory/purchases", ["inventory:manage"])).toBe(true);
+    expect(canAccessAppPath("/app/integrations/dose-club", ["tenant:manage"])).toBe(true);
+    expect(canAccessAppPath("/app/pos", ["kds:operate"])).toBe(false);
+    expect(canAccessAppPath("/app/unknown", ["tenant:manage"])).toBe(false);
   });
 });

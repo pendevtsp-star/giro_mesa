@@ -57,7 +57,12 @@ function LoginPageContent() {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [oauthChallenge, setOauthChallenge] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    kind: "error" | "info" | "success";
+    message: string;
+    actionHref?: string;
+  } | null>(null);
+  const [resetStatus, setResetStatus] = useState<"idle" | "loading">("idle");
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -70,19 +75,19 @@ function LoginPageContent() {
     if (challenge) {
       setOauthChallenge(challenge);
       setMfaRequired(true);
-      setError(t("auth.mfaCompleteGoogle"));
+      setFeedback({ kind: "info", message: t("auth.mfaCompleteGoogle") });
       return;
     }
 
     if (oauthStatus === "google_sign_in_failed") {
-      setError(t("auth.googleLoginFailed"));
+      setFeedback({ kind: "error", message: t("auth.googleLoginFailed") });
     }
   }, [searchParams, t]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("loading");
-    setError(null);
+    setFeedback(null);
 
     try {
       if (oauthChallenge) {
@@ -99,7 +104,7 @@ function LoginPageContent() {
       const result = await login(email, password, mfaCode);
       if (result.session.mfaRequired) {
         setMfaRequired(true);
-        setError(t("auth.mfaRequired"));
+        setFeedback({ kind: "info", message: t("auth.mfaRequired") });
         setStatus("idle");
         return;
       }
@@ -126,22 +131,45 @@ function LoginPageContent() {
         message = t("loginErrors.connectionFailed");
       }
 
-      setError(message);
+      setFeedback({ kind: "error", message });
       setStatus("idle");
     }
   }
 
   async function handleResetPassword() {
-    setError(null);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setFeedback({ kind: "error", message: t("auth.resetPasswordEmailRequired") });
+      return;
+    }
+
+    setFeedback(null);
+    setResetStatus("loading");
     try {
-      const reset = await requestPasswordReset(email);
-      setError(
-        reset.resetUrl
-          ? `${t("auth.resetPasswordLink")}: ${reset.resetUrl}`
-          : t("auth.resetPasswordEmail"),
-      );
-    } catch {
-      setError(t("auth.resetPasswordError"));
+      const reset = await requestPasswordReset(normalizedEmail);
+      let actionHref: string | undefined;
+      if (reset.resetUrl) {
+        try {
+          actionHref = new URL(reset.resetUrl, window.location.origin).pathname;
+        } catch {
+          actionHref = undefined;
+        }
+      }
+      setFeedback({
+        kind: "success",
+        message: t("auth.resetPasswordEmail"),
+        ...(actionHref ? { actionHref } : {}),
+      });
+    } catch (resetError) {
+      const message =
+        resetError instanceof ApiError && resetError.status === 429
+          ? t("loginErrors.rateLimited")
+          : resetError instanceof TypeError && resetError.message.includes("fetch")
+            ? t("loginErrors.connectionFailed")
+            : t("auth.resetPasswordError");
+      setFeedback({ kind: "error", message });
+    } finally {
+      setResetStatus("idle");
     }
   }
 
@@ -226,9 +254,17 @@ function LoginPageContent() {
               </span>
             </label>
           ) : null}
-          {error ? (
-            <p className="form-alert" role="alert">
-              {error}
+          {feedback ? (
+            <p
+              className={`form-alert form-alert-${feedback.kind}`}
+              role={feedback.kind === "error" ? "alert" : "status"}
+            >
+              <span>{feedback.message}</span>
+              {feedback.actionHref ? (
+                <a className="form-alert-action" href={feedback.actionHref}>
+                  {t("auth.resetPasswordLink")}
+                </a>
+              ) : null}
             </p>
           ) : null}
           <button
@@ -250,11 +286,17 @@ function LoginPageContent() {
           >
             <span>{oauthChallenge ? t("auth.mfaResume") : t("auth.signInWithGoogle")}</span>
           </a>
-          <a className="button secondary full" href="mailto:suporte@example.com">
+          <a className="button secondary full" href="/suporte">
             <LifeBuoy size={18} /> {t("buttons.support")}
           </a>
-          <button className="button ghost full" type="button" onClick={handleResetPassword}>
-            {t("auth.forgotPassword")}
+          <button
+            className="button ghost full"
+            id="recuperar-senha"
+            type="button"
+            onClick={handleResetPassword}
+            disabled={resetStatus === "loading"}
+          >
+            {resetStatus === "loading" ? t("auth.resetPasswordLoading") : t("auth.forgotPassword")}
           </button>
           <a className="button ghost full" href="/teste-gratis">
             {t("trial.startFreeTrial")}
