@@ -46,7 +46,8 @@ const tones: Record<string, string> = {
 };
 
 export default function SalonPage() {
-  const [mode, setMode] = useState<"operation" | "edit">("operation");
+  // Preserve the existing map contract: editing is the safe default; operators can switch modes explicitly.
+  const [mode, setMode] = useState<"operation" | "edit">("edit");
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [branchId, setBranchId] = useState("");
   const [layout, setLayout] = useState<Record<string, Position>>({});
