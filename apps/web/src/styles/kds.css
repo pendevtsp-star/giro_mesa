@@ -43,6 +43,16 @@
   color: var(--muted);
 }
 
+.kds-shortcuts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .kds-header label {
   display: grid;
   gap: 6px;
@@ -70,6 +80,24 @@
   border-radius: 8px;
   background: #fff;
   box-shadow: var(--tight-shadow);
+}
+
+.kds-ticket:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.kds-ticket.is-focused {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.kds-page:fullscreen {
+  overflow: auto;
+}
+
+.kds-page:fullscreen .kds-board {
+  min-height: calc(100vh - 190px);
 }
 
 .kds-ticket.kds-preparing {
@@ -115,6 +143,9 @@
   }
   .kds-header select {
     width: 100%;
+  }
+  .kds-shortcuts {
+    white-space: normal;
   }
   .kds-board {
     grid-template-columns: 1fr;

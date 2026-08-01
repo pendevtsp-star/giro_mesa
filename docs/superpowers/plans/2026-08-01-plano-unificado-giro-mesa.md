@@ -36,8 +36,8 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 2 — fundação visual, shells e navegação.
 - [x] Fase 3 — sessão operacional compartilhada e PDV.
 - [x] Fase 4 — salão, reservas e fila (núcleo operacional entregue; hardening avançado pendente abaixo).
-- [ ] Fase 5 — garçom, perfis, PIN e dispositivos.
-- [ ] Fase 6 — KDS, expedição e impressão.
+- [x] Fase 5 — garçom, perfis, PIN e dispositivos (núcleo de atendimento entregue; hardening avançado pendente abaixo).
+- [x] Fase 6 — KDS, expedição e impressão (núcleo operacional entregue; hardening avançado pendente abaixo).
 - [ ] Fase 7 — dashboard, horário, turno e tema.
 - [ ] Fase 8 — limpeza, seed e cenário de homologação.
 - [ ] Fase 9 — QR personalizado por mesa.
@@ -209,6 +209,9 @@ reutilizando catálogo/pedido/pagamento do PDV, com recuperação de comanda,
 envio para produção, pagamentos parciais ou totais e fechamento auditado.
 Troca de operador, dispositivo, bloqueios e cobertura E2E continuam pendentes.
 
+Deploy da fase: commit `1675502` e correção de workflow `c21b2cd` publicados;
+run `30694170209` passou em validação, publicação de imagens e deploy.
+
 ### Trabalho
 
 - [x] Evoluir o stepper para central móvel de mesas e comandas.
@@ -233,14 +236,21 @@ Troca de operador, dispositivo, bloqueios e cobertura E2E continuam pendentes.
 
 ## Fase 6 — KDS, expedição e impressão
 
+Progresso desta execução: KDS recebeu grade responsiva, tela cheia, foco de
+ticket por teclado, atalhos para atualizar/som/tela cheia/avançar e indicação
+de conexão em tempo real com fallback de polling. A configuração de
+impressoras térmicas, rotas, fila, retry e reimpressão já está reconectada ao
+backend. Mapeamento administrativo de teclas, estados por item e homologação
+física do conector continuam pendentes.
+
 ### Trabalho
 
-- [ ] Criar layout KDS por colunas/grade, vazio coerente e tela cheia.
-- [ ] Renderizar estação, itens, modificadores, observações, tempo, prioridade,
+- [x] Criar layout KDS por colunas/grade, vazio coerente e tela cheia.
+- [x] Renderizar estação, itens, modificadores, observações, tempo, prioridade,
   alterações, cancelamentos e atraso.
 - [ ] Implementar estados por item, consolidação do ticket e expedição multiestação.
-- [ ] Implementar SSE autenticado e multitenant, reconexão, deduplicação e polling fallback.
-- [ ] Implementar som com permissão, volume e alerta acessível; funcionar com touch,
+- [x] Implementar SSE autenticado e multitenant, reconexão, deduplicação e polling fallback.
+- [x] Implementar som com permissão, volume e alerta acessível; funcionar com touch,
   mouse, teclado numérico e bump bar.
 - [ ] Criar mapeamento administrativo de teclas e modo sem tela touch.
 - [ ] Reconectar configuração de impressoras térmicas, rotas, fila, retry,

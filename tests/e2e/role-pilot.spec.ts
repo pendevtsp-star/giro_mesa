@@ -107,6 +107,7 @@ test.describe("Piloto guiado por perfil", () => {
 
     await page.goto("/app/kds", { waitUntil: "networkidle" });
     await expect(page.getByRole("heading", { name: "KDS" })).toBeVisible();
+    await expect(page.getByText(/R atualizar · S som · F tela cheia/)).toBeVisible();
     await page.goto("/app/pos", { waitUntil: "networkidle" });
     await expect(page.getByTestId("permission-denied")).toBeVisible();
     await expect(page.getByText("forbidden", { exact: true })).toHaveCount(0);

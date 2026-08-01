@@ -1,6 +1,15 @@
 "use client";
 
-import { AlertTriangle, Bell, ChefHat, Clock3, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Bell,
+  ChefHat,
+  Clock3,
+  Keyboard,
+  Maximize2,
+  Minimize2,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildRealtimeEventsUrl,
@@ -70,11 +79,14 @@ export default function KdsPage() {
   const [connectionState, setConnectionState] = useState<"connecting" | "realtime" | "polling">(
     "connecting",
   );
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [focusedTicketId, setFocusedTicketId] = useState<string | null>(null);
   const [stations, setStations] = useState<Array<{ id: string; name: string }>>([]);
   const soundEnabledRef = useRef(false);
   const volumeRef = useRef(0.65);
   const initializedRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const pageRef = useRef<HTMLElement | null>(null);
   async function load() {
     try {
       const [ticketRows, stationRows] = await Promise.all([listKdsTickets(), listKdsStations()]);
@@ -175,8 +187,62 @@ export default function KdsPage() {
     soundEnabledRef.current = next;
     setSoundEnabled(next);
   }
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await pageRef.current?.requestFullscreen?.();
+      }
+    } catch {
+      setMessage("O navegador não permitiu tela cheia; continue pela janela atual.");
+    }
+  }
+
+  // O KDS precisa continuar operável em monitor sem toque ou com bump bar.
+  // ponytail: atalhos ficam locais à tela; um mapeador por estação entra na fase de configuração.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: atalhos devem apontar para o estado atual da tela.
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, select, textarea, button")) return;
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        void load();
+      } else if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        void toggleFullscreen();
+      } else if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void toggleSound();
+      } else if (event.key === " " && focusedTicketId) {
+        event.preventDefault();
+        const ticket = visible.find((item) => item.id === focusedTicketId);
+        if (ticket) void advance(ticket);
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!visible.length) return;
+        const currentIndex = visible.findIndex((item) => item.id === focusedTicketId);
+        if (currentIndex < 0) {
+          setFocusedTicketId(visible[0]?.id ?? null);
+          return;
+        }
+        const nextIndex = event.key === "ArrowDown" ? currentIndex + 1 : currentIndex - 1;
+        setFocusedTicketId(visible[(nextIndex + visible.length) % visible.length]?.id ?? null);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [focusedTicketId, visible]);
+
   return (
-    <main className="kds-page">
+    <main className="kds-page" ref={pageRef}>
       <header className="kds-topbar">
         <a className="brand" href="/app">
           <span className="brand-mark brand-mark-logo" aria-hidden="true" />
@@ -209,6 +275,15 @@ export default function KdsPage() {
           </label>
           <button className="button secondary compact" onClick={() => void load()} type="button">
             <RefreshCw size={16} /> Atualizar
+          </button>
+          <button
+            aria-label={isFullscreen ? "Sair da tela cheia" : "Abrir tela cheia"}
+            className="button secondary compact"
+            onClick={() => void toggleFullscreen()}
+            title="Tela cheia (F)"
+            type="button"
+          >
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
       </header>
@@ -249,6 +324,9 @@ export default function KdsPage() {
             <option value="served">Entregues</option>
           </select>
         </label>
+        <p className="kds-shortcuts" title="Atalhos disponíveis">
+          <Keyboard size={15} /> R atualizar · S som · F tela cheia · ↑↓ selecionar · Espaço avançar
+        </p>
       </section>
       <section className="kds-board">
         {visible.map((ticket) => {
@@ -258,7 +336,8 @@ export default function KdsPage() {
           const late = ageMinutes >= 15 && ticket.status !== "served";
           return (
             <article
-              className={`kds-ticket kds-${ticket.status}${late ? " is-late" : ""}`}
+              aria-keyshortcuts="Space ArrowDown ArrowUp"
+              className={`kds-ticket kds-${ticket.status}${late ? " is-late" : ""}${focusedTicketId === ticket.id ? " is-focused" : ""}`}
               key={ticket.id}
             >
               <div>
