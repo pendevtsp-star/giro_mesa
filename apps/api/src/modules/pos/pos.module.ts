@@ -4,6 +4,7 @@ import { AuthModule } from "../auth/auth.module";
 import { FiscalModule } from "../fiscal/fiscal.module";
 import { CashRepository } from "./cash.repository";
 import { CashService } from "./cash.service";
+import { OperationalService } from "./operational.service";
 import { OrderRepository } from "./order.repository";
 import { OrdersService } from "./orders.service";
 import { PaymentsService } from "./payments.service";
@@ -24,6 +25,7 @@ import { ShiftService } from "./shift.service";
     CashRepository,
     ShiftRepository,
     OrdersService,
+    OperationalService,
     PaymentsService,
     CashService,
     ShiftService,

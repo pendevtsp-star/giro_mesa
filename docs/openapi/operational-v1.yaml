@@ -1,0 +1,166 @@
+openapi: 3.1.0
+info:
+  title: GiroMesa Operational API
+  version: 2026-07-31
+  description: Contracts introduced by operational redesign phase 1. Tenant is resolved by authenticated backend context.
+paths:
+  /api/v1/pos/session:
+    get:
+      summary: Read branch operational session
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - in: query
+          name: tableId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: orderId
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Aggregated shift, cash, order, settings and event cursor }
+  /api/v1/pos/orders/active:
+    get:
+      summary: Read one active order by table or explicit order id
+      description: Exactly one of tableId or orderId is required. Counter orders use orderId.
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - in: query
+          name: tableId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: orderId
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Active order with items and payments, or null }
+        '400': { description: Ambiguous selector }
+  /api/v1/pos/orders/{orderId}/production-routing-preview:
+    get:
+      summary: Preview pending-item destinations before production dispatch
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200': { description: Stations, output modes, printers and unrouted items }
+  /api/v1/pos/events/history:
+    get:
+      summary: Resume versioned operational events
+      parameters:
+        - $ref: '#/components/parameters/BranchId'
+        - in: query
+          name: afterVersion
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200': { description: Events ordered by monotonically increasing version }
+  /api/v1/pos/branches/{branchId}/operational-settings:
+    get:
+      summary: Read cleaning, waiter-payment, theme and KDS defaults
+      parameters:
+        - $ref: '#/components/parameters/BranchIdPath'
+      responses:
+        '200': { description: Operational settings }
+    patch:
+      summary: Update operational settings
+      parameters:
+        - $ref: '#/components/parameters/BranchIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OperationalSettingsPatch' }
+      responses:
+        '200': { description: Persisted settings }
+  /api/v1/pos/branches/{branchId}/business-hours:
+    get:
+      summary: Read weekly hours and dated exceptions
+      parameters:
+        - $ref: '#/components/parameters/BranchIdPath'
+      responses:
+        '200': { description: Branch business hours }
+    patch:
+      summary: Atomically replace weekly hours and exceptions
+      parameters:
+        - $ref: '#/components/parameters/BranchIdPath'
+      responses:
+        '200': { description: Persisted schedule }
+  /api/v1/pos/preferences:
+    patch:
+      summary: Save current user's theme and KDS-input preference for a branch
+      responses:
+        '200': { description: Persisted preference }
+  /api/v1/pos/operator-pin:
+    post:
+      summary: Set current user's personal operational PIN
+      description: PIN is stored only as Argon2id hash. Shared-terminal session exchange is phase 5.
+      responses:
+        '201': { description: PIN hash metadata, never the PIN }
+  /api/v1/pos/devices:
+    post:
+      summary: Register an operational device
+      description: Raw device token is returned once; only SHA-256 hash is persisted.
+      responses:
+        '201': { description: Registered device and one-time token }
+  /api/v1/pos/cash-sessions/{cashSessionId}/close:
+    post:
+      summary: Atomically close and reconcile a cash session
+      parameters:
+        - in: path
+          name: cashSessionId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [countedAmountCents]
+              properties:
+                countedAmountCents: { type: integer, minimum: 0 }
+                idempotencyKey: { type: string, minLength: 8, maxLength: 120 }
+      responses:
+        '201': { description: Closed or disputed session; identical key replays the result }
+        '409': { description: Concurrent close or reused idempotency key }
+  /api/v1/floor/reservations:
+    post:
+      summary: Create reservation optionally assigned to multiple tables
+      responses:
+        '201': { description: Reservation with tableIds and optimistic version }
+        '409': { description: Table schedule conflict }
+  /api/v1/floor/reservations/{reservationId}/seat:
+    post:
+      summary: Atomically seat reservation on assigned or supplied tables and open its order
+      parameters:
+        - in: path
+          name: reservationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Seated reservation and active order }
+        '409': { description: Concurrent occupancy conflict }
+components:
+  parameters:
+    BranchId:
+      in: query
+      name: branchId
+      required: true
+      schema: { type: string, format: uuid }
+    BranchIdPath:
+      in: path
+      name: branchId
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      in: path
+      name: orderId
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    OperationalSettingsPatch:
+      type: object
+      minProperties: 1
+      properties:
+        cleaningMode: { type: string, enum: [manual, automatic] }
+        allowWaiterPayments: { type: boolean }
+        defaultTheme: { type: string, enum: [light, dark, system] }
+        defaultKdsInputMode: { type: string, enum: [touch, keyboard, hybrid, printer] }

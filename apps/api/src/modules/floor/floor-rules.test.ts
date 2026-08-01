@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
-import { assertTableCanSeatParty } from "./floor-rules";
+import { assertTableCanSeatParty, assertTablesCanSeatParty } from "./floor-rules";
 
 describe("assertTableCanSeatParty", () => {
   it("allows an available table with enough seats", () => {
@@ -20,5 +20,28 @@ describe("assertTableCanSeatParty", () => {
     expect(() => assertTableCanSeatParty({ status: "free", seats: 2 }, 4)).toThrow(
       "Table capacity is insufficient",
     );
+  });
+});
+
+describe("assertTablesCanSeatParty", () => {
+  it("uses combined capacity and rejects unavailable tables", () => {
+    expect(() =>
+      assertTablesCanSeatParty(
+        [
+          { status: "free", seats: 2 },
+          { status: "reserved", seats: 2 },
+        ],
+        4,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertTablesCanSeatParty(
+        [
+          { status: "free", seats: 4 },
+          { status: "cleaning", seats: 4 },
+        ],
+        4,
+      ),
+    ).toThrow("Table is unavailable");
   });
 });

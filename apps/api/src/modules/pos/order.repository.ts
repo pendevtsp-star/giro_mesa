@@ -1,5 +1,6 @@
 import {
   auditLogs,
+  branchOperationalSettings,
   cashSessions,
   customers,
   diningTables,
@@ -21,9 +22,9 @@ import {
   stockMovements,
   tenants,
 } from "@giromesa/db";
-import type { TenantContext } from "@giromesa/domain";
+import { activeOrderStatuses, type TenantContext } from "@giromesa/domain";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
 type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
@@ -42,6 +43,28 @@ export class OrderRepository {
       .select()
       .from(orders)
       .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+      .limit(1);
+    return order ?? null;
+  }
+
+  async findActiveOrder(
+    context: TenantContext,
+    input: { branchId: string; tableId?: string | undefined; orderId?: string | undefined },
+    client: OrderDbClient = this.database.db,
+  ) {
+    const [order] = await client
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tenantId, context.tenantId),
+          eq(orders.branchId, input.branchId),
+          inArray(orders.status, [...activeOrderStatuses]),
+          input.tableId ? eq(orders.tableId, input.tableId) : undefined,
+          input.orderId ? eq(orders.id, input.orderId) : undefined,
+        ),
+      )
+      .orderBy(desc(orders.openedAt), desc(orders.createdAt))
       .limit(1);
     return order ?? null;
   }
@@ -234,7 +257,7 @@ export class OrderRepository {
   ) {
     const [updated] = await client
       .update(diningTables)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...data, version: sql`${diningTables.version} + 1`, updatedAt: new Date() })
       .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
       .returning();
     return updated ?? null;
@@ -272,7 +295,13 @@ export class OrderRepository {
     return client
       .select()
       .from(kdsStations)
-      .where(and(eq(kdsStations.tenantId, context.tenantId), eq(kdsStations.branchId, branchId)));
+      .where(
+        and(
+          eq(kdsStations.tenantId, context.tenantId),
+          eq(kdsStations.branchId, branchId),
+          eq(kdsStations.isActive, true),
+        ),
+      );
   }
 
   async updateOrderItemsStatus(
@@ -301,6 +330,31 @@ export class OrderRepository {
     return client
       .select({ id: orderItems.id })
       .from(orderItems)
+      .where(
+        and(
+          eq(orderItems.tenantId, context.tenantId),
+          eq(orderItems.orderId, orderId),
+          eq(orderItems.status, "pending"),
+        ),
+      );
+  }
+
+  async findPendingOrderItemsForRouting(
+    context: TenantContext,
+    orderId: string,
+    client: OrderDbClient = this.database.db,
+  ) {
+    return client
+      .select({
+        id: orderItems.id,
+        name: orderItems.nameSnapshot,
+        categoryId: products.categoryId,
+      })
+      .from(orderItems)
+      .innerJoin(
+        products,
+        and(eq(products.tenantId, context.tenantId), eq(products.id, orderItems.productId)),
+      )
       .where(
         and(
           eq(orderItems.tenantId, context.tenantId),
@@ -419,9 +473,28 @@ export class OrderRepository {
     return tenant ?? null;
   }
 
+  async findBranchOperationalSettings(
+    context: TenantContext,
+    branchId: string,
+    client: OrderDbClient = this.database.db,
+  ) {
+    const [settings] = await client
+      .select()
+      .from(branchOperationalSettings)
+      .where(
+        and(
+          eq(branchOperationalSettings.tenantId, context.tenantId),
+          eq(branchOperationalSettings.branchId, branchId),
+        ),
+      )
+      .limit(1);
+    return settings ?? null;
+  }
+
   async findOrderItemsForPrint(
     context: TenantContext,
     orderId: string,
+    itemIds?: string[],
     client: OrderDbClient = this.database.db,
   ) {
     return client
@@ -435,6 +508,7 @@ export class OrderRepository {
         and(
           eq(orderItems.tenantId, context.tenantId),
           eq(orderItems.orderId, orderId),
+          itemIds?.length ? inArray(orderItems.id, itemIds) : undefined,
           inArray(orderItems.status, ["pending", "sent", "preparing", "ready", "served"]),
         ),
       );

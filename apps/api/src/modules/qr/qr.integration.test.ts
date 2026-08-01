@@ -3,6 +3,7 @@ import {
   auditLogs,
   branches,
   diningTables,
+  operationalEvents,
   orderItems,
   orders,
   products,
@@ -85,6 +86,7 @@ runIntegration("secure table QR", () => {
         .delete(publicRequestIdempotency)
         .where(eq(publicRequestIdempotency.tenantId, tenantId));
       await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+      await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
       await db.delete(orderItems).where(eq(orderItems.tenantId, tenantId));
       await db.delete(orders).where(eq(orders.tenantId, tenantId));
       await db.delete(products).where(eq(products.tenantId, tenantId));

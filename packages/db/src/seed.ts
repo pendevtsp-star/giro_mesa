@@ -7,7 +7,10 @@ import { Pool } from "pg";
 import {
   approvalRequests,
   auditLogs,
+  branchBusinessHourExceptions,
+  branchBusinessHours,
   branches,
+  branchOperationalSettings,
   cashMovements,
   cashSessions,
   categories,
@@ -28,7 +31,11 @@ import {
   modifierOptions,
   oauthAccounts,
   onboardingSteps,
+  operationalDevices,
+  operationalEvents,
+  operationalPins,
   operationalShifts,
+  operationIdempotency,
   operationPolicies,
   orderItems,
   orders,
@@ -45,6 +52,7 @@ import {
   recipeItems,
   recipes,
   reservations,
+  reservationTables,
   roles,
   serviceRequests,
   sessions,
@@ -55,6 +63,7 @@ import {
   tableEvents,
   tabs,
   tenants,
+  userOperationalPreferences,
   userRoles,
   users,
   waitlistEntries,
@@ -103,10 +112,12 @@ async function resetDemoTenant() {
   const tenantId = existingTenant.id;
 
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
   await db.delete(approvalRequests).where(eq(approvalRequests.tenantId, tenantId));
   await db.delete(publicRequestIdempotency).where(eq(publicRequestIdempotency.tenantId, tenantId));
   await db.delete(serviceRequests).where(eq(serviceRequests.tenantId, tenantId));
   await db.delete(tableEvents).where(eq(tableEvents.tenantId, tenantId));
+  await db.delete(reservationTables).where(eq(reservationTables.tenantId, tenantId));
   await db.delete(reservations).where(eq(reservations.tenantId, tenantId));
   await db.delete(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId));
   await db.delete(operationPolicies).where(eq(operationPolicies.tenantId, tenantId));
@@ -142,17 +153,30 @@ async function resetDemoTenant() {
   await db.delete(floorPlans).where(eq(floorPlans.tenantId, tenantId));
   await db.delete(customers).where(eq(customers.tenantId, tenantId));
   await db.delete(onboardingSteps).where(eq(onboardingSteps.tenantId, tenantId));
+  await db.delete(operationIdempotency).where(eq(operationIdempotency.tenantId, tenantId));
   await db.delete(operationalShifts).where(eq(operationalShifts.tenantId, tenantId));
   await db.delete(invitations).where(eq(invitations.tenantId, tenantId));
   await db.delete(passwordResetTokens).where(eq(passwordResetTokens.tenantId, tenantId));
   await db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.tenantId, tenantId));
   await db.delete(oauthAccounts).where(eq(oauthAccounts.tenantId, tenantId));
   await db.delete(sessions).where(eq(sessions.tenantId, tenantId));
+  await db.delete(operationalDevices).where(eq(operationalDevices.tenantId, tenantId));
+  await db.delete(operationalPins).where(eq(operationalPins.tenantId, tenantId));
+  await db
+    .delete(userOperationalPreferences)
+    .where(eq(userOperationalPreferences.tenantId, tenantId));
   await db.delete(userRoles).where(eq(userRoles.tenantId, tenantId));
   await db.delete(roles).where(eq(roles.tenantId, tenantId));
   await db.delete(users).where(eq(users.tenantId, tenantId));
   await db.delete(integrationAccounts).where(eq(integrationAccounts.tenantId, tenantId));
   await db.delete(subscriptions).where(eq(subscriptions.tenantId, tenantId));
+  await db
+    .delete(branchBusinessHourExceptions)
+    .where(eq(branchBusinessHourExceptions.tenantId, tenantId));
+  await db.delete(branchBusinessHours).where(eq(branchBusinessHours.tenantId, tenantId));
+  await db
+    .delete(branchOperationalSettings)
+    .where(eq(branchOperationalSettings.tenantId, tenantId));
   await db.delete(branches).where(eq(branches.tenantId, tenantId));
   await db.delete(tenants).where(eq(tenants.id, tenantId));
 }

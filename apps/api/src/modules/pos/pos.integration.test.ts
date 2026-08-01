@@ -7,6 +7,7 @@ import {
   floorPlans,
   kdsStations,
   kdsTickets,
+  operationalEvents,
   orderItems,
   orders,
   outboxEvents,
@@ -41,6 +42,7 @@ const databaseUrl =
 
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
   await db.delete(kdsTickets).where(eq(kdsTickets.tenantId, tenantId));
   await db.delete(kdsStations).where(eq(kdsStations.tenantId, tenantId));
   await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));

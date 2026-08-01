@@ -281,10 +281,13 @@ export class PaymentsService {
     });
   }
 
-  splitBill(orderId: string, totalCents: number, people: number) {
+  async splitBill(context: TenantContext, orderId: string, people: number) {
+    const order = await this.orderRepository.findOrderById(context, orderId);
+    if (!order) throw new NotFoundException("Order not found");
     return {
       orderId,
-      parts: splitAmount(totalCents, people).map((amountCents, index) => ({
+      totalCents: order.totalCents,
+      parts: splitAmount(order.totalCents, people).map((amountCents, index) => ({
         person: index + 1,
         amountCents,
       })),

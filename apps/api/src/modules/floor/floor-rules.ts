@@ -12,3 +12,18 @@ export function assertTableCanSeatParty(
     throw new BadRequestException("Table capacity is insufficient");
   }
 }
+
+export function assertTablesCanSeatParty(
+  tables: Array<{ status: TableStatus; seats: number }>,
+  partySize: number,
+) {
+  if (tables.length === 0) throw new BadRequestException("Select at least one table");
+  for (const table of tables) {
+    if (!["free", "reserved"].includes(table.status)) {
+      throw new BadRequestException("Table is unavailable");
+    }
+  }
+  if (tables.reduce((total, table) => total + table.seats, 0) < partySize) {
+    throw new BadRequestException("Combined table capacity is insufficient");
+  }
+}

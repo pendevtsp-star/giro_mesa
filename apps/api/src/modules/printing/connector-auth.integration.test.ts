@@ -1,5 +1,5 @@
 import * as schema from "@giromesa/db";
-import { auditLogs, branches, integrationAccounts, tenants } from "@giromesa/db";
+import { auditLogs, branches, integrationAccounts, operationalEvents, tenants } from "@giromesa/db";
 import { UnauthorizedException } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -21,6 +21,7 @@ const databaseUrl =
 
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
   await db.delete(integrationAccounts).where(eq(integrationAccounts.tenantId, tenantId));
   await db.delete(branches).where(eq(branches.tenantId, tenantId));
   await db.delete(tenants).where(eq(tenants.id, tenantId));

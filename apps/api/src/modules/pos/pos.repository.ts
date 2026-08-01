@@ -10,6 +10,8 @@ import {
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
+type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
+
 @Injectable()
 export class PosRepository {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -202,8 +204,9 @@ export class PosRepository {
   async insertAuditLog(
     context: TenantContext,
     data: Omit<typeof auditLogs.$inferInsert, "tenantId">,
+    client: DatabaseService["db"] | TransactionClient = this.database.db,
   ) {
-    const [log] = await this.database.db
+    const [log] = await client
       .insert(auditLogs)
       .values({ ...data, tenantId: context.tenantId })
       .returning();
@@ -224,8 +227,14 @@ export class PosRepository {
 
     const [updated] = await this.database.db
       .update(diningTables)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(diningTables.id, tableId))
+      .set({ ...data, version: sql`${diningTables.version} + 1`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(diningTables.tenantId, context.tenantId),
+          eq(diningTables.branchId, existing.branchId),
+          eq(diningTables.id, tableId),
+        ),
+      )
       .returning();
 
     await this.insertAuditLog(context, {
@@ -244,80 +253,106 @@ export class PosRepository {
   async mergeTables(context: TenantContext, branchId: string, tableIds: string[]) {
     const { randomUUID } = await import("node:crypto");
     const groupId = randomUUID();
-
-    const tables = await this.database.db
-      .select()
-      .from(diningTables)
-      .where(
-        and(
-          eq(diningTables.tenantId, context.tenantId),
-          eq(diningTables.branchId, branchId),
-          inArray(diningTables.id, tableIds),
-        ),
+    const uniqueTableIds = [...new Set(tableIds)].sort();
+    return this.database.db.transaction(async (tx) => {
+      const tables = await tx
+        .select()
+        .from(diningTables)
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, branchId),
+            inArray(diningTables.id, uniqueTableIds),
+          ),
+        )
+        .orderBy(diningTables.id)
+        .for("update");
+      if (uniqueTableIds.length < 2 || tables.length !== uniqueTableIds.length) {
+        throw new BadRequestException("Select at least 2 valid tables to merge");
+      }
+      await tx
+        .update(diningTables)
+        .set({
+          groupId,
+          version: sql`${diningTables.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, branchId),
+            inArray(diningTables.id, uniqueTableIds),
+          ),
+        );
+      await this.insertAuditLog(
+        context,
+        {
+          branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "table_group.created",
+          entityType: "dining_table",
+          entityId: groupId,
+          metadata: { tableIds: uniqueTableIds, tableCount: uniqueTableIds.length },
+        },
+        tx,
       );
-
-    if (tables.length < 2) {
-      throw new BadRequestException("Select at least 2 tables to merge");
-    }
-
-    await this.database.db
-      .update(diningTables)
-      .set({ groupId, updatedAt: new Date() })
-      .where(and(eq(diningTables.tenantId, context.tenantId), inArray(diningTables.id, tableIds)));
-
-    await this.insertAuditLog(context, {
-      branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "table_group.created",
-      entityType: "dining_table",
-      entityId: groupId,
-      metadata: { tableIds, tableCount: tableIds.length },
+      return tx
+        .select()
+        .from(diningTables)
+        .where(
+          and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.branchId, branchId)),
+        );
     });
-
-    return this.database.db
-      .select()
-      .from(diningTables)
-      .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.branchId, branchId)));
   }
 
   async unmergeTables(context: TenantContext, tableId: string) {
-    const [table] = await this.database.db
-      .select()
-      .from(diningTables)
-      .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
-      .limit(1);
-
-    if (!table) {
-      throw new NotFoundException("Table not found");
-    }
-
-    if (!table.groupId) {
-      throw new BadRequestException("Table is not part of a group");
-    }
-
-    const groupId = table.groupId;
-
-    await this.database.db
-      .update(diningTables)
-      .set({ groupId: null, updatedAt: new Date() })
-      .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.groupId, groupId)));
-
-    await this.insertAuditLog(context, {
-      branchId: table.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "table_group.dissolved",
-      entityType: "dining_table",
-      entityId: groupId,
-      metadata: { groupId },
-    });
-
-    return this.database.db
-      .select()
-      .from(diningTables)
-      .where(
-        and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.branchId, table.branchId)),
+    return this.database.db.transaction(async (tx) => {
+      const [table] = await tx
+        .select()
+        .from(diningTables)
+        .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
+        .for("update")
+        .limit(1);
+      if (!table) throw new NotFoundException("Table not found");
+      if (!table.groupId) throw new BadRequestException("Table is not part of a group");
+      const groupId = table.groupId;
+      await tx
+        .update(diningTables)
+        .set({
+          groupId: null,
+          version: sql`${diningTables.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, table.branchId),
+            eq(diningTables.groupId, groupId),
+          ),
+        );
+      await this.insertAuditLog(
+        context,
+        {
+          branchId: table.branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "table_group.dissolved",
+          entityType: "dining_table",
+          entityId: groupId,
+          metadata: { groupId },
+        },
+        tx,
       );
+      return tx
+        .select()
+        .from(diningTables)
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, table.branchId),
+          ),
+        );
+    });
   }
 }

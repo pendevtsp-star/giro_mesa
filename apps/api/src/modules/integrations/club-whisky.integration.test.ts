@@ -5,6 +5,7 @@ import {
   categories,
   integrationAccounts,
   inventoryItems,
+  operationalEvents,
   outboxEvents,
   products,
   recipeItems,
@@ -38,6 +39,7 @@ const databaseUrl =
 
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
   await db.delete(webhookEvents).where(eq(webhookEvents.tenantId, tenantId));
   await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));
   await db.delete(stockMovements).where(eq(stockMovements.tenantId, tenantId));

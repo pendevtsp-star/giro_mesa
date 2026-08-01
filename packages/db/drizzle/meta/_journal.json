@@ -134,6 +134,20 @@
       "when": 1785273300000,
       "tag": "0018_complete_dining_table_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785543023055,
+      "tag": "0019_operational_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785544857014,
+      "tag": "0020_atomic_cash_sessions",
+      "breakpoints": true
     }
   ]
 }

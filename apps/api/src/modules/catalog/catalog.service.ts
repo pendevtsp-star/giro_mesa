@@ -467,12 +467,27 @@ export class CatalogService {
 
       await tx
         .update(orders)
-        .set({ subtotalCents, totalCents: subtotalCents, updatedAt: new Date() })
-        .where(eq(orders.id, order.id));
+        .set({
+          subtotalCents,
+          totalCents: subtotalCents,
+          version: sql`${orders.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(orders.tenantId, tenant.id), eq(orders.id, order.id)));
       await tx
         .update(diningTables)
-        .set({ status: "waiting_order", updatedAt: new Date() })
-        .where(eq(diningTables.id, table.id));
+        .set({
+          status: "waiting_order",
+          version: sql`${diningTables.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(diningTables.tenantId, tenant.id),
+            eq(diningTables.branchId, table.branchId),
+            eq(diningTables.id, table.id),
+          ),
+        );
 
       await tx.insert(auditLogs).values({
         tenantId: tenant.id,

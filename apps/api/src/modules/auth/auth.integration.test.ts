@@ -3,6 +3,7 @@ import {
   auditLogs,
   branches,
   invitations,
+  operationalEvents,
   roles,
   sessions,
   subscriptions,
@@ -30,6 +31,7 @@ const databaseUrl =
 
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
   await db.delete(invitations).where(eq(invitations.tenantId, tenantId));
   await db.delete(sessions).where(eq(sessions.tenantId, tenantId));
   await db.delete(userRoles).where(eq(userRoles.tenantId, tenantId));

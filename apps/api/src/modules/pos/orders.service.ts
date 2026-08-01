@@ -1,5 +1,5 @@
 import type { TenantContext } from "@giromesa/domain";
-import { calculateOrderTotal, stateMachines } from "@giromesa/domain";
+import { calculateOrderTotal, resolveProductionRouting, stateMachines } from "@giromesa/domain";
 import {
   BadRequestException,
   ConflictException,
@@ -41,6 +41,7 @@ export class OrdersService {
   ) {}
 
   async openOrder(context: TenantContext, input: OpenOrderInput) {
+    await this._posRepository.ensureBranchBelongsToTenant(context, input.branchId);
     return this.database.db.transaction(async (tx) => {
       if (input.tableId) {
         const table = await this.orderRepository.findDiningTable(context, input.tableId, tx);
@@ -60,6 +61,12 @@ export class OrdersService {
           },
           tx,
         );
+        const activeOrder = await this.orderRepository.findActiveOrder(
+          context,
+          { branchId: input.branchId, tableId: table.id },
+          tx,
+        );
+        if (activeOrder) throw new ConflictException("Table already has an active order");
       }
 
       if (input.customerId) {
@@ -85,11 +92,48 @@ export class OrdersService {
         throw new Error("Failed to open order");
       }
 
+      await this.orderRepository.insertAuditLog(
+        context,
+        {
+          branchId: input.branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "order.opened",
+          entityType: "order",
+          entityId: order.id,
+          metadata: { channel: order.channel, tableId: order.tableId },
+        },
+        tx,
+      );
+
       return {
         ...order,
         audit: "order.opened",
       };
     });
+  }
+
+  async getActiveOrder(
+    context: TenantContext,
+    input: { branchId: string; tableId?: string | undefined; orderId?: string | undefined },
+  ) {
+    await this._posRepository.ensureBranchBelongsToTenant(context, input.branchId);
+    if (Boolean(input.tableId) === Boolean(input.orderId)) {
+      throw new BadRequestException("Provide exactly one of tableId or orderId");
+    }
+    const order = await this.orderRepository.findActiveOrder(context, input);
+    if (!order) return null;
+    const [items, payments] = await Promise.all([
+      this.orderRepository.findOrderItems(context, order.id),
+      this.orderRepository.findPaymentsByOrder(context, order.id),
+    ]);
+    return { ...order, items, payments };
+  }
+
+  async getProductionRoutingPreview(context: TenantContext, orderId: string) {
+    const order = await this.orderRepository.findOrderById(context, orderId);
+    if (!order) throw new NotFoundException("Order not found");
+    return this.buildProductionRoutingPreview(context, order.id, order.branchId);
   }
 
   async addItem(context: TenantContext, orderId: string, input: AddItemInput) {
@@ -198,28 +242,52 @@ export class OrdersService {
         throw new NotFoundException("Order not found");
       }
 
-      stateMachines.assertOrderTransition(order.status, "sent_to_kitchen");
+      if (order.status === "opened") {
+        stateMachines.assertOrderTransition(order.status, "sent_to_kitchen");
+      } else if (!["sent_to_kitchen", "preparing", "ready", "served"].includes(order.status)) {
+        throw new BadRequestException("Order cannot receive a new production batch");
+      }
 
-      const pendingItems = await this.orderRepository.findPendingOrderItems(context, orderId, tx);
+      const pendingItems = await this.orderRepository.findPendingOrderItemsForRouting(
+        context,
+        orderId,
+        tx,
+      );
 
       if (pendingItems.length === 0) {
         throw new BadRequestException("Order has no pending items to send");
       }
 
-      const stations = await this.orderRepository.findKdsStations(context, order.branchId, tx);
+      const preview = await this.buildProductionRoutingPreview(
+        context,
+        order.id,
+        order.branchId,
+        tx,
+      );
+      if (preview.unroutedItems.length > 0) {
+        throw new BadRequestException({
+          error: "production_items_unrouted",
+          itemIds: preview.unroutedItems.map((item) => item.id),
+        });
+      }
 
       await this.orderRepository.updateOrderItemsStatus(context, orderId, "sent", tx);
 
       const tickets =
-        stations.length > 0
+        preview.destinations.length > 0
           ? await this.orderRepository.insertKdsTickets(
               context,
-              stations.map((station) => ({
+              preview.destinations.map((destination) => ({
                 branchId: order.branchId,
-                stationId: station.id,
+                stationId: destination.stationId,
                 orderId,
                 status: "sent" as const,
-                payload: { source: order.channel, tableId: order.tableId },
+                payload: {
+                  source: order.channel,
+                  tableId: order.tableId,
+                  itemIds: destination.itemIds,
+                  outputMode: destination.outputMode,
+                },
               })),
               tx,
             )
@@ -232,7 +300,7 @@ export class OrdersService {
               {
                 order,
                 tickets,
-                stationIds: stations.map((station) => station.id),
+                stationIds: preview.destinations.map((destination) => destination.stationId),
               },
               tx,
             )
@@ -242,7 +310,7 @@ export class OrdersService {
         context,
         order.id,
         {
-          status: "sent_to_kitchen",
+          status: order.status === "opened" ? "sent_to_kitchen" : order.status,
           version: order.version + 1,
         },
         order.version,
@@ -284,11 +352,41 @@ export class OrdersService {
 
       return {
         orderId,
-        status: "sent_to_kitchen",
+        status: updatedOrder.status,
         ticketsCreated: tickets,
         printJobsCreated,
+        routing: preview,
         audit: "order.sent_to_kitchen",
       };
+    });
+  }
+
+  private async buildProductionRoutingPreview(
+    context: TenantContext,
+    orderId: string,
+    branchId: string,
+    client?: TransactionClient,
+  ) {
+    const [items, stations, routes] = await Promise.all([
+      this.orderRepository.findPendingOrderItemsForRouting(context, orderId, client),
+      this.orderRepository.findKdsStations(context, branchId, client),
+      this.orderRepository.findActivePrintRoutes(context, branchId, client),
+    ]);
+    return resolveProductionRouting({
+      orderId,
+      items,
+      stations: stations.map((station) => ({
+        id: station.id,
+        name: station.name,
+        outputMode: station.outputMode,
+        productCategoryIds: station.productCategoryIds,
+      })),
+      printRoutes: routes.map((route) => ({
+        id: route.id,
+        stationId: route.stationId,
+        printerDeviceId: route.printerDeviceId,
+        printerName: route.printerName,
+      })),
     });
   }
 
@@ -296,7 +394,11 @@ export class OrdersService {
     context: TenantContext,
     input: {
       order: { id: string; branchId: string; channel: string; tableId: string | null };
-      tickets: Array<{ id: string; stationId: string | null }>;
+      tickets: Array<{
+        id: string;
+        stationId: string | null;
+        payload: Record<string, unknown>;
+      }>;
       stationIds: string[];
     },
     client: TransactionClient,
@@ -315,12 +417,6 @@ export class OrdersService {
       return [];
     }
 
-    const items = await this.orderRepository.findOrderItemsForPrint(
-      context,
-      input.order.id,
-      client,
-    );
-
     const table = input.order.tableId
       ? await this.orderRepository.findDiningTable(context, input.order.tableId, client)
       : null;
@@ -332,6 +428,15 @@ export class OrdersService {
     const tenantName = readTenantDisplayName(tenant?.settings, tenant?.name ?? "GiroMesa");
 
     for (const ticket of input.tickets) {
+      const itemIds = Array.isArray(ticket.payload.itemIds)
+        ? ticket.payload.itemIds.filter((itemId): itemId is string => typeof itemId === "string")
+        : [];
+      const items = await this.orderRepository.findOrderItemsForPrint(
+        context,
+        input.order.id,
+        itemIds,
+        client,
+      );
       const matchingRoutes = activeRoutes.filter(
         (route) => !route.stationId || route.stationId === ticket.stationId,
       );
@@ -504,13 +609,17 @@ export class OrdersService {
         movementType: "sale",
       });
 
-      if (order.tableId) {
+      const tableStatusAfterClose = order.tableId
+        ? (await this.orderRepository.findBranchOperationalSettings(context, order.branchId, tx))
+            ?.cleaningMode === "automatic"
+          ? "free"
+          : "cleaning"
+        : null;
+      if (order.tableId && tableStatusAfterClose) {
         await this.orderRepository.updateDiningTable(
           context,
           order.tableId,
-          {
-            status: "free",
-          },
+          { status: tableStatusAfterClose },
           tx,
         );
       }
@@ -528,6 +637,7 @@ export class OrdersService {
             tableId: order.tableId,
             totalCents: order.totalCents,
             stockMovementsCreated,
+            tableStatusAfterClose,
           },
         },
         tx,

@@ -75,9 +75,22 @@ export const tableStatuses = [
   "waiting_payment",
   "reserved",
   "blocked",
+  "cleaning",
 ] as const;
 
 export type TableStatus = (typeof tableStatuses)[number];
+
+export const cleaningModes = ["manual", "automatic"] as const;
+export type CleaningMode = (typeof cleaningModes)[number];
+
+export const themeModes = ["light", "dark", "system"] as const;
+export type ThemeMode = (typeof themeModes)[number];
+
+export const kdsInputModes = ["touch", "keyboard", "hybrid", "printer"] as const;
+export type KdsInputMode = (typeof kdsInputModes)[number];
+
+export const productionOutputModes = ["kds", "printer", "hybrid"] as const;
+export type ProductionOutputMode = (typeof productionOutputModes)[number];
 
 export const printJobStatuses = ["pending", "printing", "printed", "failed", "canceled"] as const;
 export type PrintJobStatus = (typeof printJobStatuses)[number];

@@ -11,6 +11,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
+type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
+type CashDbClient = DatabaseService["db"] | TransactionClient;
+
 @Injectable()
 export class CashRepository {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
@@ -25,9 +28,13 @@ export class CashRepository {
     return session ?? null;
   }
 
-  async findOpenCashSession(context: TenantContext, branchId: string) {
-    const [session] = await this.database.db
-      .select({ id: cashSessions.id })
+  async findOpenCashSession(
+    context: TenantContext,
+    branchId: string,
+    client: CashDbClient = this.database.db,
+  ) {
+    const [session] = await client
+      .select()
       .from(cashSessions)
       .where(
         and(
@@ -40,11 +47,67 @@ export class CashRepository {
     return session ?? null;
   }
 
-  async findCashSessionById(context: TenantContext, cashSessionId: string) {
-    const [session] = await this.database.db
+  async findOpenCashSessionForUpdate(
+    context: TenantContext,
+    branchId: string,
+    client: TransactionClient,
+  ) {
+    const [session] = await client
+      .select()
+      .from(cashSessions)
+      .where(
+        and(
+          eq(cashSessions.tenantId, context.tenantId),
+          eq(cashSessions.branchId, branchId),
+          eq(cashSessions.status, "open"),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    return session ?? null;
+  }
+
+  async findCashSessionById(
+    context: TenantContext,
+    cashSessionId: string,
+    client: CashDbClient = this.database.db,
+  ) {
+    const [session] = await client
       .select()
       .from(cashSessions)
       .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, cashSessionId)))
+      .limit(1);
+    return session ?? null;
+  }
+
+  async findCashSessionByIdForUpdate(
+    context: TenantContext,
+    cashSessionId: string,
+    client: TransactionClient,
+  ) {
+    const [session] = await client
+      .select()
+      .from(cashSessions)
+      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, cashSessionId)))
+      .for("update")
+      .limit(1);
+    return session ?? null;
+  }
+
+  async findCashSessionByCloseKey(
+    context: TenantContext,
+    idempotencyKey: string,
+    client: CashDbClient = this.database.db,
+  ) {
+    const [session] = await client
+      .select()
+      .from(cashSessions)
+      .where(
+        and(
+          eq(cashSessions.tenantId, context.tenantId),
+          eq(cashSessions.closeIdempotencyKey, idempotencyKey),
+        ),
+      )
       .limit(1);
     return session ?? null;
   }
@@ -120,8 +183,12 @@ export class CashRepository {
       .orderBy(desc(payments.createdAt));
   }
 
-  async countOpenOrders(context: TenantContext, branchId: string) {
-    const [openOrders] = await this.database.db
+  async countOpenOrders(
+    context: TenantContext,
+    branchId: string,
+    client: CashDbClient = this.database.db,
+  ) {
+    const [openOrders] = await client
       .select({
         count: sql<number>`count(${orders.id})`,
         totalCents: sql<number>`coalesce(sum(${orders.totalCents}), 0)`,
@@ -151,8 +218,9 @@ export class CashRepository {
   async insertCashSession(
     context: TenantContext,
     data: Omit<typeof cashSessions.$inferInsert, "tenantId">,
+    client: CashDbClient = this.database.db,
   ) {
-    const [session] = await this.database.db
+    const [session] = await client
       .insert(cashSessions)
       .values({ ...data, tenantId: context.tenantId })
       .returning();
@@ -163,11 +231,19 @@ export class CashRepository {
     context: TenantContext,
     sessionId: string,
     data: Partial<typeof cashSessions.$inferInsert>,
+    expectedVersion?: number,
+    client: CashDbClient = this.database.db,
   ) {
-    const [updated] = await this.database.db
+    const [updated] = await client
       .update(cashSessions)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.id, sessionId)))
+      .where(
+        and(
+          eq(cashSessions.tenantId, context.tenantId),
+          eq(cashSessions.id, sessionId),
+          expectedVersion === undefined ? undefined : eq(cashSessions.version, expectedVersion),
+        ),
+      )
       .returning();
     return updated ?? null;
   }
@@ -175,8 +251,9 @@ export class CashRepository {
   async insertCashMovement(
     context: TenantContext,
     data: Omit<typeof cashMovements.$inferInsert, "tenantId">,
+    client: CashDbClient = this.database.db,
   ) {
-    const [movement] = await this.database.db
+    const [movement] = await client
       .insert(cashMovements)
       .values({ ...data, tenantId: context.tenantId })
       .returning();
@@ -186,8 +263,9 @@ export class CashRepository {
   async insertAuditLog(
     context: TenantContext,
     data: Omit<typeof auditLogs.$inferInsert, "tenantId">,
+    client: CashDbClient = this.database.db,
   ) {
-    const [log] = await this.database.db
+    const [log] = await client
       .insert(auditLogs)
       .values({ ...data, tenantId: context.tenantId })
       .returning();
@@ -197,8 +275,9 @@ export class CashRepository {
   async insertOutboxEvent(
     context: TenantContext,
     data: Omit<typeof outboxEvents.$inferInsert, "tenantId">,
+    client: CashDbClient = this.database.db,
   ) {
-    const [event] = await this.database.db
+    const [event] = await client
       .insert(outboxEvents)
       .values({ ...data, tenantId: context.tenantId })
       .returning();

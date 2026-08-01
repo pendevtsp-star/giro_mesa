@@ -5,6 +5,7 @@ import {
   categories,
   fiscalDocuments,
   fiscalSettings,
+  operationalEvents,
   orderItems,
   orders,
   payments,
@@ -31,6 +32,7 @@ const databaseUrl =
 
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+  await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
   await db.delete(fiscalDocuments).where(eq(fiscalDocuments.tenantId, tenantId));
   await db.delete(fiscalSettings).where(eq(fiscalSettings.tenantId, tenantId));
   await db.delete(payments).where(eq(payments.tenantId, tenantId));

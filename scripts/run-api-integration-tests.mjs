@@ -26,6 +26,11 @@ function run(args) {
   });
 }
 
+for (const packageName of ["@giromesa/domain", "@giromesa/db"]) {
+  const build = run(["--filter", packageName, "build"]);
+  if (build.status !== 0) process.exit(build.status ?? 1);
+}
+
 const migration = run(["db:migrate"]);
 if (migration.status !== 0) {
   const applied = run(["--filter", "@giromesa/db", "db:check-applied"]);
@@ -45,6 +50,7 @@ for (const args of [
     "src/modules/fiscal/fiscal.integration.test.ts",
     "src/modules/printing/connector-auth.integration.test.ts",
     "src/modules/qr/qr.integration.test.ts",
+    "src/modules/pos/operational-foundation.integration.test.ts",
     "--pool=threads",
     "--maxWorkers=1",
     "--minWorkers=1",

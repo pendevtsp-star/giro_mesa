@@ -1,5 +1,5 @@
 import * as schema from "@giromesa/db";
-import { auditLogs, branches, fiscalDocuments, tenants } from "@giromesa/db";
+import { auditLogs, branches, fiscalDocuments, operationalEvents, tenants } from "@giromesa/db";
 import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -29,6 +29,7 @@ runIntegration("fiscal mock worker", () => {
   afterAll(async () => {
     if (tenantId) {
       await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
+      await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
       await db.delete(fiscalDocuments).where(eq(fiscalDocuments.tenantId, tenantId));
       await db.delete(branches).where(eq(branches.tenantId, tenantId));
       await db.delete(tenants).where(eq(tenants.id, tenantId));

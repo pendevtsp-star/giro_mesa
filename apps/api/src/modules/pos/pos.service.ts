@@ -3,6 +3,7 @@ import {
   diningTables,
   inventoryItems,
   kdsTickets,
+  operationalEvents,
   orderItems,
   orders,
   outboxEvents,
@@ -36,6 +37,7 @@ import { DatabaseService } from "../database/database.service";
 import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/club-whisky-events";
 import { appendCancellationNotice, buildStockReversals } from "./cancellation-propagation";
 import { CashService } from "./cash.service";
+import { OperationalService } from "./operational.service";
 import { decideDiscountFlow, requiresCancellationApproval } from "./operational-exceptions";
 import { OrdersService } from "./orders.service";
 import { PaymentsService } from "./payments.service";
@@ -96,11 +98,13 @@ type CloseCashSessionInput = {
 type OpenShiftInput = {
   branchId: string;
   notes?: string | undefined;
+  idempotencyKey?: string | undefined;
 };
 
 type CloseShiftInput = {
   branchId: string;
   notes?: string | undefined;
+  idempotencyKey?: string | undefined;
 };
 
 // Business metrics
@@ -156,6 +160,9 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     @Optional()
     @Inject(ApprovalApplicatorRegistry)
     private readonly approvalApplicatorRegistry?: ApprovalApplicatorRegistry,
+    @Optional()
+    @Inject(OperationalService)
+    private readonly operationalService?: OperationalService,
   ) {}
 
   onModuleInit() {
@@ -527,7 +534,11 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       if (nextStatus === "canceled" && order.tableId) {
         await tx
           .update(diningTables)
-          .set({ status: "occupied", updatedAt: new Date() })
+          .set({
+            status: "occupied",
+            version: sql`${diningTables.version} + 1`,
+            updatedAt: new Date(),
+          })
           .where(
             and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, order.tableId)),
           );
@@ -592,7 +603,11 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       if (order.tableId) {
         await tx
           .update(diningTables)
-          .set({ status: "occupied", updatedAt: new Date() })
+          .set({
+            status: "occupied",
+            version: sql`${diningTables.version} + 1`,
+            updatedAt: new Date(),
+          })
           .where(
             and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, order.tableId)),
           );
@@ -622,6 +637,18 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     if (!branchId) {
       throw new BadRequestException("branchId is required");
     }
+
+    const [latestEvent] = await this.database.db
+      .select()
+      .from(operationalEvents)
+      .where(
+        and(
+          eq(operationalEvents.tenantId, context.tenantId),
+          eq(operationalEvents.branchId, branchId),
+        ),
+      )
+      .orderBy(desc(operationalEvents.version))
+      .limit(1);
 
     const [latestAudit] = await this.database.db
       .select({
@@ -654,11 +681,17 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         createdAt: outboxEvents.createdAt,
       })
       .from(outboxEvents)
-      .where(eq(outboxEvents.tenantId, context.tenantId))
+      .where(
+        and(
+          eq(outboxEvents.tenantId, context.tenantId),
+          sql`${outboxEvents.payload}->>'branchId' = ${branchId}`,
+        ),
+      )
       .orderBy(desc(outboxEvents.updatedAt))
       .limit(1);
 
     const signature = [
+      latestEvent ? `event:${latestEvent.version}` : "event:none",
       latestAudit ? `${latestAudit.id}:${latestAudit.createdAt.toISOString()}` : "audit:none",
       latestTicket ? `${latestTicket.id}:${latestTicket.updatedAt.toISOString()}` : "kds:none",
       latestOutbox ? `${latestOutbox.id}:${latestOutbox.updatedAt.toISOString()}` : "outbox:none",
@@ -669,6 +702,17 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       branchId,
       signature,
       emittedAt: new Date().toISOString(),
+      version: latestEvent?.version ?? 0,
+      latestEvent: latestEvent
+        ? {
+            version: latestEvent.version,
+            type: latestEvent.type,
+            aggregateType: latestEvent.aggregateType,
+            aggregateId: latestEvent.aggregateId,
+            payload: latestEvent.payload,
+            occurredAt: latestEvent.occurredAt.toISOString(),
+          }
+        : null,
       latestAudit: latestAudit
         ? {
             id: latestAudit.id,
@@ -691,6 +735,76 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
           }
         : null,
     };
+  }
+
+  async getActiveOrder(
+    context: TenantContext,
+    input: { branchId: string; tableId?: string | undefined; orderId?: string | undefined },
+  ) {
+    return this.ordersService.getActiveOrder(context, input);
+  }
+
+  async getProductionRoutingPreview(context: TenantContext, orderId: string) {
+    return this.ordersService.getProductionRoutingPreview(context, orderId);
+  }
+
+  async getOperationalSettings(context: TenantContext, branchId: string) {
+    return this.requireOperationalService().getSettings(context, branchId);
+  }
+
+  async updateOperationalSettings(
+    context: TenantContext,
+    branchId: string,
+    input: Parameters<OperationalService["updateSettings"]>[2],
+  ) {
+    return this.requireOperationalService().updateSettings(context, branchId, input);
+  }
+
+  async getBusinessHours(context: TenantContext, branchId: string) {
+    return this.requireOperationalService().getBusinessHours(context, branchId);
+  }
+
+  async replaceBusinessHours(
+    context: TenantContext,
+    branchId: string,
+    input: Parameters<OperationalService["replaceBusinessHours"]>[2],
+  ) {
+    return this.requireOperationalService().replaceBusinessHours(context, branchId, input);
+  }
+
+  async saveOperationalPreferences(
+    context: TenantContext,
+    branchId: string,
+    input: Parameters<OperationalService["savePreferences"]>[2],
+  ) {
+    return this.requireOperationalService().savePreferences(context, branchId, input);
+  }
+
+  async setPersonalPin(context: TenantContext, branchId: string, pin: string) {
+    return this.requireOperationalService().setPersonalPin(context, branchId, pin);
+  }
+
+  async registerOperationalDevice(
+    context: TenantContext,
+    input: Parameters<OperationalService["registerDevice"]>[1],
+  ) {
+    return this.requireOperationalService().registerDevice(context, input);
+  }
+
+  async listOperationalEvents(
+    context: TenantContext,
+    branchId: string,
+    afterVersion: number,
+    limit: number,
+  ) {
+    return this.requireOperationalService().listEvents(context, branchId, afterVersion, limit);
+  }
+
+  async getOperationalSession(
+    context: TenantContext,
+    input: Parameters<OperationalService["getSession"]>[1],
+  ) {
+    return this.requireOperationalService().getSession(context, input);
   }
 
   // --- Orders (delegates to OrdersService) ---
@@ -1092,10 +1206,17 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     return this.approvalsService;
   }
 
+  private requireOperationalService() {
+    if (!this.operationalService) {
+      throw new BadRequestException("Operational service is unavailable");
+    }
+    return this.operationalService;
+  }
+
   // --- Payments (delegates to PaymentsService) ---
 
-  splitBill(orderId: string, totalCents: number, people: number) {
-    return this.paymentsService.splitBill(orderId, totalCents, people);
+  splitBill(context: TenantContext, orderId: string, people: number) {
+    return this.paymentsService.splitBill(context, orderId, people);
   }
 
   async registerPayment(context: TenantContext, orderId: string, input: RegisterPaymentInput) {

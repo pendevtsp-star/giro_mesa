@@ -45,8 +45,43 @@ const paymentSchema = z.object({
 });
 
 const splitSchema = z.object({
-  totalCents: z.number().int().positive(),
   people: z.number().int().positive(),
+});
+
+const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const businessIntervalSchema = z.object({ opensAt: timeSchema, closesAt: timeSchema });
+const businessHoursSchema = z.object({
+  weekly: z.array(
+    businessIntervalSchema.extend({
+      weekday: z.number().int().min(0).max(6),
+      sortOrder: z.number().int().nonnegative(),
+    }),
+  ),
+  exceptions: z.array(
+    z.object({
+      date: z.string().date(),
+      isClosed: z.boolean(),
+      intervals: z.array(businessIntervalSchema),
+      reason: z.string().max(160).nullable().optional(),
+    }),
+  ),
+});
+const operationalSettingsSchema = z
+  .object({
+    cleaningMode: z.enum(["manual", "automatic"]).optional(),
+    allowWaiterPayments: z.boolean().optional(),
+    defaultTheme: z.enum(["light", "dark", "system"]).optional(),
+    defaultKdsInputMode: z.enum(["touch", "keyboard", "hybrid", "printer"]).optional(),
+  })
+  .refine((input) => Object.keys(input).length > 0, "At least one setting is required");
+const preferencesSchema = z.object({
+  branchId: z.string().uuid(),
+  theme: z.enum(["light", "dark", "system"]),
+  kdsInput: z.enum(["touch", "keyboard", "hybrid", "printer"]),
+});
+const deviceSchema = preferencesSchema.extend({
+  name: z.string().min(2).max(120),
+  kind: z.enum(["pos", "salon", "waiter", "kds", "expedition", "cashier"]),
 });
 
 const cashOpenSchema = z.object({
@@ -57,6 +92,7 @@ const cashOpenSchema = z.object({
 const shiftSchema = z.object({
   branchId: z.string().min(1),
   notes: z.string().max(500).optional(),
+  idempotencyKey: z.string().min(8).max(180).optional(),
 });
 
 const cashMovementSchema = z.object({
@@ -67,6 +103,7 @@ const cashMovementSchema = z.object({
 
 const cashCloseSchema = z.object({
   countedAmountCents: z.number().int().nonnegative(),
+  idempotencyKey: z.string().min(8).max(120).optional(),
 });
 const floorLayoutSchema = z.object({
   branchId: z.string().min(1),
@@ -232,6 +269,112 @@ export class PosController {
     );
   }
 
+  @Get("events/history")
+  async listOperationalEvents(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+    @Query("afterVersion") afterVersion = "0",
+    @Query("limit") limit = "100",
+  ) {
+    const context = await this.contextWithPermission(headers);
+    return {
+      data: await this.posService.listOperationalEvents(
+        context,
+        z.string().uuid().parse(branchId),
+        z.coerce.number().int().nonnegative().parse(afterVersion),
+        z.coerce.number().int().min(1).max(200).parse(limit),
+      ),
+    };
+  }
+
+  @Get("session")
+  async getOperationalSession(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+    @Query("tableId") tableId?: string,
+    @Query("orderId") orderId?: string,
+  ) {
+    const context = await this.contextWithPermission(headers);
+    return this.posService.getOperationalSession(context, {
+      branchId: z.string().uuid().parse(branchId),
+      ...(tableId ? { tableId: z.string().uuid().parse(tableId) } : {}),
+      ...(orderId ? { orderId: z.string().uuid().parse(orderId) } : {}),
+    });
+  }
+
+  @Get("branches/:branchId/operational-settings")
+  async getOperationalSettings(
+    @Param("branchId") branchId: string,
+    @Headers() headers: HeaderRecord,
+  ) {
+    const context = await this.contextWithPermission(headers);
+    return this.posService.getOperationalSettings(context, z.string().uuid().parse(branchId));
+  }
+
+  @Patch("branches/:branchId/operational-settings")
+  async updateOperationalSettings(
+    @Param("branchId") branchId: string,
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "tenant:manage");
+    return this.posService.updateOperationalSettings(
+      context,
+      z.string().uuid().parse(branchId),
+      operationalSettingsSchema.parse(body),
+    );
+  }
+
+  @Get("branches/:branchId/business-hours")
+  async getBusinessHours(@Param("branchId") branchId: string, @Headers() headers: HeaderRecord) {
+    const context = await this.contextWithPermission(headers);
+    return this.posService.getBusinessHours(context, z.string().uuid().parse(branchId));
+  }
+
+  @Patch("branches/:branchId/business-hours")
+  async replaceBusinessHours(
+    @Param("branchId") branchId: string,
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "tenant:manage");
+    return this.posService.replaceBusinessHours(
+      context,
+      z.string().uuid().parse(branchId),
+      businessHoursSchema.parse(body),
+    );
+  }
+
+  @Patch("preferences")
+  async saveOperationalPreferences(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers);
+    const input = preferencesSchema.parse(body);
+    return this.posService.saveOperationalPreferences(context, input.branchId, {
+      theme: input.theme,
+      kdsInput: input.kdsInput,
+    });
+  }
+
+  @Post("operator-pin")
+  async setPersonalPin(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers);
+    const input = z
+      .object({ branchId: z.string().uuid(), pin: z.string().regex(/^\d{4,8}$/) })
+      .parse(body);
+    return this.posService.setPersonalPin(context, input.branchId, input.pin);
+  }
+
+  @Post("devices")
+  async registerOperationalDevice(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "tenant:manage");
+    return this.posService.registerOperationalDevice(context, deviceSchema.parse(body));
+  }
+
   @Get("tables/:tableId/history")
   async listTableHistory(
     @Param("tableId") tableId: string,
@@ -253,6 +396,23 @@ export class PosController {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers);
     return this.posService.openOrder(context, openOrderSchema.parse(body));
+  }
+
+  @Get("orders/active")
+  async getActiveOrder(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+    @Query("tableId") tableId?: string,
+    @Query("orderId") orderId?: string,
+  ) {
+    const context = await this.contextWithPermission(headers);
+    return {
+      data: await this.posService.getActiveOrder(context, {
+        branchId: z.string().uuid().parse(branchId),
+        ...(tableId ? { tableId: z.string().uuid().parse(tableId) } : {}),
+        ...(orderId ? { orderId: z.string().uuid().parse(orderId) } : {}),
+      }),
+    };
   }
 
   @Patch("orders/:orderId/customer")
@@ -319,6 +479,15 @@ export class PosController {
     return this.posService.sendToKitchen(context, orderId);
   }
 
+  @Get("orders/:orderId/production-routing-preview")
+  async getProductionRoutingPreview(
+    @Param("orderId") orderId: string,
+    @Headers() headers: HeaderRecord,
+  ) {
+    const context = await this.contextWithPermission(headers, "pos:kds_send");
+    return this.posService.getProductionRoutingPreview(context, z.string().uuid().parse(orderId));
+  }
+
   @Patch("orders/:orderId/qr-items/:itemId")
   async updateQrOrderItem(
     @Param("orderId") orderId: string,
@@ -371,9 +540,9 @@ export class PosController {
     @Headers() headers: HeaderRecord,
   ) {
     rejectTenantOverride(body);
-    await this.contextWithPermission(headers);
+    const context = await this.contextWithPermission(headers);
     const input = splitSchema.parse(body);
-    return this.posService.splitBill(orderId, input.totalCents, input.people);
+    return this.posService.splitBill(context, z.string().uuid().parse(orderId), input.people);
   }
 
   @Post("orders/:orderId/payments")

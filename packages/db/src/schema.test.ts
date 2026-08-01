@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   approvalRequests,
   auditLogs,
+  branchBusinessHourExceptions,
+  branchBusinessHours,
   branches,
+  branchOperationalSettings,
   cashMovements,
   cashSessions,
   categories,
@@ -23,7 +26,11 @@ import {
   modifierOptions,
   oauthAccounts,
   onboardingSteps,
+  operationalDevices,
+  operationalEvents,
+  operationalPins,
   operationalShifts,
+  operationIdempotency,
   operationPolicies,
   orderItems,
   orders,
@@ -36,6 +43,7 @@ import {
   recipeItems,
   recipes,
   reservations,
+  reservationTables,
   roles,
   sessions,
   stockLocations,
@@ -44,6 +52,7 @@ import {
   suppliers,
   tableEvents,
   tabs,
+  userOperationalPreferences,
   userRoles,
   users,
   waitlistEntries,
@@ -98,6 +107,15 @@ const tenantScopedTables = {
   reservations,
   waitlistEntries,
   tableEvents,
+  branchBusinessHourExceptions,
+  branchBusinessHours,
+  branchOperationalSettings,
+  operationalDevices,
+  operationalEvents,
+  operationalPins,
+  operationIdempotency,
+  reservationTables,
+  userOperationalPreferences,
 };
 
 describe("multi-tenant schema", () => {
@@ -177,6 +195,23 @@ describe("multi-tenant schema", () => {
     );
     expect(Object.keys(getTableColumns(tableEvents))).toEqual(
       expect.arrayContaining(["tenantId", "branchId", "tableId", "type"]),
+    );
+    expect(Object.keys(getTableColumns(reservationTables))).toEqual(
+      expect.arrayContaining(["tenantId", "branchId", "reservationId", "tableId"]),
+    );
+  });
+
+  it("stores the operational redesign foundation without plaintext device credentials", () => {
+    expect(Object.keys(getTableColumns(branchOperationalSettings))).toEqual(
+      expect.arrayContaining(["cleaningMode", "allowWaiterPayments", "defaultTheme"]),
+    );
+    expect(Object.keys(getTableColumns(operationalDevices))).toContain("tokenHash");
+    expect(Object.keys(getTableColumns(operationalDevices))).not.toContain("token");
+    expect(Object.keys(getTableColumns(operationalPins))).toContain("pinHash");
+    expect(Object.keys(getTableColumns(operationalPins))).not.toContain("pin");
+    expect(Object.keys(getTableColumns(operationalEvents))).toContain("version");
+    expect(Object.keys(getTableColumns(cashSessions))).toEqual(
+      expect.arrayContaining(["version", "closeIdempotencyKey"]),
     );
   });
 });

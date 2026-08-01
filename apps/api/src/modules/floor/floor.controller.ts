@@ -14,18 +14,23 @@ const areaSchema = z.object({
 
 const reservationSchema = z.object({
   tableId: z.string().uuid().nullable().optional(),
+  tableIds: z.array(z.string().uuid()).max(8).optional(),
   customerId: z.string().uuid().nullable().optional(),
   customerName: z.string().min(2).max(160),
   customerPhone: z.string().max(40).optional(),
   partySize: z.number().int().min(1).max(100),
   scheduledAt: z.coerce.date(),
+  durationMinutes: z.number().int().min(15).max(1440).optional(),
+  toleranceMinutes: z.number().int().min(0).max(240).optional(),
   notes: z.string().max(500).optional(),
 });
 
 const reservationUpdateSchema = z.object({
   status: z.enum(["booked", "arrived", "seated", "no_show", "canceled"]).optional(),
   tableId: z.string().uuid().nullable().optional(),
+  tableIds: z.array(z.string().uuid()).max(8).optional(),
   notes: z.string().max(500).nullable().optional(),
+  expectedVersion: z.number().int().positive().optional(),
 });
 
 const waitlistSchema = z.object({
@@ -118,11 +123,16 @@ export class FloorController {
     @Body() body: unknown,
   ) {
     rejectTenantOverride(body);
-    const input = z.object({ tableId: z.string().uuid() }).parse(body);
+    const input = z
+      .object({
+        tableId: z.string().uuid().optional(),
+        tableIds: z.array(z.string().uuid()).min(1).max(8).optional(),
+      })
+      .parse(body);
     return this.floorService.seatReservation(
       await this.context(headers),
       z.string().uuid().parse(reservationId),
-      input.tableId,
+      input.tableIds ?? (input.tableId ? [input.tableId] : undefined),
     );
   }
 
