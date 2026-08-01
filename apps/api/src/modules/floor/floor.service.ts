@@ -375,39 +375,115 @@ export class FloorService {
     },
   ) {
     const branchId = requireBranchId(context);
-    const [entry] = await this.database.db
-      .select()
-      .from(waitlistEntries)
-      .where(
-        and(
-          eq(waitlistEntries.tenantId, context.tenantId),
-          eq(waitlistEntries.branchId, branchId),
-          eq(waitlistEntries.id, entryId),
-        ),
-      )
-      .limit(1);
-    if (!entry) throw new NotFoundException("Waitlist entry not found");
-    if (input.status && input.status !== entry.status) {
-      stateMachines.assertWaitlistTransition(entry.status, input.status);
-    }
-    const [updated] = await this.database.db
-      .update(waitlistEntries)
-      .set({
-        ...(input.status ? { status: input.status } : {}),
-        ...(input.tableId !== undefined ? { tableId: input.tableId } : {}),
-        ...(input.notes !== undefined ? { notes: input.notes } : {}),
-        ...(input.status === "notified" ? { notifiedAt: new Date() } : {}),
-        ...(input.status === "seated" ? { seatedAt: new Date() } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(waitlistEntries.tenantId, context.tenantId), eq(waitlistEntries.id, entryId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Waitlist entry not found");
-    await this.audit(context, branchId, "floor.waitlist_updated", "waitlist_entry", updated.id, {
-      status: updated.status,
-      tableId: updated.tableId,
+    return this.database.db.transaction(async (tx) => {
+      const [entry] = await tx
+        .select()
+        .from(waitlistEntries)
+        .where(
+          and(
+            eq(waitlistEntries.tenantId, context.tenantId),
+            eq(waitlistEntries.branchId, branchId),
+            eq(waitlistEntries.id, entryId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!entry) throw new NotFoundException("Waitlist entry not found");
+      if (input.status && input.status !== entry.status) {
+        stateMachines.assertWaitlistTransition(entry.status, input.status);
+      }
+
+      let orderId: string | undefined;
+      if (input.status === "seated") {
+        if (!input.tableId) throw new BadRequestException("Select a table before seating");
+        const [table] = await tx
+          .select()
+          .from(diningTables)
+          .where(
+            and(
+              eq(diningTables.tenantId, context.tenantId),
+              eq(diningTables.branchId, branchId),
+              eq(diningTables.id, input.tableId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (!table) throw new NotFoundException("Table not found");
+        assertTableCanSeatParty(table, entry.partySize);
+        const [openOrder] = await tx
+          .select({ id: orders.id })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.tenantId, context.tenantId),
+              eq(orders.tableId, table.id),
+              inArray(orders.status, [
+                "opened",
+                "sent_to_kitchen",
+                "preparing",
+                "ready",
+                "served",
+                "waiting_payment",
+                "partially_paid",
+              ]),
+            ),
+          )
+          .limit(1);
+        if (openOrder) throw new ConflictException("Table already has an open order");
+        const [order] = await tx
+          .insert(orders)
+          .values({
+            tenantId: context.tenantId,
+            branchId,
+            tableId: table.id,
+            channel: "table",
+            status: "opened",
+            peopleCount: entry.partySize,
+            openedAt: new Date(),
+          })
+          .returning({ id: orders.id });
+        if (!order) throw new BadRequestException("Unable to open table order");
+        orderId = order.id;
+        await tx
+          .update(diningTables)
+          .set({ status: "occupied", reservedName: null, updatedAt: new Date() })
+          .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, table.id)));
+        await tx.insert(tableEvents).values({
+          tenantId: context.tenantId,
+          branchId,
+          tableId: table.id,
+          orderId: order.id,
+          type: "waitlist.seated",
+          createdByUserId: requireUserId(context),
+          metadata: { partySize: entry.partySize },
+        });
+      }
+
+      const [updated] = await tx
+        .update(waitlistEntries)
+        .set({
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.tableId !== undefined ? { tableId: input.tableId } : {}),
+          ...(input.notes !== undefined ? { notes: input.notes } : {}),
+          ...(input.status === "notified" ? { notifiedAt: new Date() } : {}),
+          ...(input.status === "seated" ? { seatedAt: new Date() } : {}),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(waitlistEntries.tenantId, context.tenantId), eq(waitlistEntries.id, entryId)))
+        .returning();
+      if (!updated) throw new NotFoundException("Waitlist entry not found");
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId,
+        userId: context.userId,
+        requestId: context.requestId,
+        action: "floor.waitlist_updated",
+        entityType: "waitlist_entry",
+        entityId: updated.id,
+        metadata: { status: updated.status, tableId: updated.tableId, orderId },
+      });
+      return orderId ? { ...updated, orderId } : updated;
     });
-    return updated;
   }
 
   async seatReservation(

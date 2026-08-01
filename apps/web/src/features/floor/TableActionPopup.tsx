@@ -3,11 +3,13 @@
 import {
   ArrowRight,
   BookOpen,
+  Check,
   CreditCard,
   FileText,
   Flame,
   Plus,
   Receipt,
+  RefreshCw,
   ShoppingBag,
   Unlink,
   X,
@@ -32,6 +34,7 @@ const STATUS_LABELS: Record<string, string> = {
   waiting_payment: "Pagamento",
   reserved: "Reserva",
   blocked: "Bloqueada",
+  cleaning: "A limpar",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -53,6 +56,14 @@ function getActions(table: DiningTable): Action[] {
     case "free":
       actions.push({ id: "new-order", label: "Novo pedido", icon: <Plus size={16} /> });
       actions.push({ id: "reserve", label: "Reservar", icon: <BookOpen size={16} /> });
+      actions.push({
+        id: "mark-cleaning",
+        label: "Marcar como a limpar",
+        icon: <RefreshCw size={16} />,
+      });
+      break;
+    case "cleaning":
+      actions.push({ id: "release-table", label: "Liberar mesa", icon: <Check size={16} /> });
       break;
     case "occupied":
     case "waiting_order":

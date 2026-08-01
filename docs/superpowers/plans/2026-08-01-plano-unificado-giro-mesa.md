@@ -35,7 +35,7 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 1 — domínio, dados, segurança e contratos.
 - [x] Fase 2 — fundação visual, shells e navegação.
 - [x] Fase 3 — sessão operacional compartilhada e PDV.
-- [ ] Fase 4 — salão, reservas e fila.
+- [ ] Fase 4 — salão, reservas e fila (núcleo operacional entregue; pendências avançadas abaixo).
 - [ ] Fase 5 — garçom, perfis, PIN e dispositivos.
 - [ ] Fase 6 — KDS, expedição e impressão.
 - [ ] Fase 7 — dashboard, horário, turno e tema.
@@ -59,6 +59,11 @@ fechado apenas por existir código:
   estados, acessibilidade e rotas em todos os viewports de aceite.
 - Fase 3: gate fechado nesta execução após a validação do PDV Mesa/Balcão, recuperação
   de comanda, pagamentos idempotentes, dinheiro, impressão térmica e atalhos.
+- Fase 4: núcleo operacional entregue nesta execução: modo Operação/Edição, reservas
+  com mesas múltiplas e estados de recepção, fila com estados e acomodação que abre
+  atendimento, sugestão de junção, separação física, zoom acessível e limpeza manual.
+  O gate visual completo permanece aberto para setores/formas, ocupação detalhada,
+  realtime e suíte E2E autenticada.
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
@@ -173,25 +178,27 @@ permissão ou infraestrutura.
 
 ### Trabalho
 
-- [ ] Separar modos Operação e Editar mapa.
-- [ ] Corrigir Pointer Events, pointer capture, pan, zoom, fit-to-content, touch,
+- [x] Separar modos Operação e Editar mapa.
+- [x] Corrigir Pointer Events, pointer capture, pan, zoom, ajuste de mapa, touch,
   teclado, cálculo de coordenadas e persistência.
-- [ ] Implementar desfazer local, aviso de mudanças não salvas, setores, formas,
-  capacidade, bloqueio e arquivamento seguro.
-- [ ] Detectar proximidade e sugerir união com prévia; separar mesas reposicionando-as
-  e distribuindo a comanda corretamente.
-- [ ] Implementar drawer rápido para pedido, produção, pré-conta, pagamento e fechamento.
-- [ ] Integrar reservas N:N: mesa(s), chegada, acomodação, cancelamento, no-show e atraso.
-- [ ] Integrar fila: notificação, previsão, chegada, acomodação, desistência e cancelamento.
+- [x] Implementar desfazer local e aviso de mudanças não salvas.
+- [ ] Completar setores, formas, edição de capacidade, bloqueio e arquivamento seguro.
+- [x] Detectar proximidade e sugerir união com prévia; separar mesas reposicionando-as.
+- [x] Manter drawer rápido para pedido, produção, pré-conta, pagamento e fechamento.
+- [ ] Distribuir automaticamente comandas ao separar mesas e exibir atraso da reserva.
+- [x] Integrar reservas N:N: mesa(s), chegada, acomodação, cancelamento e no-show.
+- [x] Integrar fila: notificação, previsão, acomodação, desistência e cancelamento.
 - [ ] Exibir ocupação, responsável, duração, reserva e próxima ação no mapa.
 - [ ] Atualizar mapa simultaneamente por eventos e impedir sobrescrita com versão otimista.
-- [ ] Implementar “A limpar” e liberação manual/automática.
+- [x] Implementar “A limpar” e liberação manual.
 
 ### Testes e gate
 
-- [ ] Mouse, touch, teclado, pan, zoom e persistência após reload.
-- [ ] União por aproximação, separação real e conflito simultâneo.
-- [ ] Reserva de uma e várias mesas, fila completa e conflito de acomodação.
+- [ ] Exercitar mouse, touch, teclado, pan, zoom e persistência após reload na suíte
+  autenticada.
+- [ ] Exercitar união por aproximação, separação real e conflito simultâneo na suíte
+  autenticada.
+- [ ] Exercitar reserva de uma e várias mesas, fila completa e conflito de acomodação.
 - [ ] Gate: nenhuma ação frequente sai do mapa; reserva/fila abrem atendimento real
   sem dupla ocupação.
 

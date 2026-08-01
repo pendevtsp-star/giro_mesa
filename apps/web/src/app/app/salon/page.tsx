@@ -1,5 +1,5 @@
 "use client";
-import { LayoutGrid, Link2, Plus, Save, Undo2, X } from "lucide-react";
+import { Edit3, LayoutGrid, Link2, MousePointer2, Plus, Save, Undo2, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BrandLink } from "../../../components/app-shell/BrandMark";
 import { FloorWorkspace } from "../../../features/floor/FloorWorkspace";
@@ -42,9 +42,11 @@ const tones: Record<string, string> = {
   served: "served",
   order_sent: "preparing",
   waiting_order: "reserved",
+  cleaning: "free",
 };
 
 export default function SalonPage() {
+  const [mode, setMode] = useState<"operation" | "edit">("operation");
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [branchId, setBranchId] = useState("");
   const [layout, setLayout] = useState<Record<string, Position>>({});
@@ -79,6 +81,7 @@ export default function SalonPage() {
   // Merge mode
   const [mergeMode, setMergeMode] = useState(false);
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [mergeSuggestion, setMergeSuggestion] = useState<[string, string] | null>(null);
 
   // Pan state
   const panRef = useRef({ isPanning: false, startX: 0, startY: 0 });
@@ -213,6 +216,13 @@ export default function SalonPage() {
     e.preventDefault();
     e.stopPropagation();
 
+    if (mode === "operation") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setPopupTable(table);
+      setPopupPos({ x: rect.right + 8, y: rect.top });
+      return;
+    }
+
     if (mergeMode) {
       setSelectedTables((prev) => {
         const next = new Set(prev);
@@ -311,9 +321,28 @@ export default function SalonPage() {
           setPopupTable(table);
           setPopupPos({ x: rect.right + 8, y: rect.top });
         }
+        return;
+      }
+
+      const draggedPosition = layout[tableId];
+      if (!draggedPosition) return;
+      const nearby = tables.find((candidate) => {
+        if (candidate.id === tableId) return false;
+        const position = layout[candidate.id];
+        if (!position) return false;
+        return (
+          Math.abs(position.x - draggedPosition.x) <= 8 &&
+          Math.abs(position.y - draggedPosition.y) <= 8
+        );
+      });
+      if (nearby) {
+        setMergeSuggestion([tableId, nearby.id]);
+        setMessage(
+          `Mesas próximas: ${tables.find((table) => table.id === tableId)?.code ?? ""} e ${nearby.code}.`,
+        );
       }
     },
-    [draggingId, tables],
+    [draggingId, layout, tables],
   );
 
   const handleDragCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
@@ -362,11 +391,42 @@ export default function SalonPage() {
           setMessage(`Reserva da mesa ${table.code} cancelada.`);
           break;
         }
+        case "mark-cleaning": {
+          const result = await updateTable(table.id, { status: "cleaning" });
+          setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
+          setMessage(`Mesa ${table.code} marcada como a limpar.`);
+          break;
+        }
+        case "release-table": {
+          const result = await updateTable(table.id, { status: "free", reservedName: null });
+          setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
+          setMessage(`Mesa ${table.code} liberada.`);
+          break;
+        }
         case "unmerge": {
           try {
+            const groupTableIds = table.groupId
+              ? tables
+                  .filter((candidate) => candidate.groupId === table.groupId)
+                  .map((candidate) => candidate.id)
+              : [];
             const result = await unmergeTables(table.id);
             setTables(result.data);
-            setMessage(`Mesas separadas.`);
+            if (groupTableIds.length > 1) {
+              const nextLayout = { ...layout };
+              groupTableIds.forEach((tableId, index) => {
+                const current = nextLayout[tableId] ?? { x: 4, y: 4 };
+                nextLayout[tableId] = {
+                  x: Math.min(88, current.x + (index % 2) * 12),
+                  y: Math.min(84, current.y + Math.floor(index / 2) * 18),
+                };
+              });
+              setLayoutHistory((history) => [...history.slice(-19), layout]);
+              setLayout(nextLayout);
+              setMessage("Mesas separadas e reposicionadas. Salve o mapa para confirmar.");
+            } else {
+              setMessage("Mesas separadas.");
+            }
           } catch {
             setMessage("Erro ao separar mesas.");
           }
@@ -374,7 +434,7 @@ export default function SalonPage() {
         }
       }
     },
-    [],
+    [layout, tables],
   );
 
   // === Merge mode ===
@@ -464,6 +524,24 @@ export default function SalonPage() {
         <div className="toolbar">
           <button
             className="button secondary compact"
+            onClick={() => {
+              setMergeSuggestion(null);
+              setMergeMode(false);
+              setSelectedTables(new Set());
+              setMode((current) => (current === "edit" ? "operation" : "edit"));
+              setMessage(
+                mode === "edit"
+                  ? "Modo operação: clique numa mesa para abrir suas ações."
+                  : "Modo edição: arraste mesas e salve a disposição.",
+              );
+            }}
+            type="button"
+          >
+            {mode === "edit" ? <MousePointer2 size={16} /> : <Edit3 size={16} />}
+            {mode === "edit" ? "Operar salão" : "Editar mapa"}
+          </button>
+          <button
+            className="button secondary compact"
             disabled={layoutHistory.length === 0}
             onClick={() => {
               const previous = layoutHistory.at(-1);
@@ -499,32 +577,38 @@ export default function SalonPage() {
       </section>
 
       <section className="salon-tools">
-        <form className="salon-create-form" onSubmit={submit}>
-          <strong>
-            <Plus size={15} /> Nova mesa
-          </strong>
-          <input
-            value={form.code}
-            onChange={(e) => setForm((c) => ({ ...c, code: e.target.value }))}
-            placeholder="Código: M13"
-          />
-          <input
-            value={form.name}
-            onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
-            placeholder="Nome: Varanda 1"
-          />
-          <input
-            value={form.seats}
-            onChange={(e) => setForm((c) => ({ ...c, seats: e.target.value }))}
-            inputMode="numeric"
-            placeholder="Lugares"
-          />
-          <button className="button secondary compact" type="submit">
-            Adicionar
-          </button>
-        </form>
+        {mode === "edit" ? (
+          <form className="salon-create-form" onSubmit={submit}>
+            <strong>
+              <Plus size={15} /> Nova mesa
+            </strong>
+            <input
+              value={form.code}
+              onChange={(e) => setForm((c) => ({ ...c, code: e.target.value }))}
+              placeholder="Código: M13"
+            />
+            <input
+              value={form.name}
+              onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
+              placeholder="Nome: Varanda 1"
+            />
+            <input
+              value={form.seats}
+              onChange={(e) => setForm((c) => ({ ...c, seats: e.target.value }))}
+              inputMode="numeric"
+              placeholder="Lugares"
+            />
+            <button className="button secondary compact" type="submit">
+              Adicionar
+            </button>
+          </form>
+        ) : (
+          <p className="salon-operation-hint">
+            Modo operação: clique numa mesa para atender sem sair do mapa.
+          </p>
+        )}
 
-        {mergeMode ? (
+        {mode === "edit" && mergeMode ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <strong
               style={{ color: "#f97316", display: "inline-flex", gap: 6, alignItems: "center" }}
@@ -543,7 +627,7 @@ export default function SalonPage() {
               <X size={14} /> Cancelar
             </button>
           </div>
-        ) : (
+        ) : mode === "edit" ? (
           <div className="salon-legend">
             <span className="free">Livre</span>
             <span className="occupied">Em atendimento</span>
@@ -557,8 +641,32 @@ export default function SalonPage() {
               <Link2 size={14} /> Juntar mesas
             </button>
           </div>
-        )}
+        ) : null}
       </section>
+
+      {mergeSuggestion ? (
+        <section className="salon-merge-suggestion" aria-label="Sugestão de junção">
+          <span>Mesas próximas detectadas. Deseja juntá-las?</span>
+          <button
+            className="button primary compact"
+            type="button"
+            onClick={() => {
+              setSelectedTables(new Set(mergeSuggestion));
+              setMergeSuggestion(null);
+              setMergeMode(true);
+            }}
+          >
+            Revisar junção
+          </button>
+          <button
+            className="button ghost compact"
+            type="button"
+            onClick={() => setMergeSuggestion(null)}
+          >
+            Agora não
+          </button>
+        </section>
+      ) : null}
 
       {serviceRequests.length > 0 ? (
         <section className="salon-service-requests" aria-label="Chamados das mesas">
@@ -677,6 +785,7 @@ export default function SalonPage() {
                 onPointerUp={handleDragUp}
                 onPointerCancel={handleDragCancel}
                 onKeyDown={(event) => {
+                  if (mode !== "edit") return;
                   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
                     event.preventDefault();
                     const current = layout[table.id] ?? { x, y };
@@ -792,7 +901,9 @@ export default function SalonPage() {
         >
           <button
             className="button ghost compact"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={() => setScale((s) => Math.min(3, s + 0.2))}
+            aria-label="Aumentar zoom"
             type="button"
             style={{
               width: 36,
@@ -819,7 +930,9 @@ export default function SalonPage() {
           </div>
           <button
             className="button ghost compact"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={() => setScale((s) => Math.max(0.3, s - 0.2))}
+            aria-label="Diminuir zoom"
             type="button"
             style={{
               width: 36,
@@ -835,6 +948,7 @@ export default function SalonPage() {
           </button>
           <button
             className="button ghost compact"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={() => {
               setScale(1);
               setPan({ x: 0, y: 0 });
@@ -848,9 +962,10 @@ export default function SalonPage() {
               justifyContent: "center",
               fontSize: "0.8rem",
             }}
-            title="Ajustar view"
+            title="Ajustar mapa"
+            aria-label="Ajustar mapa"
           >
-            [ ]
+            Ajustar
           </button>
         </div>
       </div>

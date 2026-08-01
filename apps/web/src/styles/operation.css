@@ -109,6 +109,12 @@
   background: #08131f;
 }
 
+.salon-operation-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .floor-operations-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -140,6 +146,33 @@
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 13px;
+}
+
+.floor-entry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.floor-entry-actions .button {
+  white-space: nowrap;
+}
+
+.floor-entry .count-chip {
+  white-space: nowrap;
+}
+
+.salon-merge-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px clamp(18px, 4vw, 56px);
+  color: var(--text);
+  background: color-mix(in srgb, var(--action) 12%, var(--surface));
+  border-block: 1px solid color-mix(in srgb, var(--action) 28%, var(--line));
 }
 
 .floor-entry div,
@@ -201,5 +234,14 @@
 @media (max-width: 640px) {
   .floor-inline-form {
     grid-template-columns: 1fr;
+  }
+
+  .floor-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .floor-entry-actions {
+    justify-content: flex-start;
   }
 }

@@ -390,6 +390,7 @@ export type FloorArea = {
 export type FloorReservation = {
   id: string;
   tableId: string | null;
+  tableIds?: string[];
   customerName: string;
   customerPhone: string | null;
   partySize: number;
@@ -2174,6 +2175,7 @@ export async function listFloorReservations(status?: FloorReservation["status"])
 
 export function createFloorReservation(input: {
   tableId?: string | null;
+  tableIds?: string[];
   customerName: string;
   customerPhone?: string;
   partySize: number;
@@ -2184,6 +2186,22 @@ export function createFloorReservation(input: {
     method: "POST",
     body: input,
   });
+}
+
+export function updateFloorReservation(
+  reservationId: string,
+  input: {
+    status?: FloorReservation["status"];
+    tableId?: string | null;
+    tableIds?: string[];
+    notes?: string | null;
+    expectedVersion?: number;
+  },
+) {
+  return apiRequest<FloorReservation & { tableIds?: string[] }>(
+    `/api/v1/floor/reservations/${encodeURIComponent(reservationId)}`,
+    { method: "PATCH", body: input },
+  );
 }
 
 export async function listWaitlistEntries(status?: WaitlistEntry["status"]) {
@@ -2201,6 +2219,20 @@ export function createWaitlistEntry(input: {
 }) {
   return apiRequest<WaitlistEntry>("/api/v1/floor/waitlist", {
     method: "POST",
+    body: input,
+  });
+}
+
+export function updateFloorWaitlist(
+  entryId: string,
+  input: {
+    status?: WaitlistEntry["status"];
+    tableId?: string | null;
+    notes?: string | null;
+  },
+) {
+  return apiRequest<WaitlistEntry>(`/api/v1/floor/waitlist/${encodeURIComponent(entryId)}`, {
+    method: "PATCH",
     body: input,
   });
 }
