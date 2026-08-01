@@ -302,6 +302,20 @@ export default function AppDashboardPage() {
     session?.billing?.status === "payment_required" ||
     session?.billing?.status === "access_blocked";
   const trialDaysLeft = session?.billing?.trialDaysRemaining;
+  const dashboardTitle = canManageTenant
+    ? "Visão do negócio"
+    : canManageCash
+      ? "Visão do turno"
+      : canOperatePos
+        ? "Prioridades do atendimento"
+        : "Visão operacional";
+  const dashboardDescription = canManageTenant
+    ? "Saúde financeira, operação e próximos riscos da sua unidade em uma única visão."
+    : canManageCash
+      ? "Abertura, conferência e prioridades do turno sem perder o controle do caixa."
+      : canOperatePos
+        ? "Mesas, pedidos e produção em andamento para atender com velocidade."
+        : "Acompanhe as tarefas liberadas para o seu perfil.";
 
   async function handleLogout() {
     await logout().catch(() => undefined);
@@ -319,6 +333,8 @@ export default function AppDashboardPage() {
       isPosWorkspace={false}
       canOpenPos={canOperatePos}
       operatorLabel={operatorProfile.title}
+      workspaceTitle={dashboardTitle}
+      workspaceDescription={dashboardDescription}
       onLogout={status === "ready" ? () => void handleLogout() : undefined}
       locale={locale}
       onLocaleChange={setLocale}

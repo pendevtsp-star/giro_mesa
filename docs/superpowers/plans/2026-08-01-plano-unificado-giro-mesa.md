@@ -38,7 +38,7 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 4 — salão, reservas e fila (núcleo operacional entregue; hardening avançado pendente abaixo).
 - [x] Fase 5 — garçom, perfis, PIN e dispositivos (núcleo de atendimento entregue; hardening avançado pendente abaixo).
 - [x] Fase 6 — KDS, expedição e impressão (núcleo operacional entregue; hardening avançado pendente abaixo).
-- [ ] Fase 7 — dashboard, horário, turno e tema.
+- [x] Fase 7 — dashboard, horário, turno e tema (núcleo entregue; hardening avançado pendente abaixo).
 - [ ] Fase 8 — limpeza, seed e cenário de homologação.
 - [ ] Fase 9 — QR personalizado por mesa.
 - [ ] Fase 10 — integrações externas.
@@ -269,25 +269,32 @@ física do conector continuam pendentes.
 
 ## Fase 7 — dashboard, horário, turno e tema
 
+Progresso desta execução: dashboard direcionado por perfil, indicadores operacionais e
+gerenciais, prontidão de abertura/fechamento, agenda semanal com exceções persistidas e
+padrões da filial para tema e entrada do KDS foram conectados às APIs existentes. O
+toggle rápido continua por dispositivo/usuário. O backend já aceita múltiplos intervalos;
+o editor visual desta fase mantém um intervalo principal por dia para reduzir risco no
+primeiro rollout.
+
 ### Trabalho
 
-- [ ] Criar dashboard estratégico do proprietário e operacional do gerente.
-- [ ] Criar início específico para caixa e recepção; direcionar garçom e produção
+- [x] Criar dashboard estratégico do proprietário e operacional do gerente.
+- [x] Criar início específico para caixa e recepção; direcionar garçom e produção
   às superfícies operacionais.
-- [ ] Remover banner permanente de conectividade e cards sem ação.
-- [ ] Implementar gráficos sóbrios, alternativa tabular e indicadores reconciliados
+- [x] Remover banner permanente de conectividade e cards sem ação.
+- [x] Implementar gráficos sóbrios, alternativa tabular e indicadores reconciliados
   com pedidos, caixa e estoque.
-- [ ] Implementar horário semanal, intervalos, madrugada, feriados e exceções.
-- [ ] Implementar checklist de abertura/fechamento e bloqueios de turno.
-- [ ] Integrar caixa, dinheiro pendente, produção e aprovações ao turno.
-- [ ] Implementar tema por usuário/dispositivo e padrão da filial.
+- [x] Implementar horário semanal, intervalos, madrugada, feriados e exceções.
+- [x] Implementar checklist de abertura/fechamento e bloqueios de turno.
+- [x] Integrar caixa, dinheiro pendente, produção e aprovações ao turno.
+- [x] Implementar tema por usuário/dispositivo e padrão da filial.
 
 ### Testes e gate
 
-- [ ] Período vazio, pouco dado, erro real e totais conferidos.
-- [ ] Virada de madrugada, feriado, abertura excepcional e fechamento bloqueado.
-- [ ] Claro, escuro e automático.
-- [ ] Gate: proprietário identifica saúde do negócio e gerente identifica prioridades
+- [x] Período vazio, pouco dado, erro real e totais conferidos.
+- [x] Virada de madrugada, feriado, abertura excepcional e fechamento bloqueado.
+- [x] Claro, escuro e automático.
+- [x] Gate: proprietário identifica saúde do negócio e gerente identifica prioridades
   sem divergência financeira.
 
 ## Fase 8 — limpeza e seed de homologação

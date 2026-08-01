@@ -4,6 +4,104 @@
   gap: 20px;
 }
 
+.operation-settings-secondary {
+  margin-top: 20px;
+}
+
+.operation-hours-panel {
+  grid-column: 1 / -1;
+}
+
+.business-hours-list,
+.business-hours-exception-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.business-hours-day {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.business-hours-day input,
+.business-hours-exception-form input {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.business-hours-day > span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.business-hours-exceptions {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.compact-heading {
+  margin-bottom: 12px;
+}
+
+.compact-heading h3 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+}
+
+.business-hours-exception-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.6fr) minmax(180px, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.business-hours-exception-form label:not(.check-line) {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.business-hours-exception-form .check-line {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.business-hours-exception {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.business-hours-exception > div {
+  display: grid;
+  gap: 2px;
+}
+
+.business-hours-exception span,
+.business-hours-exception small {
+  color: var(--muted);
+}
+
 .settings-form {
   display: grid;
   gap: 16px;
@@ -96,6 +194,29 @@
   .approval-card {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .business-hours-exception-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .business-hours-exception-form .button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .business-hours-day {
+    grid-template-columns: minmax(110px, 1fr) auto auto;
+  }
+
+  .business-hours-day > .button,
+  .business-hours-day > label:last-of-type {
+    grid-column: 2 / -1;
+  }
+
+  .business-hours-exception-form {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -20,6 +20,8 @@ export function AppShell({
   isPosWorkspace,
   canOpenPos,
   operatorLabel,
+  workspaceTitle,
+  workspaceDescription,
   onLogout,
   locale,
   onLocaleChange,
@@ -34,6 +36,8 @@ export function AppShell({
   isPosWorkspace: boolean;
   canOpenPos: boolean;
   operatorLabel: string;
+  workspaceTitle?: string;
+  workspaceDescription?: string;
   onLogout?: (() => void) | undefined;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
@@ -72,11 +76,12 @@ export function AppShell({
             </span>
             <div>
               <span className="section-kicker">Unidade Centro</span>
-              <h1>{isPosWorkspace ? "PDV do turno" : "Visão do turno"}</h1>
+              <h1>{workspaceTitle ?? (isPosWorkspace ? "PDV do turno" : "Visão do turno")}</h1>
               <p>
-                {isPosWorkspace
-                  ? "Atendimento rápido, pedido, produção e recebimento em uma única superfície."
-                  : `${branding.displayName} · gestão em tempo real, sem misturar a operação de caixa.`}
+                {workspaceDescription ??
+                  (isPosWorkspace
+                    ? "Atendimento rápido, pedido, produção e recebimento em uma única superfície."
+                    : `${branding.displayName} · gestão em tempo real, sem misturar a operação de caixa.`)}
               </p>
             </div>
           </div>

@@ -522,6 +522,37 @@ export type CurrentShiftResponse = {
   shift: OperationalShift | null;
 };
 
+export type BusinessHourInterval = {
+  opensAt: string;
+  closesAt: string;
+};
+
+export type WeeklyBusinessHour = BusinessHourInterval & {
+  weekday: number;
+  sortOrder: number;
+};
+
+export type BusinessHourException = {
+  date: string;
+  isClosed: boolean;
+  intervals: BusinessHourInterval[];
+  reason?: string | null;
+};
+
+export type BusinessHoursResponse = {
+  branchId: string;
+  weekly: WeeklyBusinessHour[];
+  exceptions: BusinessHourException[];
+};
+
+export type BranchOperationalSettings = {
+  branchId: string;
+  cleaningMode: "manual" | "automatic";
+  allowWaiterPayments: boolean;
+  defaultTheme: "light" | "dark" | "system";
+  defaultKdsInputMode: "touch" | "keyboard" | "hybrid" | "printer";
+};
+
 export type DashboardSummary = {
   salesToday: number;
   activeOrders: number;
@@ -2340,6 +2371,43 @@ export function recalculateOnboardingReadiness(branchId?: string) {
 export function getCurrentShift(branchId: string) {
   return apiRequest<CurrentShiftResponse>(
     `/api/v1/pos/shift/current?branchId=${encodeURIComponent(branchId)}`,
+  );
+}
+
+export function getBusinessHours(branchId: string) {
+  return apiRequest<BusinessHoursResponse>(
+    `/api/v1/pos/branches/${encodeURIComponent(branchId)}/business-hours`,
+  );
+}
+
+export function replaceBusinessHours(
+  branchId: string,
+  input: Pick<BusinessHoursResponse, "weekly" | "exceptions">,
+) {
+  return apiRequest<BusinessHoursResponse>(
+    `/api/v1/pos/branches/${encodeURIComponent(branchId)}/business-hours`,
+    { method: "PATCH", body: input },
+  );
+}
+
+export function getBranchOperationalSettings(branchId: string) {
+  return apiRequest<BranchOperationalSettings>(
+    `/api/v1/pos/branches/${encodeURIComponent(branchId)}/operational-settings`,
+  );
+}
+
+export function updateBranchOperationalSettings(
+  branchId: string,
+  input: Partial<
+    Pick<
+      BranchOperationalSettings,
+      "cleaningMode" | "allowWaiterPayments" | "defaultTheme" | "defaultKdsInputMode"
+    >
+  >,
+) {
+  return apiRequest<BranchOperationalSettings>(
+    `/api/v1/pos/branches/${encodeURIComponent(branchId)}/operational-settings`,
+    { method: "PATCH", body: input },
   );
 }
 

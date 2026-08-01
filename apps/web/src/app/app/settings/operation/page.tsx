@@ -1,19 +1,49 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  Moon,
+  Palette,
+  Plus,
+  Save,
+  ShieldCheck,
+  Sun,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ApprovalPinDialog } from "../../../../features/approvals/ApprovalPinDialog";
 import {
   type ApprovalRequest,
+  type BranchOperationalSettings,
+  type BusinessHourException,
   decideApprovalRequest,
   formatMoney,
+  getBranchOperationalSettings,
+  getBusinessHours,
   getOperationPolicy,
+  getSession,
   listApprovalRequests,
   type OperationPolicy,
+  replaceBusinessHours,
+  updateBranchOperationalSettings,
   updateOperationPolicy,
+  type WeeklyBusinessHour,
 } from "../../../../lib/giromesa-api";
 
 type Decision = { approval: ApprovalRequest; kind: "approve" | "reject" } | null;
+
+const weekdays = [
+  [0, "Domingo"],
+  [1, "Segunda-feira"],
+  [2, "Terça-feira"],
+  [3, "Quarta-feira"],
+  [4, "Quinta-feira"],
+  [5, "Sexta-feira"],
+  [6, "Sábado"],
+] as const;
 
 export default function OperationSettingsPage() {
   const [policy, setPolicy] = useState<OperationPolicy | null>(null);
@@ -21,18 +51,36 @@ export default function OperationSettingsPage() {
   const [discountPercent, setDiscountPercent] = useState("10");
   const [managerPin, setManagerPin] = useState("");
   const [decision, setDecision] = useState<Decision>(null);
+  const [branchId, setBranchId] = useState("");
+  const [weekly, setWeekly] = useState<WeeklyBusinessHour[]>([]);
+  const [exceptions, setExceptions] = useState<BusinessHourException[]>([]);
+  const [branchSettings, setBranchSettings] = useState<BranchOperationalSettings | null>(null);
+  const [exceptionDate, setExceptionDate] = useState("");
+  const [exceptionReason, setExceptionReason] = useState("");
+  const [exceptionClosed, setExceptionClosed] = useState(true);
   const [message, setMessage] = useState("Carregando regras operacionais...");
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [nextPolicy, nextApprovals] = await Promise.all([
+    const [nextPolicy, nextApprovals, session] = await Promise.all([
       getOperationPolicy(),
       listApprovalRequests(),
+      getSession(),
     ]);
     setPolicy(nextPolicy);
     setDiscountPercent(String(nextPolicy.maxDiscountWithoutApprovalBps / 100));
     setApprovals(nextApprovals);
+    if (session.branchId) {
+      const [hours, settings] = await Promise.all([
+        getBusinessHours(session.branchId),
+        getBranchOperationalSettings(session.branchId),
+      ]);
+      setBranchId(session.branchId);
+      setWeekly(hours.weekly);
+      setExceptions(hours.exceptions);
+      setBranchSettings(settings);
+    }
     setMessage(
       nextApprovals.length > 0
         ? `${nextApprovals.length} solicitação(ões) aguardando decisão.`
@@ -45,6 +93,81 @@ export default function OperationSettingsPage() {
       setMessage(error instanceof Error ? error.message : "Falha ao carregar regras."),
     );
   }, [load]);
+
+  // ponytail: keep one primary interval per weekday in this rollout; the API already supports more.
+  function updateSlot(weekday: number, patch: Partial<WeeklyBusinessHour>) {
+    setWeekly((current) => {
+      const existing = current.find((slot) => slot.weekday === weekday && slot.sortOrder === 0);
+      if (existing) {
+        return current.map((slot) => (slot === existing ? { ...slot, ...patch } : slot));
+      }
+      return [
+        ...current,
+        {
+          weekday,
+          sortOrder: 0,
+          opensAt: "18:00",
+          closesAt: "23:00",
+          ...patch,
+        },
+      ];
+    });
+  }
+
+  function removeSlot(weekday: number) {
+    setWeekly((current) => current.filter((slot) => slot.weekday !== weekday));
+  }
+
+  async function saveHours() {
+    if (!branchId) return;
+    setBusy(true);
+    try {
+      const saved = await replaceBusinessHours(branchId, { weekly, exceptions });
+      setWeekly(saved.weekly);
+      setExceptions(saved.exceptions);
+      setMessage("Horários e exceções salvos com auditoria.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Falha ao salvar horários.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBranchSettings() {
+    if (!branchId || !branchSettings) return;
+    setBusy(true);
+    try {
+      const saved = await updateBranchOperationalSettings(branchId, {
+        defaultTheme: branchSettings.defaultTheme,
+        defaultKdsInputMode: branchSettings.defaultKdsInputMode,
+        cleaningMode: branchSettings.cleaningMode,
+        allowWaiterPayments: branchSettings.allowWaiterPayments,
+      });
+      setBranchSettings(saved);
+      setMessage("Preferências da filial salvas.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Falha ao salvar preferências.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function addException() {
+    if (!exceptionDate) return;
+    setExceptions((current) =>
+      [
+        ...current.filter((exception) => exception.date !== exceptionDate),
+        {
+          date: exceptionDate,
+          isClosed: exceptionClosed,
+          intervals: exceptionClosed ? [] : [{ opensAt: "18:00", closesAt: "23:00" }],
+          reason: exceptionReason || null,
+        },
+      ].sort((left, right) => left.date.localeCompare(right.date)),
+    );
+    setExceptionDate("");
+    setExceptionReason("");
+  }
 
   async function savePolicy() {
     if (!policy) return;
@@ -233,6 +356,238 @@ export default function OperationSettingsPage() {
           </div>
         </article>
       </section>
+
+      {branchId ? (
+        <section className="operation-settings-grid operation-settings-secondary">
+          <article className="workspace-panel operation-hours-panel">
+            <div className="panel-heading">
+              <div>
+                <span className="section-kicker">
+                  <Clock3 size={16} /> Horário da casa
+                </span>
+                <h2>Agenda semanal</h2>
+              </div>
+              <button
+                className="button primary compact"
+                disabled={busy}
+                onClick={() => void saveHours()}
+                type="button"
+              >
+                <Save size={15} /> Salvar horários
+              </button>
+            </div>
+            <p className="muted-copy">
+              Use o fechamento no dia seguinte para casas que atravessam a madrugada. Dias sem
+              intervalo ficam fechados.
+            </p>
+            <div className="business-hours-list">
+              {weekdays.map(([weekday, label]) => {
+                const slot = weekly.find(
+                  (item) => item.weekday === weekday && item.sortOrder === 0,
+                );
+                return (
+                  <div className="business-hours-day" key={weekday}>
+                    <strong>{label}</strong>
+                    {slot ? (
+                      <>
+                        <label>
+                          <span className="visually-hidden">Abertura de {label}</span>
+                          <input
+                            aria-label={`Abertura de ${label}`}
+                            type="time"
+                            value={slot.opensAt}
+                            onChange={(event) =>
+                              updateSlot(weekday, { opensAt: event.target.value })
+                            }
+                          />
+                        </label>
+                        <span aria-hidden="true">até</span>
+                        <label>
+                          <span className="visually-hidden">Fechamento de {label}</span>
+                          <input
+                            aria-label={`Fechamento de ${label}`}
+                            type="time"
+                            value={slot.closesAt}
+                            onChange={(event) =>
+                              updateSlot(weekday, { closesAt: event.target.value })
+                            }
+                          />
+                        </label>
+                        <button
+                          aria-label={`Fechar ${label}`}
+                          className="button ghost compact icon-only"
+                          onClick={() => removeSlot(weekday)}
+                          type="button"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="button secondary compact"
+                        onClick={() => updateSlot(weekday, {})}
+                        type="button"
+                      >
+                        <Plus size={15} /> Adicionar horário
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="business-hours-exceptions">
+              <div className="panel-heading compact-heading">
+                <div>
+                  <span className="section-kicker">Exceções</span>
+                  <h3>Feriados e alterações pontuais</h3>
+                </div>
+              </div>
+              <div className="business-hours-exception-form">
+                <label>
+                  Data
+                  <input
+                    type="date"
+                    value={exceptionDate}
+                    onChange={(event) => setExceptionDate(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Motivo
+                  <input
+                    placeholder="Ex.: feriado municipal"
+                    value={exceptionReason}
+                    onChange={(event) => setExceptionReason(event.target.value)}
+                  />
+                </label>
+                <label className="check-line">
+                  <input
+                    checked={exceptionClosed}
+                    onChange={(event) => setExceptionClosed(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Casa fechada
+                </label>
+                <button
+                  className="button secondary compact"
+                  disabled={!exceptionDate}
+                  onClick={addException}
+                  type="button"
+                >
+                  <Plus size={15} /> Adicionar exceção
+                </button>
+              </div>
+              <div className="business-hours-exception-list">
+                {exceptions.map((exception) => (
+                  <div className="business-hours-exception" key={exception.date}>
+                    <div>
+                      <strong>
+                        {new Date(`${exception.date}T12:00:00`).toLocaleDateString("pt-BR")}
+                      </strong>
+                      <span>{exception.isClosed ? "Fechado" : "Horário especial"}</span>
+                      {exception.reason ? <small>{exception.reason}</small> : null}
+                    </div>
+                    <button
+                      aria-label={`Remover exceção de ${exception.date}`}
+                      className="button ghost compact icon-only"
+                      onClick={() =>
+                        setExceptions((current) =>
+                          current.filter((item) => item.date !== exception.date),
+                        )
+                      }
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+                {exceptions.length === 0 ? (
+                  <p className="muted-copy">Nenhuma exceção cadastrada.</p>
+                ) : null}
+              </div>
+            </div>
+          </article>
+
+          {branchSettings ? (
+            <article className="workspace-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="section-kicker">
+                    <Palette size={16} /> Preferências da filial
+                  </span>
+                  <h2>Padrões da operação</h2>
+                </div>
+              </div>
+              <div className="settings-form">
+                <label>
+                  Tema padrão dos dispositivos
+                  <select
+                    value={branchSettings.defaultTheme}
+                    onChange={(event) =>
+                      setBranchSettings({
+                        ...branchSettings,
+                        defaultTheme: event.target
+                          .value as BranchOperationalSettings["defaultTheme"],
+                      })
+                    }
+                  >
+                    <option value="light">Claro</option>
+                    <option value="dark">Escuro</option>
+                    <option value="system">Automático</option>
+                  </select>
+                </label>
+                <p className="muted-copy">
+                  Cada operador ainda pode trocar rapidamente o tema no cabeçalho; este valor é o
+                  padrão para novos dispositivos.
+                </p>
+                <label>
+                  Entrada padrão do KDS
+                  <select
+                    value={branchSettings.defaultKdsInputMode}
+                    onChange={(event) =>
+                      setBranchSettings({
+                        ...branchSettings,
+                        defaultKdsInputMode: event.target
+                          .value as BranchOperationalSettings["defaultKdsInputMode"],
+                      })
+                    }
+                  >
+                    <option value="hybrid">Touch + teclado</option>
+                    <option value="touch">Touch</option>
+                    <option value="keyboard">Teclado</option>
+                    <option value="printer">Impressora</option>
+                  </select>
+                </label>
+                <label className="check-line">
+                  <input
+                    checked={branchSettings.allowWaiterPayments}
+                    onChange={(event) =>
+                      setBranchSettings({
+                        ...branchSettings,
+                        allowWaiterPayments: event.target.checked,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  Permitir recebimento pelo garçom
+                </label>
+                <button
+                  className="button primary"
+                  disabled={busy}
+                  onClick={() => void saveBranchSettings()}
+                  type="button"
+                >
+                  <Save size={16} /> Salvar padrões
+                </button>
+                <p className="muted-copy">
+                  <Sun size={14} /> Claro, <Moon size={14} /> escuro e automático ficam disponíveis
+                  para cada usuário.
+                </p>
+              </div>
+            </article>
+          ) : null}
+        </section>
+      ) : null}
 
       <ApprovalPinDialog
         open={Boolean(decision)}
