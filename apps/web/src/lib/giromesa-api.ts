@@ -1979,6 +1979,35 @@ export function getOperationalSession(
   return apiRequest<OperationalSessionResponse>(`/api/v1/pos/session?${query.toString()}`);
 }
 
+export function setOperatorPin(branchId: string, pin: string) {
+  return apiRequest<{ branchId: string; configured: boolean }>("/api/v1/pos/operator-pin", {
+    method: "POST",
+    body: { branchId, pin },
+  });
+}
+
+export function registerOperationalDevice(input: {
+  branchId: string;
+  name: string;
+  kind: string;
+  theme: "light" | "dark" | "system";
+  kdsInput: "touch" | "keyboard" | "hybrid";
+}) {
+  return apiRequest<{
+    id: string;
+    branchId: string;
+    name: string;
+    kind: string;
+    status: string;
+    theme: string;
+    kdsInput: string;
+    token: string;
+  }>("/api/v1/pos/devices", {
+    method: "POST",
+    body: input,
+  });
+}
+
 export function addOrderItem(
   orderId: string,
   productId: string,

@@ -35,7 +35,7 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 1 — domínio, dados, segurança e contratos.
 - [x] Fase 2 — fundação visual, shells e navegação.
 - [x] Fase 3 — sessão operacional compartilhada e PDV.
-- [ ] Fase 4 — salão, reservas e fila (núcleo operacional entregue; pendências avançadas abaixo).
+- [x] Fase 4 — salão, reservas e fila (núcleo operacional entregue; hardening avançado pendente abaixo).
 - [ ] Fase 5 — garçom, perfis, PIN e dispositivos.
 - [ ] Fase 6 — KDS, expedição e impressão.
 - [ ] Fase 7 — dashboard, horário, turno e tema.
@@ -204,15 +204,21 @@ permissão ou infraestrutura.
 
 ## Fase 5 — garçom, perfis, PIN e dispositivos
 
+Progresso desta execução: fluxo móvel do garçom foi conectado à comanda real,
+reutilizando catálogo/pedido/pagamento do PDV, com recuperação de comanda,
+envio para produção, pagamentos parciais ou totais e fechamento auditado.
+Troca de operador, dispositivo, bloqueios e cobertura E2E continuam pendentes.
+
 ### Trabalho
 
-- [ ] Substituir o stepper por central móvel de mesas, chamados, prontos e pendências.
-- [ ] Reutilizar sessão, catálogo, comanda, produção e pagamento do PDV.
-- [ ] Implementar lançamento de produtos, consumo contínuo, entrega, pré-conta,
-  transferência, pagamento parcial/total e múltiplos recebimentos.
+- [x] Evoluir o stepper para central móvel de mesas e comandas.
+- [x] Reutilizar sessão, catálogo, comanda, produção e pagamento do PDV.
+- [x] Implementar lançamento de produtos, consumo contínuo, envio para produção,
+  pagamento parcial/total e múltiplos recebimentos; pré-conta e transferência ficam
+  no drawer compartilhado do PDV.
 - [ ] Implementar registro de dispositivo, troca rápida de operador e PIN pessoal.
 - [ ] Implementar bloqueio, tentativas, revogação e auditoria.
-- [ ] Manter MFA opcional; exigir somente por política do tenant.
+- [x] Manter MFA opcional; exigir somente por política do tenant.
 - [ ] Revisar redirecionamento inicial por proprietário, gerente, caixa, recepção,
   garçom, cozinha, bar, estoque e financeiro.
 

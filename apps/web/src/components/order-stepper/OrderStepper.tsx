@@ -1,29 +1,39 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import {
+  Banknote,
   Check,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   CupSoda,
   LogIn,
   Plus,
+  QrCode,
   Search,
+  Send,
   UtensilsCrossed,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addOrderItem,
+  closeOrder,
   type DiningTable,
   formatMoney,
+  getActiveOrder,
   getSession,
   getTenantBranding,
+  listOrderPayments,
   listProducts,
   listTables,
   type OpenOrderResponse,
   type OrderItemResponse,
+  type OrderPayment,
   openOrder,
   type Product,
   registerManualPayment,
+  sendOrderToKitchen,
   type TenantBranding,
   type TenantSession,
 } from "../../lib/giromesa-api";
@@ -103,12 +113,27 @@ const notePresets = [
   "Priorizar bebidas",
 ] as const;
 
-const paymentMethods: { id: PaymentMethod; label: string; icon: string }[] = [
-  { id: "pix", label: "PIX", icon: "\u2728" },
-  { id: "credit_card", label: "Cartão Crédito", icon: "\uD83D\uDCB3" },
-  { id: "debit_card", label: "Cartão Débito", icon: "\uD83D\uDCB3" },
-  { id: "cash", label: "Dinheiro", icon: "\uD83D\uDCB5" },
+const tableStatusLabels: Record<string, string> = {
+  free: "Livre",
+  occupied: "Em atendimento",
+  waiting_payment: "Aguardando pagamento",
+  waiting_order: "Aguardando pedido",
+  order_sent: "Pedido enviado",
+  preparing: "Em preparo",
+  reserved: "Reservada",
+  blocked: "Bloqueada",
+};
+
+const paymentMethods: { id: PaymentMethod; label: string; icon: LucideIcon }[] = [
+  { id: "pix", label: "PIX", icon: QrCode },
+  { id: "credit_card", label: "Cartão crédito", icon: CreditCard },
+  { id: "debit_card", label: "Cartão débito", icon: CreditCard },
+  { id: "cash", label: "Dinheiro", icon: Banknote },
 ];
+
+function tableStatusLabel(status: string) {
+  return tableStatusLabels[status] ?? status.replaceAll("_", " ");
+}
 
 function productKind(product: Product): ProductFilter {
   const haystack = `${product.name} ${product.description ?? ""}`.toLowerCase();
@@ -124,8 +149,8 @@ function productKind(product: Product): ProductFilter {
 export default function OrderStepper() {
   const [status, setStatus] = useState<Status>("loading");
   const [session, setSession] = useState<TenantSession | null>(null);
-  const [tables, setTables] = useState<DiningTable[]>(demoTables);
-  const [products, setProducts] = useState<Product[]>(demoProducts);
+  const [tables, setTables] = useState<DiningTable[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [branding, setBranding] = useState<TenantBranding>(fallbackBranding);
   const [step, setStep] = useState<Step>(1);
   const [serviceMode, setServiceMode] = useState<ServiceMode>("table");
@@ -137,7 +162,9 @@ export default function OrderStepper() {
   const [serviceNote, setServiceNote] = useState("");
   const [order, setOrder] = useState<OpenOrderResponse | null>(null);
   const [items, setItems] = useState<OrderItemResponse[]>([]);
+  const [payments, setPayments] = useState<OrderPayment[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
+  const [paymentAmount, setPaymentAmount] = useState("");
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [message, setMessage] = useState("Monte o pedido em 3 passos rápidos.");
 
@@ -147,6 +174,10 @@ export default function OrderStepper() {
     [items],
   );
   const totalCents = itemsTotalCents > 0 ? itemsTotalCents : (order?.totalCents ?? 0);
+  const paidCents = payments
+    .filter((payment) => payment.status === "confirmed")
+    .reduce((sum, payment) => sum + payment.amountCents, 0);
+  const remainingCents = Math.max(0, totalCents - paidCents);
   const branchId = session?.branchId;
   const brandInitial = branding.displayName.slice(0, 1).toUpperCase() || "G";
 
@@ -177,8 +208,16 @@ export default function OrderStepper() {
       const activeSession = await getSession();
       setSession(activeSession);
       if (!activeSession.branchId) {
-        setStatus("demo");
-        setMessage("Sessão sem filial ativa. Entre novamente para carregar a operação.");
+        if (activeSession.isDemo) {
+          setTables(demoTables);
+          setProducts(demoProducts);
+          setSelectedTableId(demoTables[0]?.id ?? "");
+          setStatus("demo");
+          setMessage("Prévia demonstrativa: entre no painel para operar uma filial real.");
+        } else {
+          setStatus("error");
+          setMessage("Sua sessão não possui uma filial operacional ativa.");
+        }
         return;
       }
       const [tableList, productList, tenantBranding] = await Promise.all([
@@ -186,15 +225,19 @@ export default function OrderStepper() {
         listProducts(),
         getTenantBranding(),
       ]);
-      setTables(tableList.length ? tableList : demoTables);
-      setProducts(productList.filter((p) => p.isAvailable).slice(0, 24));
+      const nextTables = tableList.length > 0 ? tableList : activeSession.isDemo ? demoTables : [];
+      const nextProducts = productList.filter((p) => p.isAvailable).slice(0, 24);
+      setTables(nextTables);
+      setProducts(
+        nextProducts.length > 0 ? nextProducts : activeSession.isDemo ? demoProducts : [],
+      );
       setBranding(tenantBranding);
-      setSelectedTableId(tableList[0]?.id ?? demoTables[0]?.id ?? "");
+      setSelectedTableId(nextTables[0]?.id ?? "");
       setStatus("ready");
       setMessage(`Modo garçom conectado ao ${tenantBranding.displayName}.`);
     } catch {
-      setStatus("demo");
-      setMessage("Entre no painel para operar com dados reais. Tela navegável offline.");
+      setStatus("error");
+      setMessage("Não foi possível carregar a operação. Atualize e tente novamente.");
     }
   }, []);
 
@@ -237,18 +280,26 @@ export default function OrderStepper() {
         setMessage("Entre no painel para abrir uma mesa real.");
         return;
       }
-      const opened = await openOrder(
-        branchId,
-        serviceMode === "table" ? selectedTable?.id : undefined,
-        peopleCount,
-      );
+      const active =
+        serviceMode === "table" && selectedTable
+          ? await getActiveOrder(branchId, selectedTable.id)
+          : null;
+      const opened =
+        active ??
+        (await openOrder(
+          branchId,
+          serviceMode === "table" ? selectedTable?.id : undefined,
+          peopleCount,
+        ));
       setOrder(opened);
-      setItems([]);
+      setItems("items" in opened && Array.isArray(opened.items) ? opened.items : []);
+      setPayments("payments" in opened && Array.isArray(opened.payments) ? opened.payments : []);
       setMessage(
         serviceMode === "counter"
           ? `Balcão aberto para ${peopleCount} atendimento(s).`
           : `${selectedTable?.code ?? "Mesa"} aberta para ${peopleCount} pessoa(s).`,
       );
+      setPaymentAmount("");
       setStep(2);
     });
   }
@@ -259,9 +310,31 @@ export default function OrderStepper() {
         setMessage("Abra a mesa antes de lançar itens.");
         return;
       }
-      const item = await addOrderItem(order.id, product.id);
+      const item = await addOrderItem(
+        order.id,
+        product.id,
+        [],
+        serviceNote.trim() || "Lançado pelo garçom",
+      );
       setItems((current) => [...current, item]);
+      setOrder((current) =>
+        current
+          ? { ...current, status: "opened", totalCents: current.totalCents + item.totalCents }
+          : current,
+      );
       setMessage(`${product.name} lançado na conta.`);
+    });
+  }
+
+  function handleSendToKitchen() {
+    void run("Enviando para produção", async () => {
+      if (!order || items.length === 0) {
+        setMessage("Lance ao menos um item antes de enviar para produção.");
+        return;
+      }
+      const sent = await sendOrderToKitchen(order.id);
+      setOrder((current) => (current ? { ...current, status: "sent_to_kitchen" } : current));
+      setMessage(`${String(sent.ticketsCreated.length)} lote(s) enviado(s) para produção.`);
     });
   }
 
@@ -271,18 +344,48 @@ export default function OrderStepper() {
         setMessage("Abra uma conta antes de registrar recebimento.");
         return;
       }
-      const amount = Math.max(totalCents || order.totalCents, 100);
+      const requestedAmount = paymentAmount.trim()
+        ? Number(paymentAmount.replace(",", "."))
+        : remainingCents / 100;
+      const amount = Math.round(requestedAmount * 100);
+      if (amount <= 0 || amount > remainingCents) {
+        throw new Error("Informe um valor dentro do saldo restante.");
+      }
       const methodMap: Record<PaymentMethod, string> = {
         pix: "pix_manual",
         credit_card: "credit_card",
         debit_card: "debit_card",
         cash: "cash",
       };
-      await registerManualPayment(order.id, amount, { method: methodMap[paymentMethod] });
-      setOrder((current) =>
-        current ? { ...current, status: "paid", totalCents: amount } : current,
+      const payment = await registerManualPayment(order.id, amount, {
+        method: methodMap[paymentMethod],
+        registeredVia: "waiter",
+        idempotencyKey: `waiter:${order.id}:${amount}:${methodMap[paymentMethod]}`,
+      });
+      const nextPayments = await listOrderPayments(order.id);
+      setPayments(nextPayments);
+      setOrder((current) => (current ? { ...current, status: payment.orderStatus } : current));
+      setPaymentAmount("");
+      setMessage(
+        payment.orderStatus === "paid"
+          ? "Pagamento total registrado. Conta pronta para fechamento."
+          : `Pagamento parcial de ${formatMoney(amount)} registrado.`,
       );
-      setMessage("Pagamento registrado com sucesso.");
+    });
+  }
+
+  function handleCloseOrder() {
+    void run("Fechando conta", async () => {
+      if (order?.status !== "paid") {
+        setMessage("Receba o saldo restante antes de fechar a conta.");
+        return;
+      }
+      await closeOrder(order.id);
+      setOrder(null);
+      setItems([]);
+      setPayments([]);
+      setStep(1);
+      setMessage("Conta fechada e mesa liberada para o próximo atendimento.");
     });
   }
 
@@ -303,11 +406,15 @@ export default function OrderStepper() {
         </a>
         <div className="waiter-status">
           <span className={`gm-badge ${status === "ready" ? "gm-badge-good" : "gm-badge-warn"}`}>
-            {status === "ready" ? "online" : "prévia"}
+            {status === "ready" ? "online" : status === "demo" ? "prévia" : "indisponível"}
           </span>
-          <a className="button secondary compact" href="/login">
-            <LogIn size={16} /> Entrar
-          </a>
+          {session ? (
+            <span className="muted-copy">Sessão ativa</span>
+          ) : (
+            <a className="button secondary compact" href="/login">
+              <LogIn size={16} /> Entrar
+            </a>
+          )}
         </div>
       </header>
 
@@ -370,6 +477,7 @@ export default function OrderStepper() {
             peopleCount={peopleCount}
             serviceNote={serviceNote}
             onAddItem={handleAddItem}
+            onSendToKitchen={handleSendToKitchen}
           />
         )}
 
@@ -385,7 +493,12 @@ export default function OrderStepper() {
             peopleCount={peopleCount}
             serviceNote={serviceNote}
             busyLabel={busyLabel}
+            paymentAmount={paymentAmount}
+            setPaymentAmount={setPaymentAmount}
+            paidCents={paidCents}
+            remainingCents={remainingCents}
             onPay={handlePayment}
+            onClose={handleCloseOrder}
           />
         )}
 
@@ -542,7 +655,7 @@ function StepMesa(props: {
                 <strong>{table.code}</strong>
                 <span>{table.name}</span>
                 <small>
-                  {table.seats} lugares · {table.status}
+                  {table.seats} lugares · {tableStatusLabel(table.status)}
                 </small>
               </button>
             ))}
@@ -614,6 +727,7 @@ function StepItens(props: {
   peopleCount: number;
   serviceNote: string;
   onAddItem: (product: Product) => void;
+  onSendToKitchen: () => void;
 }) {
   const {
     productFilter,
@@ -630,6 +744,7 @@ function StepItens(props: {
     peopleCount,
     serviceNote,
     onAddItem,
+    onSendToKitchen,
   } = props;
 
   return (
@@ -651,6 +766,13 @@ function StepItens(props: {
         </div>
         <strong>{formatMoney(totalCents)}</strong>
       </div>
+
+      {order ? (
+        <div className="stepper-status-row">
+          <span>Status da comanda</span>
+          <strong>{tableStatusLabel(order.status)}</strong>
+        </div>
+      ) : null}
 
       <div className="stepper-items-layout">
         <div style={{ display: "grid", gap: 12 }}>
@@ -716,6 +838,14 @@ function StepItens(props: {
           </div>
         </div>
       </div>
+      <button
+        className="button primary compact"
+        type="button"
+        onClick={onSendToKitchen}
+        disabled={!order || items.length === 0 || Boolean(busyLabel)}
+      >
+        <Send size={16} /> Enviar para produção
+      </button>
     </div>
   );
 }
@@ -733,9 +863,15 @@ function StepPagamento(props: {
   peopleCount: number;
   serviceNote: string;
   busyLabel: string | null;
+  paymentAmount: string;
+  setPaymentAmount: (amount: string) => void;
+  paidCents: number;
+  remainingCents: number;
   onPay: () => void;
+  onClose: () => void;
 }) {
   const {
+    order,
     items,
     totalCents,
     paymentMethod,
@@ -744,6 +880,13 @@ function StepPagamento(props: {
     selectedTable,
     peopleCount,
     serviceNote,
+    paymentAmount,
+    setPaymentAmount,
+    paidCents,
+    remainingCents,
+    busyLabel,
+    onPay,
+    onClose,
   } = props;
 
   return (
@@ -782,6 +925,14 @@ function StepPagamento(props: {
           <span>Total</span>
           <strong>{formatMoney(totalCents)}</strong>
         </div>
+        <div className="stepper-order-summary-row">
+          <span>Recebido</span>
+          <strong>{formatMoney(paidCents)}</strong>
+        </div>
+        <div className="stepper-order-summary-row">
+          <span>Restante</span>
+          <strong>{formatMoney(remainingCents)}</strong>
+        </div>
       </div>
 
       <div>
@@ -799,10 +950,37 @@ function StepPagamento(props: {
               onClick={() => setPaymentMethod(method.id)}
             >
               <strong>
-                {method.icon} {method.label}
+                <method.icon size={18} /> {method.label}
               </strong>
             </button>
           ))}
+        </div>
+        <label className="platform-search" style={{ marginTop: 12 }}>
+          Valor desta etapa
+          <input
+            inputMode="decimal"
+            value={paymentAmount}
+            onChange={(event) => setPaymentAmount(event.target.value)}
+            placeholder={formatMoney(remainingCents)}
+          />
+        </label>
+        <div className="toolbar" style={{ marginTop: 12 }}>
+          <button
+            className="button primary compact"
+            type="button"
+            onClick={onPay}
+            disabled={Boolean(busyLabel) || remainingCents <= 0}
+          >
+            {busyLabel === "Recebendo" ? "Recebendo..." : "Registrar recebimento"}
+          </button>
+          <button
+            className="button secondary compact"
+            type="button"
+            onClick={onClose}
+            disabled={Boolean(busyLabel) || order.status !== "paid"}
+          >
+            Fechar conta
+          </button>
         </div>
       </div>
     </div>
