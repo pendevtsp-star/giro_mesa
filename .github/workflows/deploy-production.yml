@@ -216,7 +216,16 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -T 20 -p "${{ steps.target.outputs.port }}" -H "${{ steps.target.outputs.host }}" >> ~/.ssh/known_hosts
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -T 20 -p "${{ steps.target.outputs.port }}" -H "${{ steps.target.outputs.host }}" >> ~/.ssh/known_hosts; then
+              break
+            fi
+            if [[ "$attempt" == "5" ]]; then
+              echo "Unable to read SSH host keys after ${attempt} attempts." >&2
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Copy compose files
         run: |
