@@ -55,6 +55,24 @@ test.describe("Digital menu: public access, filtering and QR order", () => {
   test("QR order can be submitted via public API and reviewed by admin", async () => {
     await skipWhenApiUnavailable();
 
+    const { api } = await authenticatedApiContext();
+    const me = await api.get("/api/v1/auth/me");
+    const context = (await me.json()).context as { branchId: string };
+    const tables = await api.get(`/api/v1/pos/tables?branchId=${context.branchId}`);
+    const table = ((await tables.json()).data as { id: string; code: string }[]).find(
+      (candidate) => candidate.code === "M06",
+    );
+    expect(table).toBeTruthy();
+    const service = await api.post("/api/v1/pos/orders/open", {
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: table?.id,
+        peopleCount: 2,
+      },
+    });
+    expect(service.ok()).toBe(true);
+
     const publicApi = await playwrightRequest.newContext({ baseURL: apiUrl });
     const menu = await publicApi.get("/api/v1/catalog/public/menu/bar-aurora-demo");
     expect(menu.ok()).toBe(true);
@@ -66,7 +84,7 @@ test.describe("Digital menu: public access, filtering and QR order", () => {
       .filter((product) => product.isAvailable && product.channels.includes("qr"))
       .slice(0, 2);
 
-    const qrOrder = await publicApi.post("/api/v1/catalog/public/qr/M05/orders", {
+    const qrOrder = await publicApi.post("/api/v1/catalog/public/qr/M06/orders", {
       data: {
         tenantSlug: "bar-aurora-demo",
         items: qrProducts.map((p) => ({ productId: p.id, quantity: 1 })),
@@ -76,10 +94,6 @@ test.describe("Digital menu: public access, filtering and QR order", () => {
     const qrPayload = (await qrOrder.json()) as { orderId: string };
     expect(qrPayload.orderId).toBeTruthy();
     await publicApi.dispose();
-
-    const { api } = await authenticatedApiContext();
-    const me = await api.get("/api/v1/auth/me");
-    const context = (await me.json()).context as { branchId: string };
 
     const pending = await api.get(`/api/v1/pos/orders/qr-pending?branchId=${context.branchId}`);
     expect(pending.ok()).toBe(true);

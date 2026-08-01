@@ -169,7 +169,7 @@ export type OpenOrderResponse = {
   channel: string;
   status: string;
   totalCents: number;
-  audit: string;
+  audit?: string;
 };
 
 export type OrderItemResponse = {
@@ -1923,6 +1923,14 @@ export function openOrder(
       peopleCount,
     },
   });
+}
+
+export async function getActiveOrder(branchId: string, tableId: string) {
+  const query = new URLSearchParams({ branchId, tableId });
+  const result = await apiRequest<{
+    data: (OpenOrderResponse & { items: OrderItemResponse[]; payments: OrderPayment[] }) | null;
+  }>(`/api/v1/pos/orders/active?${query.toString()}`);
+  return result.data;
 }
 
 export function addOrderItem(

@@ -13,6 +13,7 @@ import {
   closeOrder,
   type DiningTable,
   formatMoney,
+  getActiveOrder,
   getSession,
   getTenantBranding,
   listCustomers,
@@ -120,6 +121,15 @@ export default function PosPage() {
       throw new Error("Selecione uma mesa com sessão ativa.");
     }
     if (currentOrder) return currentOrder;
+    const activeOrder = await getActiveOrder(session.branchId, selectedTable.id);
+    if (activeOrder) {
+      setCurrentOrder(activeOrder);
+      setTicketItems(activeOrder.items);
+      setOrderPayments(activeOrder.payments);
+      setOrderStatus(activeOrder.status);
+      setMessage(`Comanda ativa de ${selectedTable.code} carregada.`);
+      return activeOrder;
+    }
     const opened = await openOrder(
       session.branchId,
       selectedTable.id,
