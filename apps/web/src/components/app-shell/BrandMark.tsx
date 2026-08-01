@@ -4,7 +4,7 @@ export function BrandMark({ className = "" }: { className?: string }) {
     <img
       alt=""
       aria-hidden="true"
-      className={`gm-brand-mark ${className}`.trim()}
+      className={`gm-brand-mark brand-mark ${className}`.trim()}
       height="40"
       src="/images/giromesa-symbol.svg"
       width="40"
