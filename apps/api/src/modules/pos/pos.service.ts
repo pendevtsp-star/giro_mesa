@@ -1,5 +1,7 @@
 import {
+  approvalRequests,
   auditLogs,
+  cashSessions,
   diningTables,
   inventoryItems,
   kdsTickets,
@@ -9,6 +11,7 @@ import {
   outboxEvents,
   printJobs,
   printRoutes,
+  serviceRequests,
   stockMovements,
 } from "@giromesa/db";
 import {
@@ -739,11 +742,63 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       .orderBy(desc(outboxEvents.updatedAt))
       .limit(1);
 
+    const [latestServiceRequest] = await this.database.db
+      .select({
+        id: serviceRequests.id,
+        status: serviceRequests.status,
+        updatedAt: serviceRequests.updatedAt,
+        createdAt: serviceRequests.createdAt,
+      })
+      .from(serviceRequests)
+      .where(
+        and(eq(serviceRequests.tenantId, context.tenantId), eq(serviceRequests.branchId, branchId)),
+      )
+      .orderBy(desc(serviceRequests.updatedAt))
+      .limit(1);
+
+    const [latestApproval] = await this.database.db
+      .select({
+        id: approvalRequests.id,
+        status: approvalRequests.status,
+        updatedAt: approvalRequests.updatedAt,
+        createdAt: approvalRequests.createdAt,
+      })
+      .from(approvalRequests)
+      .where(
+        and(
+          eq(approvalRequests.tenantId, context.tenantId),
+          eq(approvalRequests.branchId, branchId),
+        ),
+      )
+      .orderBy(desc(approvalRequests.updatedAt))
+      .limit(1);
+
+    const [latestCashSession] = await this.database.db
+      .select({
+        id: cashSessions.id,
+        status: cashSessions.status,
+        updatedAt: cashSessions.updatedAt,
+        openedAt: cashSessions.openedAt,
+      })
+      .from(cashSessions)
+      .where(and(eq(cashSessions.tenantId, context.tenantId), eq(cashSessions.branchId, branchId)))
+      .orderBy(desc(cashSessions.updatedAt))
+      .limit(1);
+
     const signature = [
       latestEvent ? `event:${latestEvent.version}` : "event:none",
       latestAudit ? `${latestAudit.id}:${latestAudit.createdAt.toISOString()}` : "audit:none",
       latestTicket ? `${latestTicket.id}:${latestTicket.updatedAt.toISOString()}` : "kds:none",
       latestOutbox ? `${latestOutbox.id}:${latestOutbox.updatedAt.toISOString()}` : "outbox:none",
+      latestServiceRequest
+        ? `${latestServiceRequest.id}:${latestServiceRequest.updatedAt.toISOString()}`
+        : "service:none",
+      latestApproval
+        ? `${latestApproval.id}:${latestApproval.updatedAt.toISOString()}`
+        : "approval:none",
+      latestCashSession
+        ? `${latestCashSession.id}:${latestCashSession.updatedAt.toISOString()}`
+        : "cash:none",
     ].join("|");
 
     return {
@@ -781,6 +836,27 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
             id: latestOutbox.id,
             topic: latestOutbox.topic,
             updatedAt: latestOutbox.updatedAt.toISOString(),
+          }
+        : null,
+      latestServiceRequest: latestServiceRequest
+        ? {
+            id: latestServiceRequest.id,
+            status: latestServiceRequest.status,
+            updatedAt: latestServiceRequest.updatedAt.toISOString(),
+          }
+        : null,
+      latestApproval: latestApproval
+        ? {
+            id: latestApproval.id,
+            status: latestApproval.status,
+            updatedAt: latestApproval.updatedAt.toISOString(),
+          }
+        : null,
+      latestCashSession: latestCashSession
+        ? {
+            id: latestCashSession.id,
+            status: latestCashSession.status,
+            updatedAt: latestCashSession.updatedAt.toISOString(),
           }
         : null,
     };

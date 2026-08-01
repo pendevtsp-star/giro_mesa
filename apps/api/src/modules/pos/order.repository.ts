@@ -514,6 +514,32 @@ export class OrderRepository {
       );
   }
 
+  async findOrderItemsForKds(
+    context: TenantContext,
+    orderId: string,
+    itemIds: string[],
+    client: OrderDbClient = this.database.db,
+  ) {
+    if (itemIds.length === 0) return [];
+    return client
+      .select({
+        id: orderItems.id,
+        name: orderItems.nameSnapshot,
+        quantity: orderItems.quantity,
+        notes: orderItems.notes,
+        modifiers: orderItems.modifiers,
+      })
+      .from(orderItems)
+      .where(
+        and(
+          eq(orderItems.tenantId, context.tenantId),
+          eq(orderItems.orderId, orderId),
+          inArray(orderItems.id, itemIds),
+          inArray(orderItems.status, ["pending", "sent", "preparing", "ready", "served"]),
+        ),
+      );
+  }
+
   async insertPrintJob(
     context: TenantContext,
     data: Omit<typeof printJobs.$inferInsert, "tenantId">,

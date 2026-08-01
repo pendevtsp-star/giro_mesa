@@ -15,6 +15,16 @@
   background: #fff;
 }
 
+.kds-topbar .brand-mark-logo {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.55rem;
+  background: #07111b url("/images/giromesa-symbol.svg") center / 100% 100% no-repeat;
+  color: transparent;
+}
+
 .kds-header {
   display: flex;
   align-items: flex-end;
@@ -130,4 +140,91 @@
 
 .kds-ticket.kds-ready {
   border-color: #27a85a;
+}
+
+.kds-ticket.is-late {
+  border-top-color: var(--red);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--red) 22%, transparent),
+    var(--tight-shadow);
+}
+
+.kds-ticket-items {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kds-item {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+}
+
+.kds-item span,
+.kds-item small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.kds-cancellation {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line));
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--red);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.kds-connection {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body .kds-page .kds-header p.kds-connection-realtime {
+  color: var(--green);
+}
+
+body .kds-page .kds-header p.kds-connection-polling {
+  color: var(--amber);
+}
+
+html[data-theme="light"] body .kds-page {
+  --ink: #0d1b2a;
+  --ink-soft: #3c556d;
+  --muted: #5d7185;
+  --line: #d5dfdc;
+  --paper: #f7f1e6;
+  --surface: #fffdf8;
+  --surface-soft: #fff4df;
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --green: #059669;
+  --red: #be123c;
+  background:
+    radial-gradient(circle at 84% 0, rgba(16, 185, 129, 0.1), transparent 28rem), var(--paper);
+  color: var(--ink);
+  color-scheme: light;
+}
+
+html[data-theme="light"] body .kds-page .kds-topbar,
+html[data-theme="light"] body .kds-page .kds-ticket {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  box-shadow: 0 14px 34px rgba(13, 27, 42, 0.1);
+}
+
+html[data-theme="light"] body .kds-page .kds-header select,
+html[data-theme="light"] body .kds-page .button.secondary,
+html[data-theme="light"] body .kds-page .kds-volume input {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: var(--ink);
 }

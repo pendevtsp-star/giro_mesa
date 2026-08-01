@@ -180,6 +180,10 @@ export type OrderItemResponse = {
   quantity: string;
   unitPriceCents: number;
   totalCents: number;
+  status?: string;
+  notes?: string | null;
+  modifiers?: Array<Record<string, unknown>>;
+  sentToKitchenAt?: string | null;
   audit: string;
 };
 
@@ -188,6 +192,32 @@ export type SendToKitchenResponse = {
   status: string;
   ticketsCreated: KdsTicket[];
   audit: string;
+};
+
+export type ProductionRoutingPreview = {
+  orderId: string;
+  destinations: Array<{
+    stationId: string;
+    stationName: string;
+    outputMode: "kds" | "printer" | "hybrid";
+    itemIds: string[];
+    printers: Array<{ routeId: string; deviceId: string; name: string }>;
+  }>;
+  unroutedItems: Array<{
+    id: string;
+    nameSnapshot: string;
+    quantity: string;
+    categoryId: string | null;
+  }>;
+};
+
+export type OperationalSessionResponse = {
+  branchId: string;
+  shift: Record<string, unknown> | null;
+  cash: Record<string, unknown> | null;
+  order: (OpenOrderResponse & { items: OrderItemResponse[]; payments: OrderPayment[] }) | null;
+  settings: Record<string, unknown>;
+  latestEventVersion: number;
 };
 
 export type QrPendingOrder = {
@@ -1933,17 +1963,33 @@ export async function getActiveOrder(branchId: string, tableId: string) {
   return result.data;
 }
 
+export function getActiveOrderById(branchId: string, orderId: string) {
+  const query = new URLSearchParams({ branchId, orderId });
+  return apiRequest<{
+    data: (OpenOrderResponse & { items: OrderItemResponse[]; payments: OrderPayment[] }) | null;
+  }>(`/api/v1/pos/orders/active?${query.toString()}`).then((result) => result.data);
+}
+
+export function getOperationalSession(
+  branchId: string,
+  input: { tableId?: string; orderId?: string } = {},
+) {
+  const query = new URLSearchParams({ branchId, ...input });
+  return apiRequest<OperationalSessionResponse>(`/api/v1/pos/session?${query.toString()}`);
+}
+
 export function addOrderItem(
   orderId: string,
   productId: string,
   modifiers: Array<{ optionId: string }> = [],
   notes = "Lançado pelo painel GiroMesa",
+  quantity = 1,
 ) {
   return apiRequest<OrderItemResponse>(`/api/v1/pos/orders/${orderId}/items`, {
     method: "POST",
     body: {
       productId,
-      quantity: 1,
+      quantity,
       notes,
       modifiers,
     },
@@ -1954,6 +2000,41 @@ export function sendOrderToKitchen(orderId: string) {
   return apiRequest<SendToKitchenResponse>(`/api/v1/pos/orders/${orderId}/send-to-kitchen`, {
     method: "POST",
   });
+}
+
+export function getProductionRoutingPreview(orderId: string) {
+  return apiRequest<ProductionRoutingPreview>(
+    `/api/v1/pos/orders/${encodeURIComponent(orderId)}/production-routing-preview`,
+  );
+}
+
+export function requestOrderDiscount(
+  orderId: string,
+  input: { amountCents: number; reason: string },
+) {
+  return apiRequest<{
+    orderId: string;
+    amountCents: number;
+    status: "pending_approval" | "applied";
+    approval?: ApprovalRequest;
+    order?: OpenOrderResponse;
+  }>(`/api/v1/pos/orders/${encodeURIComponent(orderId)}/discounts`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function requestItemCancellation(orderId: string, itemId: string, reason: string) {
+  return apiRequest<{
+    orderId: string;
+    itemId: string;
+    status: "pending_approval" | "canceled";
+    approval?: ApprovalRequest;
+    order?: OpenOrderResponse;
+  }>(
+    `/api/v1/pos/orders/${encodeURIComponent(orderId)}/items/${encodeURIComponent(itemId)}/cancel-requests`,
+    { method: "POST", body: { reason } },
+  );
 }
 
 export function updateQrOrderItem(
@@ -2019,6 +2100,17 @@ export function registerManualPayment(
       registeredVia: input?.registeredVia ?? "cashier",
       ...(input?.reference ? { reference: input.reference } : {}),
     },
+  });
+}
+
+export function splitOrderBill(orderId: string, people: number) {
+  return apiRequest<{
+    orderId: string;
+    totalCents: number;
+    parts: Array<{ person: number; amountCents: number }>;
+  }>(`/api/v1/pos/orders/${encodeURIComponent(orderId)}/split`, {
+    method: "POST",
+    body: { people },
   });
 }
 

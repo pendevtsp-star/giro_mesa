@@ -729,3 +729,385 @@
     padding: 16px;
   }
 }
+
+/* Phase 3: shared operational session and high-throughput POS controls. */
+.pos-v3 .pos-control-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 16px clamp(16px, 3vw, 36px) 0;
+}
+
+.pos-mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.pos-mode-switch button,
+.pos-category-row button,
+.pos-filter {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.pos-mode-switch button.active,
+.pos-category-row button.active,
+.pos-filter.active {
+  background: var(--accent);
+  color: #071421;
+}
+
+.pos-table-select,
+.pos-counter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.pos-table-select select,
+.pos-customer-box input,
+.pos-order-notes input,
+.pos-inline-form input,
+.pos-payment-drawer input,
+.pos-payment-drawer select,
+.pos-payment-drawer label > input,
+.pos-payment-drawer label > select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.pos-feedback {
+  overflow: hidden;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-shortcuts {
+  position: relative;
+}
+
+.pos-shortcuts-popover {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  min-width: 210px;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--tight-shadow);
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.pos-shortcuts-popover strong {
+  margin-bottom: 2px;
+}
+
+.pos-shortcuts-popover span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.pos-shortcuts-popover kbd {
+  min-width: 32px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font:
+    700 0.72rem ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  text-align: center;
+}
+
+.pos-v3 .pos-grid-section,
+.pos-v3 .pos-ticket-section {
+  background: var(--surface);
+}
+
+.pos-v3 .pos-catalog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+
+.pos-search {
+  display: flex;
+  min-width: min(420px, 100%);
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 0 10px;
+}
+
+.pos-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.pos-category-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.pos-category-row button {
+  min-height: 32px;
+  border-radius: 8px;
+  padding-inline: 10px;
+}
+
+.pos-product-card-wrap {
+  position: relative;
+}
+
+.pos-product-card-wrap .pos-product-card {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.pos-product-favorite {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pos-product-favorite:hover {
+  color: var(--accent-strong);
+}
+
+.pos-v3 .pos-customer-box {
+  gap: 6px;
+  background: var(--surface-soft);
+}
+
+.pos-customer-box > label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.pos-customer-results {
+  display: grid;
+  gap: 5px;
+}
+
+.pos-customer-results button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.pos-ticket-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.pos-ticket-item .icon-button {
+  color: var(--muted);
+}
+
+.pos-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.pos-inline-form input {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+.pos-order-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding-top: 10px;
+}
+
+.pos-order-notes input {
+  min-width: 0;
+}
+
+.pos-discount-form {
+  padding-top: 10px;
+}
+
+.pos-payment-drawer {
+  gap: 12px;
+}
+
+.pos-payment-drawer > label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.payment-method-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.payment-method-grid button {
+  min-height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.payment-method-grid button.active {
+  border-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.pos-split-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pos-split-row input {
+  width: 82px;
+}
+
+.pos-split-row span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pos-routing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-block: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.pos-routing-row span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.pos-v3 .payment-ledger {
+  display: grid;
+  gap: 7px;
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pos-v3 .status-row.rich {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 7px;
+}
+
+@media (max-width: 700px) {
+  .pos-v3 .pos-control-bar {
+    align-items: stretch;
+  }
+
+  .pos-mode-switch,
+  .pos-table-select,
+  .pos-counter-label,
+  .pos-feedback {
+    width: 100%;
+  }
+
+  .pos-mode-switch button {
+    flex: 1;
+  }
+
+  .pos-feedback {
+    margin-left: 0;
+  }
+
+  .pos-order-notes {
+    grid-template-columns: 1fr;
+  }
+}

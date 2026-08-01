@@ -2370,3 +2370,101 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
 }
 
 }
+
+/* Light operational surface: warm paper, navy text and a restrained emerald action. */
+html[data-theme="light"] body .pos-workspace.pos-v3 {
+  --ink: #0d1b2a;
+  --ink-soft: #3c556d;
+  --muted: #5d7185;
+  --line: #d5dfdc;
+  --paper: #f7f1e6;
+  --surface: #fffdf8;
+  --surface-soft: #fff4df;
+  --accent: #10b981;
+  --accent-strong: #059669;
+  --blue: #2563a8;
+  --green: #059669;
+  --amber: #d97706;
+  --red: #be123c;
+  --tight-shadow: 0 14px 34px rgba(13, 27, 42, 0.1);
+  background:
+    radial-gradient(circle at 84% 0, rgba(16, 185, 129, 0.1), transparent 28rem), var(--paper);
+  color: var(--ink);
+  color-scheme: light;
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-grid-section,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-ticket-section {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  box-shadow: var(--tight-shadow);
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-product-card {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: var(--ink);
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-product-card:hover,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-product-card:focus-visible,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-product-card.selected {
+  border-color: var(--accent);
+  background: #eef8f3;
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.12);
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-search,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-customer-box,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-mode-switch {
+  border-color: #ead9bb;
+  background: #fff4df;
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-customer-box input,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-search input,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-table-select select,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-order-notes input,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-inline-form input,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-payment-drawer input,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-payment-drawer select {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: var(--ink);
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-mode-switch button.active,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-category-row button.active,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-filter.active,
+html[data-theme="light"] body .pos-workspace.pos-v3 .button.primary {
+  background: var(--accent);
+  color: #062d22;
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .button.primary:hover,
+html[data-theme="light"] body .pos-workspace.pos-v3 .button.primary:focus-visible {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .button.secondary,
+html[data-theme="light"] body .pos-workspace.pos-v3 .button.ghost,
+html[data-theme="light"] body .pos-workspace.pos-v3 .payment-method-grid button,
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-product-favorite {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: #40566c;
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .modifier-dialog-content {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: var(--ink);
+  box-shadow: 0 24px 64px rgba(13, 27, 42, 0.22);
+}
+
+html[data-theme="light"] body .pos-workspace.pos-v3 .pos-shortcuts-popover {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: var(--ink);
+}

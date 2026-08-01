@@ -9,6 +9,8 @@ export class KdsService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async listStations(context: TenantContext) {
+    const conditions = [eq(kdsStations.tenantId, context.tenantId)];
+    if (context.branchId) conditions.push(eq(kdsStations.branchId, context.branchId));
     return this.database.db
       .select({
         id: kdsStations.id,
@@ -18,10 +20,12 @@ export class KdsService {
         isActive: kdsStations.isActive,
       })
       .from(kdsStations)
-      .where(eq(kdsStations.tenantId, context.tenantId));
+      .where(and(...conditions));
   }
 
   async listTickets(context: TenantContext) {
+    const conditions = [eq(kdsTickets.tenantId, context.tenantId)];
+    if (context.branchId) conditions.push(eq(kdsTickets.branchId, context.branchId));
     return this.database.db
       .select({
         id: kdsTickets.id,
@@ -41,14 +45,16 @@ export class KdsService {
       .innerJoin(kdsStations, eq(kdsStations.id, kdsTickets.stationId))
       .innerJoin(orders, eq(orders.id, kdsTickets.orderId))
       .leftJoin(diningTables, eq(diningTables.id, orders.tableId))
-      .where(eq(kdsTickets.tenantId, context.tenantId));
+      .where(and(...conditions));
   }
 
   async updateTicket(context: TenantContext, ticketId: string, status: OrderItemStatus) {
+    const conditions = [eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.id, ticketId)];
+    if (context.branchId) conditions.push(eq(kdsTickets.branchId, context.branchId));
     const [ticket] = await this.database.db
       .select()
       .from(kdsTickets)
-      .where(and(eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.id, ticketId)))
+      .where(and(...conditions))
       .limit(1);
 
     if (!ticket) {
@@ -64,7 +70,7 @@ export class KdsService {
         bumpedAt: status === "ready" ? new Date() : ticket.bumpedAt,
         updatedAt: new Date(),
       })
-      .where(and(eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.id, ticketId)))
+      .where(and(...conditions))
       .returning();
 
     return {

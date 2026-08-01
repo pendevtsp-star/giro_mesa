@@ -34,6 +34,7 @@ type PrinterForm = {
 
 type PrintRouteForm = {
   name: string;
+  trigger: string;
   targetType: string;
   stationId: string;
   printerDeviceId: string;
@@ -356,6 +357,23 @@ export function PrintingPanel({
                   {station.name}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Evento
+            <select
+              value={printRouteForm.trigger}
+              onChange={(event) =>
+                onPrintRouteFormChange((current) => ({
+                  ...current,
+                  trigger: event.target.value,
+                }))
+              }
+            >
+              <option value="kds_ticket_created">Ticket enviado</option>
+              <option value="order_item_canceled">Item cancelado</option>
+              <option value="payment_confirmed">Pagamento confirmado</option>
+              <option value="order_closed">Conta fechada</option>
             </select>
           </label>
           <label>

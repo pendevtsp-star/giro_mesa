@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChefHat, Clock3, RefreshCw } from "lucide-react";
+import { AlertTriangle, Bell, ChefHat, Clock3, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildRealtimeEventsUrl,
@@ -18,6 +18,47 @@ const statusLabel: Record<string, string> = {
   served: "Entregue",
 };
 
+type KdsPayloadItem = {
+  id?: string;
+  name?: string;
+  quantity?: string | number;
+  notes?: string | null;
+  modifiers?: unknown;
+};
+
+type KdsCancellation = {
+  name?: string;
+  reason?: string;
+};
+
+function readKdsItems(payload: Record<string, unknown>) {
+  return Array.isArray(payload.items)
+    ? payload.items.filter(
+        (item): item is KdsPayloadItem => Boolean(item) && typeof item === "object",
+      )
+    : [];
+}
+
+function readKdsCancellations(payload: Record<string, unknown>) {
+  return Array.isArray(payload.cancellations)
+    ? payload.cancellations.filter(
+        (item): item is KdsCancellation => Boolean(item) && typeof item === "object",
+      )
+    : [];
+}
+
+function readModifierNames(modifiers: unknown) {
+  return Array.isArray(modifiers)
+    ? modifiers
+        .filter(
+          (modifier): modifier is Record<string, unknown> =>
+            Boolean(modifier) && typeof modifier === "object",
+        )
+        .map((modifier) => (typeof modifier.name === "string" ? modifier.name : ""))
+        .filter(Boolean)
+    : [];
+}
+
 export default function KdsPage() {
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [station, setStation] = useState("all");
@@ -25,6 +66,10 @@ export default function KdsPage() {
   const [message, setMessage] = useState("Carregando produção...");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [volume, setVolume] = useState(0.65);
+  const [now, setNow] = useState(() => Date.now());
+  const [connectionState, setConnectionState] = useState<"connecting" | "realtime" | "polling">(
+    "connecting",
+  );
   const [stations, setStations] = useState<Array<{ id: string; name: string }>>([]);
   const soundEnabledRef = useRef(false);
   const volumeRef = useRef(0.65);
@@ -55,23 +100,40 @@ export default function KdsPage() {
   useEffect(() => {
     void load();
     const polling = window.setInterval(() => void load(), 15_000);
+    const clock = window.setInterval(() => setNow(Date.now()), 15_000);
     let events: EventSource | null = null;
-    void getSession()
-      .then((session) => {
-        if (!session.branchId) return;
+    let connectionTimer: number | undefined;
+    let stopped = false;
+    async function connectRealtime() {
+      try {
+        const session = await getSession();
+        if (stopped || !session.branchId) {
+          setConnectionState("polling");
+          return;
+        }
         events = new EventSource(buildRealtimeEventsUrl(session.branchId), {
           withCredentials: true,
         });
+        events.onopen = () => setConnectionState("realtime");
         events.onmessage = () => void load();
         events.onerror = () => {
-          setMessage("Tempo real desconectado; atualização automática por polling continua ativa.");
           events?.close();
           events = null;
+          setConnectionState("polling");
+          setMessage("Tempo real indisponível; polling continua ativo.");
+          if (!stopped) connectionTimer = window.setTimeout(() => void connectRealtime(), 5_000);
         };
-      })
-      .catch(() => undefined);
+      } catch {
+        setConnectionState("polling");
+        if (!stopped) connectionTimer = window.setTimeout(() => void connectRealtime(), 5_000);
+      }
+    }
+    connectionTimer = window.setTimeout(() => void connectRealtime(), 1_500);
     return () => {
+      stopped = true;
       window.clearInterval(polling);
+      window.clearInterval(clock);
+      if (connectionTimer !== undefined) window.clearTimeout(connectionTimer);
       events?.close();
     };
   }, []);
@@ -100,10 +162,15 @@ export default function KdsPage() {
   async function toggleSound() {
     const next = !soundEnabled;
     if (next) {
-      const context = audioContextRef.current ?? new AudioContext();
-      audioContextRef.current = context;
-      await context.resume();
-      playAlert(context, volume);
+      try {
+        const context = audioContextRef.current ?? new AudioContext();
+        audioContextRef.current = context;
+        await context.resume();
+        playAlert(context, volume);
+      } catch {
+        setMessage("Som bloqueado pelo navegador; clique novamente para liberar.");
+        return;
+      }
     }
     soundEnabledRef.current = next;
     setSoundEnabled(next);
@@ -112,7 +179,7 @@ export default function KdsPage() {
     <main className="kds-page">
       <header className="kds-topbar">
         <a className="brand" href="/app">
-          <span className="brand-mark">G</span>
+          <span className="brand-mark brand-mark-logo" aria-hidden="true" />
           <span>GiroMesa</span>
         </a>
         <div className="toolbar">
@@ -151,7 +218,15 @@ export default function KdsPage() {
             <ChefHat size={16} /> Produção
           </span>
           <h1>KDS</h1>
-          <p>{message}</p>
+          <p className={`kds-connection kds-connection-${connectionState}`}>
+            {connectionState === "realtime"
+              ? "Tempo real"
+              : connectionState === "polling"
+                ? "Polling"
+                : "Conectando"}
+            <span aria-hidden="true"> · </span>
+            {message}
+          </p>
         </div>
         <label>
           Estação
@@ -176,39 +251,84 @@ export default function KdsPage() {
         </label>
       </section>
       <section className="kds-board">
-        {visible.map((ticket) => (
-          <article className={`kds-ticket kds-${ticket.status}`} key={ticket.id}>
-            <div>
-              <span>{ticket.stationName}</span>
-              <strong>
-                {ticket.tableCode
-                  ? `Mesa ${ticket.tableCode}`
-                  : `Pedido ${ticket.orderId.slice(0, 5)}`}
-              </strong>
-              <small>
-                <Clock3 size={14} /> {readAge(ticket.createdAt)}
-              </small>
-            </div>
-            <p>{String(ticket.payload.summary ?? "Itens do pedido")}</p>
-            <footer>
-              <span>
-                {statusLabel[ticket.status] ?? ticket.status}
-                {ticket.priority ? ` · prioridade ${ticket.priority}` : ""}
-              </span>
-              <button
-                className="button primary compact"
-                type="button"
-                onClick={() => void advance(ticket)}
-              >
-                {ticket.status === "sent"
-                  ? "Iniciar"
-                  : ticket.status === "preparing"
-                    ? "Marcar pronto"
-                    : "Entregar"}
-              </button>
-            </footer>
-          </article>
-        ))}
+        {visible.map((ticket) => {
+          const items = readKdsItems(ticket.payload);
+          const cancellations = readKdsCancellations(ticket.payload);
+          const ageMinutes = ageInMinutes(ticket.createdAt, now);
+          const late = ageMinutes >= 15 && ticket.status !== "served";
+          return (
+            <article
+              className={`kds-ticket kds-${ticket.status}${late ? " is-late" : ""}`}
+              key={ticket.id}
+            >
+              <div>
+                <span>{ticket.stationName}</span>
+                <strong>
+                  {ticket.tableCode
+                    ? `Mesa ${ticket.tableCode}`
+                    : `Pedido ${ticket.orderId.slice(0, 5)}`}
+                </strong>
+                <small>
+                  <Clock3 size={14} /> {readAge(ticket.createdAt, now)}
+                </small>
+              </div>
+              {items.length ? (
+                <ul className="kds-ticket-items">
+                  {items.map((item) => {
+                    const modifiers = readModifierNames(item.modifiers);
+                    return (
+                      <li
+                        className="kds-item"
+                        key={
+                          item.id ??
+                          `${item.name ?? "item"}-${item.quantity ?? 1}-${item.notes ?? ""}`
+                        }
+                      >
+                        <strong>
+                          {item.quantity ?? 1}× {item.name ?? "Item"}
+                        </strong>
+                        {modifiers.length ? <span>{modifiers.join(" · ")}</span> : null}
+                        {item.notes ? <small>{item.notes}</small> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p>{String(ticket.payload.summary ?? "Itens do pedido")}</p>
+              )}
+              {cancellations.length ? (
+                <div className="kds-cancellation">
+                  <AlertTriangle size={15} />
+                  <span>
+                    {cancellations
+                      .map((item) => `${item.name ?? "Item"}: ${item.reason ?? "cancelado"}`)
+                      .join(" · ")}
+                  </span>
+                </div>
+              ) : null}
+              <footer>
+                <span>
+                  {statusLabel[ticket.status] ?? ticket.status}
+                  {ticket.priority ? ` · prioridade ${ticket.priority}` : ""}
+                  {late ? " · atrasado" : ""}
+                </span>
+                {ticket.status !== "served" ? (
+                  <button
+                    className="button primary compact"
+                    type="button"
+                    onClick={() => void advance(ticket)}
+                  >
+                    {ticket.status === "sent"
+                      ? "Iniciar"
+                      : ticket.status === "preparing"
+                        ? "Marcar pronto"
+                        : "Entregar"}
+                  </button>
+                ) : null}
+              </footer>
+            </article>
+          );
+        })}
         {!visible.length ? (
           <p className="muted-copy">Nenhum ticket ativo para esta estação.</p>
         ) : null}
@@ -217,8 +337,12 @@ export default function KdsPage() {
   );
 }
 
-function readAge(createdAt: string) {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(createdAt).getTime()) / 60000));
+function ageInMinutes(createdAt: string, now: number) {
+  return Math.max(0, Math.round((now - new Date(createdAt).getTime()) / 60000));
+}
+
+function readAge(createdAt: string, now: number) {
+  const minutes = ageInMinutes(createdAt, now);
   if (minutes <= 0) {
     return "agora";
   }

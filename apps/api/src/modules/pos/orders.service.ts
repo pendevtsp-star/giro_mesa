@@ -258,6 +258,14 @@ export class OrdersService {
         throw new BadRequestException("Order has no pending items to send");
       }
 
+      const kdsItems = await this.orderRepository.findOrderItemsForKds(
+        context,
+        orderId,
+        pendingItems.map((item) => item.id),
+        tx,
+      );
+      const kdsItemById = new Map(kdsItems.map((item) => [item.id, item]));
+
       const preview = await this.buildProductionRoutingPreview(
         context,
         order.id,
@@ -286,6 +294,16 @@ export class OrdersService {
                   source: order.channel,
                   tableId: order.tableId,
                   itemIds: destination.itemIds,
+                  items: destination.itemIds
+                    .map((itemId) => kdsItemById.get(itemId))
+                    .filter((item): item is (typeof kdsItems)[number] => Boolean(item))
+                    .map(({ id, name, quantity, notes, modifiers }) => ({
+                      id,
+                      name,
+                      quantity,
+                      notes,
+                      modifiers,
+                    })),
                   outputMode: destination.outputMode,
                 },
               })),

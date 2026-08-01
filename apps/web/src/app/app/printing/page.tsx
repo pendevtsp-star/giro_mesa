@@ -59,6 +59,7 @@ const initialPrinterForm = {
 
 const initialRouteForm = {
   name: "",
+  trigger: "kds_ticket_created",
   targetType: "kitchen_ticket",
   stationId: "",
   printerDeviceId: "",
@@ -154,7 +155,7 @@ export default function PrintingPage() {
       await createPrintRoute({
         branchId,
         name: routeForm.name.trim(),
-        trigger: "order_sent",
+        trigger: routeForm.trigger,
         targetType: routeForm.targetType,
         ...(routeForm.stationId ? { stationId: routeForm.stationId } : {}),
         printerDeviceId: routeForm.printerDeviceId,

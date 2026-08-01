@@ -33,7 +33,7 @@ const createRouteSchema = z.object({
   branchId: z.string().min(1),
   name: z.string().min(2),
   trigger: z
-    .enum(["kds_ticket_created", "order_closed", "payment_confirmed"])
+    .enum(["kds_ticket_created", "order_item_canceled", "order_closed", "payment_confirmed"])
     .default("kds_ticket_created"),
   targetType: z
     .enum([
