@@ -155,6 +155,75 @@ WHERE "table_id" IS NOT NULL
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 
+WITH "ranked_active_orders" AS (
+  SELECT
+    "orders"."id",
+    "orders"."tenant_id",
+    "orders"."branch_id",
+    "orders"."table_id",
+    "orders"."status" AS "previous_status",
+    row_number() OVER (
+      PARTITION BY "orders"."tenant_id", "orders"."table_id"
+      ORDER BY
+        COALESCE("confirmed_payments"."amount_cents", 0) DESC,
+        CASE "orders"."status"
+          WHEN 'partially_paid' THEN 80
+          WHEN 'waiting_payment' THEN 70
+          WHEN 'served' THEN 60
+          WHEN 'ready' THEN 50
+          WHEN 'preparing' THEN 40
+          WHEN 'sent_to_kitchen' THEN 30
+          WHEN 'opened' THEN 20
+          ELSE 10
+        END DESC,
+        COALESCE("orders"."opened_at", "orders"."created_at") DESC,
+        "orders"."id" DESC
+    ) AS "position"
+  FROM "orders"
+  LEFT JOIN (
+    SELECT "tenant_id", "order_id", SUM("amount_cents") AS "amount_cents"
+    FROM "payments"
+    WHERE "status" = 'confirmed' AND "order_id" IS NOT NULL
+    GROUP BY "tenant_id", "order_id"
+  ) AS "confirmed_payments"
+    ON "confirmed_payments"."tenant_id" = "orders"."tenant_id"
+    AND "confirmed_payments"."order_id" = "orders"."id"
+  WHERE "orders"."table_id" IS NOT NULL
+    AND "orders"."status" IN ('draft', 'opened', 'sent_to_kitchen', 'preparing', 'ready', 'served', 'waiting_payment', 'partially_paid')
+), "reconciled_orders" AS (
+  UPDATE "orders"
+  SET
+    "status" = 'canceled',
+    "closed_at" = COALESCE("orders"."closed_at", now()),
+    "version" = "orders"."version" + 1,
+    "updated_at" = now()
+  FROM "ranked_active_orders"
+  WHERE "orders"."id" = "ranked_active_orders"."id"
+    AND "ranked_active_orders"."position" > 1
+  RETURNING
+    "orders"."id",
+    "orders"."tenant_id",
+    "orders"."branch_id",
+    "orders"."table_id",
+    "ranked_active_orders"."previous_status"
+)
+INSERT INTO "audit_logs" (
+  "tenant_id", "branch_id", "request_id", "action", "entity_type", "entity_id", "metadata"
+)
+SELECT
+  "tenant_id",
+  "branch_id",
+  'migration:0019:one-active-order:' || "id"::text,
+  'order.reconciled_duplicate',
+  'order',
+  "id",
+  jsonb_build_object(
+    'reason', 'one_active_order_per_table',
+    'tableId', "table_id",
+    'previousStatus', "previous_status"
+  )
+FROM "reconciled_orders";
+--> statement-breakpoint
 CREATE UNIQUE INDEX "orders_one_active_per_table_idx" ON "orders" ("tenant_id", "table_id")
 WHERE "table_id" IS NOT NULL AND "status" IN ('draft', 'opened', 'sent_to_kitchen', 'preparing', 'ready', 'served', 'waiting_payment', 'partially_paid');
 --> statement-breakpoint

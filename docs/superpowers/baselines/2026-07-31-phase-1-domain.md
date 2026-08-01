@@ -21,7 +21,7 @@ O contrato HTTP está em `docs/openapi/operational-v1.yaml`.
 
 ## Banco
 
-- `0019_operational_foundation.sql`: modelos operacionais, reserva N:N, versão de mesa/reserva/turno, eventos, preferências, dispositivos e roteamento.
+- `0019_operational_foundation.sql`: modelos operacionais, reserva N:N, versão de mesa/reserva/turno, eventos, preferências, dispositivos e roteamento. Antes de criar a trava de uma comanda ativa por mesa, reconcilia comandas legadas duplicadas de forma determinística e auditada.
 - `0020_atomic_cash_sessions.sql`: versão e idempotência do caixa. O índice de uma sessão aberta por filial já existia desde a migration 0011 e foi apenas incorporado ao schema atual.
 - `0021_qr_items_join_active_order.sql`: origem operacional por item para revisão do QR dentro da comanda ativa.
 - Snapshot Drizzle recomposto para incluir as migrations manuais 0017/0018; `pnpm db:generate` agora encerra com `No schema changes` sem prompt interativo.
@@ -33,6 +33,7 @@ O contrato HTTP está em `docs/openapi/operational-v1.yaml`.
 | --- | --- |
 | Migration safety | aprovado |
 | Migrations em banco vazio | aprovado, 0000–0021 |
+| Dry-run transacional sobre o estado de produção | aprovado; 19 comandas legadas supersedidas foram identificadas e o `ROLLBACK` de teste foi confirmado |
 | Geração Drizzle sem diff | aprovado |
 | Typecheck | aprovado, 8/8 pacotes |
 | Testes unitários | aprovado |
