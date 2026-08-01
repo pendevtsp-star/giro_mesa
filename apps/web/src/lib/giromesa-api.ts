@@ -74,6 +74,11 @@ export type DiningTable = {
   name: string;
   seats: number;
   status: string;
+  shape?: "rounded" | "square" | "circle" | "booth";
+  areaId?: string | null;
+  archivedAt?: string | null;
+  activeOrder?: { id: string; status: string; openedAt: string | null } | null;
+  reservation?: { id: string; customerName: string; scheduledAt: string; status: string } | null;
   groupId?: string | null;
   reservedName?: string | null;
 };
@@ -551,6 +556,7 @@ export type BranchOperationalSettings = {
   allowWaiterPayments: boolean;
   defaultTheme: "light" | "dark" | "system";
   defaultKdsInputMode: "touch" | "keyboard" | "hybrid" | "printer";
+  kdsShortcuts: Record<string, string>;
 };
 
 export type DashboardSummary = {
@@ -1850,6 +1856,8 @@ export function createDiningTable(input: {
   code: string;
   name: string;
   seats: number;
+  shape?: "rounded" | "square" | "circle" | "booth";
+  areaId?: string | null;
 }) {
   return apiRequest<DiningTable>("/api/v1/pos/tables", { method: "POST", body: input });
 }
@@ -1896,7 +1904,15 @@ export function unmergeTables(tableId: string) {
 
 export function updateTable(
   tableId: string,
-  data: { status?: string; reservedName?: string | null },
+  data: {
+    status?: string;
+    reservedName?: string | null;
+    seats?: number;
+    shape?: "rounded" | "square" | "circle" | "booth";
+    areaId?: string | null;
+    archived?: boolean;
+    expectedVersion?: number;
+  },
 ) {
   return apiRequest<{ data: DiningTable }>(`/api/v1/pos/tables/${encodeURIComponent(tableId)}`, {
     method: "PATCH",
@@ -1969,6 +1985,17 @@ export function updateKdsTicket(ticketId: string, status: "preparing" | "ready" 
   });
 }
 
+export function updateKdsTicketItem(
+  ticketId: string,
+  itemId: string,
+  status: "preparing" | "ready" | "served",
+) {
+  return apiRequest<KdsTicket & { audit: string }>(
+    `/api/v1/kds/tickets/${encodeURIComponent(ticketId)}/items/${encodeURIComponent(itemId)}`,
+    { method: "PATCH", body: { status } },
+  );
+}
+
 export function openOrder(
   branchId: string,
   tableId?: string,
@@ -2017,6 +2044,13 @@ export function setOperatorPin(branchId: string, pin: string) {
   });
 }
 
+export function verifyOperatorPin(branchId: string, pin: string) {
+  return apiRequest<{ valid: boolean; branchId: string }>("/api/v1/pos/operator-pin/verify", {
+    method: "POST",
+    body: { branchId, pin },
+  });
+}
+
 export function registerOperationalDevice(input: {
   branchId: string;
   name: string;
@@ -2037,6 +2071,31 @@ export function registerOperationalDevice(input: {
     method: "POST",
     body: input,
   });
+}
+
+export async function listOperationalDevices(branchId?: string) {
+  const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : "";
+  const result = await apiRequest<{
+    data: Array<{
+      id: string;
+      branchId: string;
+      name: string;
+      kind: string;
+      status: string;
+      theme: string;
+      kdsInput: string;
+      lastSeenAt: string | null;
+      createdAt: string;
+    }>;
+  }>(`/api/v1/pos/devices${query}`);
+  return result.data;
+}
+
+export function revokeOperationalDevice(deviceId: string) {
+  return apiRequest<{ id: string; branchId: string; status: string }>(
+    `/api/v1/pos/devices/${encodeURIComponent(deviceId)}/revoke`,
+    { method: "POST" },
+  );
 }
 
 export function addOrderItem(
@@ -2225,6 +2284,20 @@ export async function listFloorAreas() {
   return result.data;
 }
 
+export function createFloorArea(input: { name: string; sortOrder?: number }) {
+  return apiRequest<FloorArea>("/api/v1/floor/areas", { method: "POST", body: input });
+}
+
+export function updateFloorArea(
+  areaId: string,
+  input: { name?: string; sortOrder?: number; isActive?: boolean },
+) {
+  return apiRequest<FloorArea>(`/api/v1/floor/areas/${encodeURIComponent(areaId)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
 export async function listFloorReservations(status?: FloorReservation["status"]) {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const result = await apiRequest<{ data: FloorReservation[] }>(
@@ -2297,10 +2370,10 @@ export function updateFloorWaitlist(
   });
 }
 
-export function seatFloorReservation(reservationId: string, tableId: string) {
+export function seatFloorReservation(reservationId: string, tableIds: string[] | string) {
   return apiRequest<Record<string, unknown>>(`/api/v1/floor/reservations/${reservationId}/seat`, {
     method: "POST",
-    body: { tableId },
+    body: Array.isArray(tableIds) ? { tableIds } : { tableId: tableIds },
   });
 }
 
@@ -2401,7 +2474,11 @@ export function updateBranchOperationalSettings(
   input: Partial<
     Pick<
       BranchOperationalSettings,
-      "cleaningMode" | "allowWaiterPayments" | "defaultTheme" | "defaultKdsInputMode"
+      | "cleaningMode"
+      | "allowWaiterPayments"
+      | "defaultTheme"
+      | "defaultKdsInputMode"
+      | "kdsShortcuts"
     >
   >,
 ) {

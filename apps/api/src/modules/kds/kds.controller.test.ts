@@ -16,6 +16,12 @@ function controllerWithPermissions(permissions: string[]) {
   } as unknown as AuthService;
   const kdsService = {
     listTickets: vi.fn(async () => []),
+    updateTicketItem: vi.fn(async (_context, ticketId, itemId, status) => ({
+      id: ticketId,
+      itemId,
+      status,
+      audit: "kds.item_updated",
+    })),
   } as unknown as KdsService;
 
   return {
@@ -40,6 +46,20 @@ describe("KdsController permissions", () => {
     await expect(controller.listTickets({})).resolves.toEqual({ data: [] });
     expect(kdsService.listTickets).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: "tenant-test" }),
+    );
+  });
+
+  it("updates an individual item without requiring a whole ticket transition", async () => {
+    const { controller, kdsService } = controllerWithPermissions(["kds:operate"]);
+
+    await expect(
+      controller.updateTicketItem("ticket-1", "item-1", { status: "ready" }, {}),
+    ).resolves.toMatchObject({ audit: "kds.item_updated", status: "ready" });
+    expect(kdsService.updateTicketItem).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      "ticket-1",
+      "item-1",
+      "ready",
     );
   });
 });

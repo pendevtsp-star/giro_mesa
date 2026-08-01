@@ -303,6 +303,7 @@ export class OrdersService {
                       quantity,
                       notes,
                       modifiers,
+                      status: "sent" as const,
                     })),
                   outputMode: destination.outputMode,
                 },

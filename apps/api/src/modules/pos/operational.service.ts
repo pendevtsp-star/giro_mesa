@@ -17,9 +17,15 @@ import type {
   ThemeMode,
   WeeklyBusinessHour,
 } from "@giromesa/domain";
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { and, asc, desc, eq, gt } from "drizzle-orm";
-import { hashPassword } from "../../common/password";
+import { hashPassword, verifyPassword } from "../../common/password";
 import { DatabaseService } from "../database/database.service";
 import { CashService } from "./cash.service";
 import { OrdersService } from "./orders.service";
@@ -31,6 +37,16 @@ type OperationalSettingsInput = {
   allowWaiterPayments?: boolean | undefined;
   defaultTheme?: BranchOperationalSettings["defaultTheme"] | undefined;
   defaultKdsInputMode?: BranchOperationalSettings["defaultKdsInputMode"] | undefined;
+  kdsShortcuts?: BranchOperationalSettings["kdsShortcuts"] | undefined;
+};
+
+const defaultKdsShortcuts = {
+  refresh: "r",
+  sound: "s",
+  fullscreen: "f",
+  advance: " ",
+  up: "ArrowUp",
+  down: "ArrowDown",
 };
 
 @Injectable()
@@ -62,6 +78,7 @@ export class OperationalService {
           allowWaiterPayments: settings.allowWaiterPayments,
           defaultTheme: settings.defaultTheme,
           defaultKdsInputMode: settings.defaultKdsInputMode,
+          kdsShortcuts: settings.kdsShortcuts ?? defaultKdsShortcuts,
         }
       : {
           branchId,
@@ -69,6 +86,7 @@ export class OperationalService {
           allowWaiterPayments: false,
           defaultTheme: "dark",
           defaultKdsInputMode: "hybrid",
+          kdsShortcuts: defaultKdsShortcuts,
         };
   }
 
@@ -281,6 +299,118 @@ export class OperationalService {
       metadata: { name: device.name, kind: device.kind },
     });
     return { ...device, token };
+  }
+
+  async listDevices(context: TenantContext, branchId?: string) {
+    const conditions = [eq(operationalDevices.tenantId, context.tenantId)];
+    if (branchId) conditions.push(eq(operationalDevices.branchId, branchId));
+    return this.database.db
+      .select({
+        id: operationalDevices.id,
+        branchId: operationalDevices.branchId,
+        name: operationalDevices.name,
+        kind: operationalDevices.kind,
+        status: operationalDevices.status,
+        theme: operationalDevices.theme,
+        kdsInput: operationalDevices.kdsInput,
+        lastSeenAt: operationalDevices.lastSeenAt,
+        createdAt: operationalDevices.createdAt,
+      })
+      .from(operationalDevices)
+      .where(and(...conditions))
+      .orderBy(asc(operationalDevices.name));
+  }
+
+  async revokeDevice(context: TenantContext, deviceId: string) {
+    const userId = requireUserId(context);
+    const [device] = await this.database.db
+      .update(operationalDevices)
+      .set({
+        status: "revoked",
+        revokedByUserId: userId,
+        revokedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(operationalDevices.tenantId, context.tenantId), eq(operationalDevices.id, deviceId)),
+      )
+      .returning({
+        id: operationalDevices.id,
+        branchId: operationalDevices.branchId,
+        status: operationalDevices.status,
+      });
+    if (!device) throw new ConflictException("Operational device not found");
+    await this.posRepository.insertAuditLog(context, {
+      branchId: device.branchId,
+      userId,
+      requestId: context.requestId,
+      action: "operational_device.revoked",
+      entityType: "operational_device",
+      entityId: device.id,
+      metadata: {},
+    });
+    return device;
+  }
+
+  async verifyPersonalPin(context: TenantContext, branchId: string, pin: string) {
+    const userId = requireUserId(context);
+    await this.posRepository.ensureBranchBelongsToTenant(context, branchId);
+    return this.database.db.transaction(async (tx) => {
+      const [record] = await tx
+        .select()
+        .from(operationalPins)
+        .where(
+          and(
+            eq(operationalPins.tenantId, context.tenantId),
+            eq(operationalPins.branchId, branchId),
+            eq(operationalPins.userId, userId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!record || record.revokedAt)
+        throw new UnauthorizedException("PIN não configurado ou revogado");
+      if (record.lockedUntil && record.lockedUntil > new Date()) {
+        throw new UnauthorizedException("PIN temporariamente bloqueado");
+      }
+      const valid = await verifyPassword(record.pinHash, pin);
+      if (!valid) {
+        const failedAttempts = record.failedAttempts + 1;
+        const lockedUntil = failedAttempts >= 5 ? new Date(Date.now() + 15 * 60_000) : null;
+        await tx
+          .update(operationalPins)
+          .set({ failedAttempts, lockedUntil, updatedAt: new Date() })
+          .where(eq(operationalPins.id, record.id));
+        await tx.insert(auditLogs).values({
+          tenantId: context.tenantId,
+          branchId,
+          userId,
+          requestId: context.requestId,
+          action: lockedUntil ? "operator.pin_locked" : "operator.pin_failed",
+          entityType: "user",
+          entityId: userId,
+          metadata: { failedAttempts },
+        });
+        throw new UnauthorizedException(
+          lockedUntil ? "PIN bloqueado por tentativas" : "PIN inválido",
+        );
+      }
+      await tx
+        .update(operationalPins)
+        .set({ failedAttempts: 0, lockedUntil: null, updatedAt: new Date() })
+        .where(eq(operationalPins.id, record.id));
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId,
+        userId,
+        requestId: context.requestId,
+        action: "operator.pin_verified",
+        entityType: "user",
+        entityId: userId,
+        metadata: {},
+      });
+      return { valid: true, branchId };
+    });
   }
 
   async listEvents(context: TenantContext, branchId: string, afterVersion: number, limit: number) {

@@ -57,6 +57,7 @@ export function FloorWorkspace({
     quotedWaitMinutes: "20",
   });
   const [selectedReservationTableIds, setSelectedReservationTableIds] = useState<string[]>([]);
+  const [reservationSeatTableId, setReservationSeatTableId] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,6 +102,7 @@ export function FloorWorkspace({
       });
       setReservation({ customerName: "", customerPhone: "", partySize: "2", scheduledAt: "" });
       setSelectedReservationTableIds([]);
+      setReservationSeatTableId("");
     }, "Reserva criada.");
   }
 
@@ -226,6 +228,12 @@ export function FloorWorkspace({
                         ? assignedTableIds.map(tableLabel).join(", ")
                         : "Mesa ainda não definida"}
                     </small>
+                    {entry.status === "booked" &&
+                    new Date(entry.scheduledAt).getTime() < Date.now() ? (
+                      <small className="status-error">
+                        Atrasada há {elapsedMinutes(entry.scheduledAt)} min
+                      </small>
+                    ) : null}
                   </div>
                   <div className="floor-entry-actions">
                     <span className={`count-chip status-${entry.status}`}>
@@ -247,16 +255,36 @@ export function FloorWorkspace({
                       </button>
                     ) : null}
                     {entry.status === "arrived" || entry.status === "booked" ? (
+                      <label className="floor-inline-select">
+                        Mesa
+                        <select
+                          aria-label={`Mesa para ${entry.customerName}`}
+                          value={assignedTableIds[0] ?? reservationSeatTableId}
+                          onChange={(event) => setReservationSeatTableId(event.target.value)}
+                          disabled={assignedTableIds.length > 0}
+                        >
+                          <option value="">Selecione</option>
+                          {availableTables.map((table) => (
+                            <option key={table.id} value={table.id}>
+                              {table.code}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {entry.status === "arrived" || entry.status === "booked" ? (
                       <button
                         className="button primary compact"
                         type="button"
-                        disabled={busy || (!assignedTableIds.length && !selectedTableId)}
+                        disabled={busy || (!assignedTableIds.length && !reservationSeatTableId)}
                         onClick={() =>
                           void run(
                             () =>
                               seatFloorReservation(
                                 entry.id,
-                                assignedTableIds[0] ?? selectedTableId,
+                                assignedTableIds.length
+                                  ? assignedTableIds
+                                  : [reservationSeatTableId],
                               ).then(() => undefined),
                             "Reserva acomodada e atendimento aberto.",
                           )

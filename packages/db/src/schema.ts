@@ -233,6 +233,14 @@ export const branchOperationalSettings = pgTable(
     allowWaiterPayments: boolean("allow_waiter_payments").notNull().default(false),
     defaultTheme: themeMode("default_theme").notNull().default("dark"),
     defaultKdsInputMode: kdsInputMode("default_kds_input_mode").notNull().default("hybrid"),
+    kdsShortcuts: jsonb("kds_shortcuts").$type<Record<string, string>>().notNull().default({
+      refresh: "r",
+      sound: "s",
+      fullscreen: "f",
+      advance: " ",
+      up: "ArrowUp",
+      down: "ArrowDown",
+    }),
     ...timestamps,
   },
   (table) => [
@@ -582,9 +590,12 @@ export const diningTables = pgTable(
       .notNull()
       .references(() => branches.id),
     floorPlanId: uuid("floor_plan_id").references(() => floorPlans.id),
+    areaId: uuid("area_id"),
     code: varchar("code", { length: 40 }).notNull(),
     name: varchar("name", { length: 80 }).notNull(),
     seats: integer("seats").notNull().default(2),
+    shape: varchar("shape", { length: 20 }).notNull().default("rounded"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     status: tableStatus("status").notNull().default("free"),
     version: integer("version").notNull().default(1),
     groupId: uuid("group_id"),

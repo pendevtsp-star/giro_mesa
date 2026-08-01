@@ -1,4 +1,13 @@
-import { auditLogs, branches, diningTables, floorPlans, orders, users } from "@giromesa/db";
+import {
+  auditLogs,
+  branches,
+  diningTables,
+  floorAreas,
+  floorPlans,
+  orders,
+  reservations,
+  users,
+} from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import {
   BadRequestException,
@@ -17,17 +26,86 @@ export class PosRepository {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async listTables(context: TenantContext, branchId: string) {
-    return this.database.db
+    const rows = await this.database.db
       .select()
       .from(diningTables)
       .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.branchId, branchId)));
+    if (!rows.length) return rows;
+    const activeOrders = await this.database.db
+      .select({
+        id: orders.id,
+        tableId: orders.tableId,
+        status: orders.status,
+        openedAt: orders.openedAt,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.tenantId, context.tenantId),
+          eq(orders.branchId, branchId),
+          inArray(orders.status, [
+            "draft",
+            "opened",
+            "sent_to_kitchen",
+            "preparing",
+            "ready",
+            "served",
+            "waiting_payment",
+            "partially_paid",
+          ]),
+        ),
+      );
+    const upcomingReservations = await this.database.db
+      .select({
+        id: reservations.id,
+        tableId: reservations.tableId,
+        customerName: reservations.customerName,
+        scheduledAt: reservations.scheduledAt,
+        status: reservations.status,
+      })
+      .from(reservations)
+      .where(
+        and(
+          eq(reservations.tenantId, context.tenantId),
+          eq(reservations.branchId, branchId),
+          inArray(reservations.status, ["booked", "arrived"]),
+        ),
+      );
+    return rows.map((table) => ({
+      ...table,
+      activeOrder: activeOrders.find((order) => order.tableId === table.id) ?? null,
+      reservation:
+        upcomingReservations.find((reservation) => reservation.tableId === table.id) ?? null,
+    }));
   }
 
   async createTable(
     context: TenantContext,
-    input: { branchId: string; code: string; name: string; seats: number },
+    input: {
+      branchId: string;
+      code: string;
+      name: string;
+      seats: number;
+      shape?: string;
+      areaId?: string | null;
+    },
   ) {
     await this.ensureBranchBelongsToTenant(context, input.branchId);
+    if (input.areaId) {
+      const [area] = await this.database.db
+        .select({ id: floorAreas.id })
+        .from(floorAreas)
+        .where(
+          and(
+            eq(floorAreas.tenantId, context.tenantId),
+            eq(floorAreas.branchId, input.branchId),
+            eq(floorAreas.id, input.areaId),
+            eq(floorAreas.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (!area) throw new BadRequestException("Area not found for this branch");
+    }
     return this.database.db.transaction(async (tx) => {
       const [table] = await tx
         .insert(diningTables)
@@ -37,6 +115,8 @@ export class PosRepository {
           code: input.code.trim().toUpperCase(),
           name: input.name.trim(),
           seats: input.seats,
+          shape: input.shape ?? "rounded",
+          areaId: input.areaId ?? null,
         })
         .returning();
       if (!table) throw new Error("Failed to create table");
@@ -227,7 +307,12 @@ export class PosRepository {
   async updateTable(
     context: TenantContext,
     tableId: string,
-    data: Partial<Pick<typeof diningTables.$inferInsert, "status" | "reservedName">>,
+    data: Partial<
+      Pick<
+        typeof diningTables.$inferInsert,
+        "status" | "reservedName" | "seats" | "shape" | "areaId" | "archivedAt"
+      >
+    >,
     expectedVersion?: number,
   ) {
     return this.database.db.transaction(async (tx) => {
@@ -241,6 +326,44 @@ export class PosRepository {
         .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
         .limit(1);
       if (!existing) throw new NotFoundException("Table not found");
+      if (data.areaId) {
+        const [area] = await tx
+          .select({ id: floorAreas.id })
+          .from(floorAreas)
+          .where(
+            and(
+              eq(floorAreas.tenantId, context.tenantId),
+              eq(floorAreas.branchId, existing.branchId),
+              eq(floorAreas.id, data.areaId),
+              eq(floorAreas.isActive, true),
+            ),
+          )
+          .limit(1);
+        if (!area) throw new BadRequestException("Area not found for this branch");
+      }
+      if (data.archivedAt && data.status !== "blocked") {
+        const [openOrder] = await tx
+          .select({ id: orders.id })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.tenantId, context.tenantId),
+              eq(orders.tableId, tableId),
+              inArray(orders.status, [
+                "draft",
+                "opened",
+                "sent_to_kitchen",
+                "preparing",
+                "ready",
+                "served",
+                "waiting_payment",
+                "partially_paid",
+              ]),
+            ),
+          )
+          .limit(1);
+        if (openOrder) throw new ConflictException("Table with open order cannot be archived");
+      }
       if (expectedVersion !== undefined && expectedVersion !== existing.version) {
         throw new ConflictException({
           error: "dining_table_version_conflict",

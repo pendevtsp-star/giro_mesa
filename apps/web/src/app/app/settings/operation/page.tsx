@@ -26,8 +26,12 @@ import {
   getOperationPolicy,
   getSession,
   listApprovalRequests,
+  listOperationalDevices,
   type OperationPolicy,
+  registerOperationalDevice,
   replaceBusinessHours,
+  revokeOperationalDevice,
+  setOperatorPin,
   updateBranchOperationalSettings,
   updateOperationPolicy,
   type WeeklyBusinessHour,
@@ -43,6 +47,15 @@ const weekdays = [
   [4, "Quinta-feira"],
   [5, "Sexta-feira"],
   [6, "Sábado"],
+] as const;
+
+const kdsShortcutFields = [
+  ["refresh", "Atualizar fila"],
+  ["sound", "Som"],
+  ["fullscreen", "Tela cheia"],
+  ["advance", "Avançar ticket"],
+  ["up", "Selecionar acima"],
+  ["down", "Selecionar abaixo"],
 ] as const;
 
 export default function OperationSettingsPage() {
@@ -61,6 +74,23 @@ export default function OperationSettingsPage() {
   const [message, setMessage] = useState("Carregando regras operacionais...");
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<
+    Array<{
+      id: string;
+      name: string;
+      kind: string;
+      status: string;
+      kdsInput: string;
+      theme: string;
+    }>
+  >([]);
+  const [personalPin, setPersonalPin] = useState("");
+  const [deviceForm, setDeviceForm] = useState({
+    name: "",
+    kind: "waiter",
+    theme: "system",
+    kdsInput: "hybrid",
+  });
 
   const load = useCallback(async () => {
     const [nextPolicy, nextApprovals, session] = await Promise.all([
@@ -76,10 +106,12 @@ export default function OperationSettingsPage() {
         getBusinessHours(session.branchId),
         getBranchOperationalSettings(session.branchId),
       ]);
+      const deviceRows = await listOperationalDevices(session.branchId);
       setBranchId(session.branchId);
       setWeekly(hours.weekly);
       setExceptions(hours.exceptions);
       setBranchSettings(settings);
+      setDevices(deviceRows);
     }
     setMessage(
       nextApprovals.length > 0
@@ -140,6 +172,7 @@ export default function OperationSettingsPage() {
       const saved = await updateBranchOperationalSettings(branchId, {
         defaultTheme: branchSettings.defaultTheme,
         defaultKdsInputMode: branchSettings.defaultKdsInputMode,
+        kdsShortcuts: branchSettings.kdsShortcuts,
         cleaningMode: branchSettings.cleaningMode,
         allowWaiterPayments: branchSettings.allowWaiterPayments,
       });
@@ -203,6 +236,44 @@ export default function OperationSettingsPage() {
       await load();
     } catch (error) {
       setDialogError(error instanceof Error ? error.message : "Não foi possível validar o PIN.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePersonalPin() {
+    if (!branchId || !/^\d{4,8}$/.test(personalPin)) {
+      setMessage("Informe um PIN numérico de 4 a 8 dígitos.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await setOperatorPin(branchId, personalPin);
+      setPersonalPin("");
+      setMessage("PIN pessoal atualizado com auditoria.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Falha ao salvar PIN.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addDevice() {
+    if (!branchId || deviceForm.name.trim().length < 2) return;
+    setBusy(true);
+    try {
+      const created = await registerOperationalDevice({
+        branchId,
+        name: deviceForm.name.trim(),
+        kind: deviceForm.kind,
+        theme: deviceForm.theme as "light" | "dark" | "system",
+        kdsInput: deviceForm.kdsInput as "touch" | "keyboard" | "hybrid",
+      });
+      setDevices((current) => [...current, created]);
+      setDeviceForm({ name: "", kind: "waiter", theme: "system", kdsInput: "hybrid" });
+      setMessage("Dispositivo registrado. O token só é exibido uma vez.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Falha ao registrar dispositivo.");
     } finally {
       setBusy(false);
     }
@@ -558,6 +629,33 @@ export default function OperationSettingsPage() {
                     <option value="printer">Impressora</option>
                   </select>
                 </label>
+                <fieldset className="settings-fieldset">
+                  <legend>Atalhos do KDS</legend>
+                  <p className="muted-copy">
+                    Use nomes de tecla do navegador, por exemplo <code>F</code>, <code>R</code> ou
+                    <code>ArrowDown</code>. Vazio não é permitido.
+                  </p>
+                  <div className="settings-shortcut-grid">
+                    {kdsShortcutFields.map(([key, label]) => (
+                      <label key={key}>
+                        {label}
+                        <input
+                          maxLength={20}
+                          value={branchSettings.kdsShortcuts[key] ?? ""}
+                          onChange={(event) =>
+                            setBranchSettings({
+                              ...branchSettings,
+                              kdsShortcuts: {
+                                ...branchSettings.kdsShortcuts,
+                                [key]: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
                 <label className="check-line">
                   <input
                     checked={branchSettings.allowWaiterPayments}
@@ -586,6 +684,140 @@ export default function OperationSettingsPage() {
               </div>
             </article>
           ) : null}
+        </section>
+      ) : null}
+
+      {branchId ? (
+        <section className="operation-settings-grid operation-settings-secondary">
+          <article className="workspace-panel">
+            <div className="panel-heading">
+              <div>
+                <span className="section-kicker">Acesso rápido</span>
+                <h2>PIN pessoal</h2>
+              </div>
+            </div>
+            <p className="muted-copy">
+              Usado para troca rápida e aprovações no dispositivo, sem substituir o login.
+            </p>
+            <label>
+              PIN numérico
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={8}
+                value={personalPin}
+                onChange={(event) => setPersonalPin(event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <button
+              className="button primary compact"
+              type="button"
+              disabled={busy}
+              onClick={() => void savePersonalPin()}
+            >
+              <ShieldCheck size={15} /> Salvar PIN
+            </button>
+          </article>
+          <article className="workspace-panel">
+            <div className="panel-heading">
+              <div>
+                <span className="section-kicker">Terminais</span>
+                <h2>Dispositivos operacionais</h2>
+              </div>
+              <span className="count-chip">
+                {devices.filter((device) => device.status === "active").length}
+              </span>
+            </div>
+            <div className="settings-form">
+              <label>
+                Nome
+                <input
+                  value={deviceForm.name}
+                  onChange={(event) =>
+                    setDeviceForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                  placeholder="Caixa 01 ou KDS cozinha"
+                />
+              </label>
+              <div className="form-grid-compact">
+                <label>
+                  Perfil
+                  <select
+                    value={deviceForm.kind}
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({ ...current, kind: event.target.value }))
+                    }
+                  >
+                    <option value="waiter">Garçom</option>
+                    <option value="cashier">Caixa</option>
+                    <option value="kds">KDS</option>
+                    <option value="salon">Salão</option>
+                  </select>
+                </label>
+                <label>
+                  Entrada
+                  <select
+                    value={deviceForm.kdsInput}
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({ ...current, kdsInput: event.target.value }))
+                    }
+                  >
+                    <option value="hybrid">Híbrida</option>
+                    <option value="touch">Touch</option>
+                    <option value="keyboard">Teclado</option>
+                  </select>
+                </label>
+              </div>
+              <button
+                className="button secondary compact"
+                type="button"
+                disabled={busy}
+                onClick={() => void addDevice()}
+              >
+                <Plus size={15} /> Registrar dispositivo
+              </button>
+            </div>
+            <div className="floor-entry-list">
+              {devices.map((device) => (
+                <div className="floor-entry" key={device.id}>
+                  <div>
+                    <strong>{device.name}</strong>
+                    <small>
+                      {device.kind} · {device.kdsInput} ·{" "}
+                      {device.status === "active" ? "ativo" : "revogado"}
+                    </small>
+                  </div>
+                  {device.status === "active" ? (
+                    <button
+                      className="button ghost compact"
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void revokeOperationalDevice(device.id)
+                          .then(() => {
+                            setDevices((current) =>
+                              current.map((item) =>
+                                item.id === device.id ? { ...item, status: "revoked" } : item,
+                              ),
+                            );
+                            setMessage("Dispositivo revogado.");
+                          })
+                          .catch((error) =>
+                            setMessage(
+                              error instanceof Error
+                                ? error.message
+                                : "Falha ao revogar dispositivo.",
+                            ),
+                          )
+                      }
+                    >
+                      Revogar
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </article>
         </section>
       ) : null}
 

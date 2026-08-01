@@ -208,7 +208,14 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
   async updateTable(
     context: TenantContext,
     tableId: string,
-    data: Partial<{ status: TableStatus; reservedName: string | null }>,
+    data: Partial<{
+      status: TableStatus;
+      reservedName: string | null;
+      seats: number;
+      shape: string;
+      areaId: string | null;
+      archivedAt: Date | null;
+    }>,
     expectedVersion?: number,
   ) {
     return this.posRepository.updateTable(context, tableId, data, expectedVersion);
@@ -915,6 +922,18 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     input: Parameters<OperationalService["registerDevice"]>[1],
   ) {
     return this.requireOperationalService().registerDevice(context, input);
+  }
+
+  async listOperationalDevices(context: TenantContext, branchId?: string) {
+    return this.requireOperationalService().listDevices(context, branchId);
+  }
+
+  async revokeOperationalDevice(context: TenantContext, deviceId: string) {
+    return this.requireOperationalService().revokeDevice(context, deviceId);
+  }
+
+  async verifyPersonalPin(context: TenantContext, branchId: string, pin: string) {
+    return this.requireOperationalService().verifyPersonalPin(context, branchId, pin);
   }
 
   async listOperationalEvents(

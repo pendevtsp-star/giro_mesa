@@ -7,10 +7,13 @@ import { arrangeTablesForMerge, moveTablesInLayout } from "../../../features/flo
 import { TableActionPopup } from "../../../features/floor/TableActionPopup";
 import {
   acknowledgeServiceRequest,
+  buildPosEventsUrl,
   createDiningTable,
+  createFloorArea,
   type DiningTable,
   getFloorPlan,
   getSession,
+  listFloorAreas,
   listServiceRequests,
   listTables,
   mergeTables,
@@ -18,6 +21,7 @@ import {
   type ServiceRequest,
   saveFloorPlan,
   unmergeTables,
+  updateFloorArea,
   updateTable,
 } from "../../../lib/giromesa-api";
 
@@ -56,7 +60,15 @@ export default function SalonPage() {
   const [planVersion, setPlanVersion] = useState(0);
   const [message, setMessage] = useState("Carregando mapa do salão...");
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
-  const [form, setForm] = useState({ code: "", name: "", seats: "4" });
+  const [areas, setAreas] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
+  const [areaName, setAreaName] = useState("");
+  const [form, setForm] = useState({
+    code: "",
+    name: "",
+    seats: "4",
+    shape: "rounded",
+    areaId: "",
+  });
 
   // Canvas state
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,13 +95,19 @@ export default function SalonPage() {
   const [mergeMode, setMergeMode] = useState(false);
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
   const [mergeSuggestion, setMergeSuggestion] = useState<[string, string] | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   // Pan state
   const panRef = useRef({ isPanning: false, startX: 0, startY: 0 });
 
   const load = useCallback(async (id: string) => {
-    const [rows, plan] = await Promise.all([listTables(id), getFloorPlan(id)]);
+    const [rows, plan, areaRows] = await Promise.all([
+      listTables(id),
+      getFloorPlan(id),
+      listFloorAreas(),
+    ]);
     setTables(rows);
+    setAreas(areaRows.filter((area) => area.isActive));
     setLayout(plan.layout);
     setSavedLayout(plan.layout);
     setLayoutHistory([]);
@@ -113,6 +131,11 @@ export default function SalonPage() {
   }, [load]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (!branchId) return;
     const refreshRequests = () =>
       void listServiceRequests()
@@ -126,6 +149,29 @@ export default function SalonPage() {
     const interval = window.setInterval(refreshRequests, 15_000);
     return () => window.clearInterval(interval);
   }, [branchId]);
+
+  useEffect(() => {
+    if (!branchId) return;
+    let stopped = false;
+    let events: EventSource | null = null;
+    let retry: number | undefined;
+    const connect = () => {
+      if (stopped) return;
+      events = new EventSource(buildPosEventsUrl(branchId), { withCredentials: true });
+      events.onmessage = () => void load(branchId).catch(() => undefined);
+      events.onerror = () => {
+        events?.close();
+        events = null;
+        if (!stopped) retry = window.setTimeout(connect, 5_000);
+      };
+    };
+    retry = window.setTimeout(connect, 1_500);
+    return () => {
+      stopped = true;
+      events?.close();
+      if (retry !== undefined) window.clearTimeout(retry);
+    };
+  }, [branchId, load]);
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
@@ -160,6 +206,8 @@ export default function SalonPage() {
         code: form.code,
         name: form.name,
         seats: Number(form.seats) || 2,
+        shape: form.shape as "rounded" | "square" | "circle" | "booth",
+        ...(form.areaId ? { areaId: form.areaId } : {}),
       });
       setTables((prev) => {
         const index = prev.length;
@@ -173,10 +221,42 @@ export default function SalonPage() {
         }));
         return [...prev, newTable];
       });
-      setForm({ code: "", name: "", seats: "4" });
+      setForm({ code: "", name: "", seats: "4", shape: "rounded", areaId: "" });
       setMessage("Mesa criada. Posicione-a e salve o mapa.");
     } catch {
       setMessage("Não foi possível criar a mesa. Verifique código, nome e capacidade.");
+    }
+  }
+
+  async function addArea() {
+    if (!areaName.trim()) return;
+    try {
+      const area = await createFloorArea({ name: areaName.trim(), sortOrder: areas.length });
+      setAreas((current) => [...current, area]);
+      setAreaName("");
+      setMessage(`Setor ${area.name} criado.`);
+    } catch {
+      setMessage("Não foi possível criar o setor.");
+    }
+  }
+
+  async function archiveArea(areaId: string) {
+    try {
+      await updateFloorArea(areaId, { isActive: false });
+      setAreas((current) => current.filter((area) => area.id !== areaId));
+      setMessage("Setor arquivado. As mesas existentes foram preservadas.");
+    } catch {
+      setMessage("Não foi possível arquivar o setor.");
+    }
+  }
+
+  async function restoreTable(table: DiningTable) {
+    try {
+      const result = await updateTable(table.id, { archived: false, status: "free" });
+      setTables((current) => current.map((item) => (item.id === table.id ? result.data : item)));
+      setMessage(`Mesa ${table.code} restaurada no mapa.`);
+    } catch {
+      setMessage("Não foi possível restaurar a mesa.");
     }
   }
 
@@ -392,6 +472,46 @@ export default function SalonPage() {
           setMessage(`Reserva da mesa ${table.code} cancelada.`);
           break;
         }
+        case "edit-table": {
+          try {
+            const result = await updateTable(table.id, {
+              seats: Number(data?.seats),
+              shape: (data?.shape as "rounded" | "square" | "circle" | "booth") ?? "rounded",
+            });
+            setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
+            setMessage(`Mesa ${table.code} atualizada.`);
+          } catch {
+            setMessage("Não foi possível atualizar a mesa.");
+          }
+          break;
+        }
+        case "block-table":
+        case "unblock-table": {
+          try {
+            const result = await updateTable(table.id, {
+              status: action === "block-table" ? "blocked" : "free",
+            });
+            setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
+            setMessage(
+              action === "block-table"
+                ? `Mesa ${table.code} bloqueada.`
+                : `Mesa ${table.code} liberada.`,
+            );
+          } catch {
+            setMessage("Não foi possível alterar o bloqueio da mesa.");
+          }
+          break;
+        }
+        case "archive-table": {
+          try {
+            const result = await updateTable(table.id, { archived: true });
+            setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
+            setMessage(`Mesa ${table.code} arquivada.`);
+          } catch {
+            setMessage("Mesa com atendimento aberto não pode ser arquivada.");
+          }
+          break;
+        }
         case "mark-cleaning": {
           const result = await updateTable(table.id, { status: "cleaning" });
           setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
@@ -599,9 +719,58 @@ export default function SalonPage() {
               inputMode="numeric"
               placeholder="Lugares"
             />
+            <select
+              value={form.shape}
+              aria-label="Formato da mesa"
+              onChange={(e) => setForm((c) => ({ ...c, shape: e.target.value }))}
+            >
+              <option value="rounded">Redonda</option>
+              <option value="square">Quadrada</option>
+              <option value="circle">Circular</option>
+              <option value="booth">Bancada</option>
+            </select>
+            <select
+              value={form.areaId}
+              aria-label="Setor da mesa"
+              onChange={(e) => setForm((c) => ({ ...c, areaId: e.target.value }))}
+            >
+              <option value="">Sem setor</option>
+              {areas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.name}
+                </option>
+              ))}
+            </select>
             <button className="button secondary compact" type="submit">
               Adicionar
             </button>
+            <div className="salon-area-form">
+              <input
+                value={areaName}
+                onChange={(e) => setAreaName(e.target.value)}
+                placeholder="Novo setor"
+              />
+              <button className="button ghost compact" type="button" onClick={() => void addArea()}>
+                <Plus size={14} /> Setor
+              </button>
+            </div>
+            {areas.length > 0 ? (
+              <div className="salon-area-list">
+                {areas.map((area) => (
+                  <span key={area.id} className="salon-area-chip">
+                    {area.name}
+                    <button
+                      aria-label={`Arquivar setor ${area.name}`}
+                      className="button ghost compact"
+                      onClick={() => void archiveArea(area.id)}
+                      type="button"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </form>
         ) : (
           <p className="salon-operation-hint">
@@ -666,6 +835,26 @@ export default function SalonPage() {
           >
             Agora não
           </button>
+        </section>
+      ) : null}
+
+      {mode === "edit" && tables.some((table) => table.archivedAt) ? (
+        <section className="salon-archived-tables" aria-label="Mesas arquivadas">
+          <strong>Mesas arquivadas</strong>
+          {tables
+            .filter((table) => table.archivedAt)
+            .map((table) => (
+              <span key={table.id} className="salon-area-chip">
+                {table.code} · {table.name}
+                <button
+                  className="button ghost compact"
+                  onClick={() => void restoreTable(table)}
+                  type="button"
+                >
+                  Restaurar
+                </button>
+              </span>
+            ))}
         </section>
       ) : null}
 
@@ -759,128 +948,151 @@ export default function SalonPage() {
           })}
 
           {/* Tables */}
-          {tables.map((table, index) => {
-            const x = layout[table.id]?.x ?? (index % 4) * 24 + 4;
-            const y = layout[table.id]?.y ?? Math.floor(index / 4) * 28 + 4;
-            const isSelected = selectedTables.has(table.id);
-            const gColor = table.groupId ? groupColor(table.groupId) : undefined;
+          {tables
+            .filter((table) => !table.archivedAt)
+            .map((table, index) => {
+              const x = layout[table.id]?.x ?? (index % 4) * 24 + 4;
+              const y = layout[table.id]?.y ?? Math.floor(index / 4) * 28 + 4;
+              const isSelected = selectedTables.has(table.id);
+              const gColor = table.groupId ? groupColor(table.groupId) : undefined;
 
-            return (
-              <button
-                key={table.id}
-                type="button"
-                data-table-id={table.id}
-                className={`salon-table salon-positioned ${tones[table.status] ?? "reserved"} ${isSelected ? "selected" : ""}`}
-                style={{
-                  left: `${x}%`,
-                  top: `${y}%`,
-                  borderColor: gColor,
-                  boxShadow: table.groupId ? `0 0 0 2px ${gColor}20` : undefined,
-                  outline: isSelected ? "3px solid #f97316" : undefined,
-                  outlineOffset: isSelected ? "3px" : undefined,
-                  opacity: draggingId === table.id ? 0.6 : 1,
-                  transition: draggingId ? "none" : "opacity 150ms",
-                }}
-                onPointerDown={(e) => handleTablePointerDown(e, table)}
-                onPointerMove={handleDragMove}
-                onPointerUp={handleDragUp}
-                onPointerCancel={handleDragCancel}
-                onKeyDown={(event) => {
-                  if (mode !== "edit") return;
-                  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+              return (
+                <button
+                  key={table.id}
+                  type="button"
+                  data-table-id={table.id}
+                  className={`salon-table salon-positioned ${tones[table.status] ?? "reserved"} ${isSelected ? "selected" : ""}`}
+                  style={{
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    borderColor: gColor,
+                    boxShadow: table.groupId ? `0 0 0 2px ${gColor}20` : undefined,
+                    outline: isSelected ? "3px solid #f97316" : undefined,
+                    outlineOffset: isSelected ? "3px" : undefined,
+                    opacity: draggingId === table.id ? 0.6 : 1,
+                    transition: draggingId ? "none" : "opacity 150ms",
+                    borderRadius:
+                      table.shape === "circle"
+                        ? "50%"
+                        : table.shape === "square"
+                          ? 8
+                          : table.shape === "booth"
+                            ? 4
+                            : 16,
+                  }}
+                  onPointerDown={(e) => handleTablePointerDown(e, table)}
+                  onPointerMove={handleDragMove}
+                  onPointerUp={handleDragUp}
+                  onPointerCancel={handleDragCancel}
+                  onKeyDown={(event) => {
+                    if (mode !== "edit") return;
+                    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+                      event.preventDefault();
+                      const current = layout[table.id] ?? { x, y };
+                      const next = {
+                        x: Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            current.x +
+                              (event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0),
+                          ),
+                        ),
+                        y: Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            current.y +
+                              (event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0),
+                          ),
+                        ),
+                      };
+                      setLayoutHistory((history) => [...history.slice(-19), layout]);
+                      setLayout((currentLayout) => ({ ...currentLayout, [table.id]: next }));
+                      setMessage(`Mesa ${table.code} reposicionada pelo teclado.`);
+                      return;
+                    }
+                    if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
-                    const current = layout[table.id] ?? { x, y };
-                    const next = {
-                      x: Math.max(
+                    if (mergeMode) {
+                      setSelectedTables((current) => {
+                        const next = new Set(current);
+                        if (next.has(table.id)) next.delete(table.id);
+                        else next.add(table.id);
+                        return next;
+                      });
+                      return;
+                    }
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setPopupTable(table);
+                    setPopupPos({ x: rect.right + 8, y: rect.top });
+                  }}
+                >
+                  <strong>{table.code}</strong>
+                  <span>{table.name}</span>
+                  <small>{table.seats} lugares</small>
+                  {table.activeOrder?.openedAt ? (
+                    <small>
+                      Atendimento há{" "}
+                      {Math.max(
                         0,
-                        Math.min(
-                          100,
-                          current.x +
-                            (event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0),
-                        ),
-                      ),
-                      y: Math.max(
-                        0,
-                        Math.min(
-                          100,
-                          current.y +
-                            (event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0),
-                        ),
-                      ),
-                    };
-                    setLayoutHistory((history) => [...history.slice(-19), layout]);
-                    setLayout((currentLayout) => ({ ...currentLayout, [table.id]: next }));
-                    setMessage(`Mesa ${table.code} reposicionada pelo teclado.`);
-                    return;
-                  }
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  if (mergeMode) {
-                    setSelectedTables((current) => {
-                      const next = new Set(current);
-                      if (next.has(table.id)) next.delete(table.id);
-                      else next.add(table.id);
-                      return next;
-                    });
-                    return;
-                  }
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setPopupTable(table);
-                  setPopupPos({ x: rect.right + 8, y: rect.top });
-                }}
-              >
-                <strong>{table.code}</strong>
-                <span>{table.name}</span>
-                <small>{table.seats} lugares</small>
-                {table.groupId && (
-                  <span
-                    className="group-badge"
-                    style={{
-                      background: gColor,
-                      position: "absolute",
-                      top: -8,
-                      right: -8,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      color: "#07111b",
-                      fontSize: "0.6rem",
-                      fontWeight: 800,
-                    }}
-                  >
-                    <Link2 size={10} /> Grupo
-                  </span>
-                )}
-                {mergeMode && (
-                  <span
-                    className={`merge-checkbox ${isSelected ? "checked" : ""}`}
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 6,
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      border: "2px solid var(--line)",
-                      background: isSelected ? "#f97316" : "#fff",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.7rem",
-                      fontWeight: 800,
-                      color: "#fff",
-                    }}
-                  >
-                    {isSelected ? "✓" : ""}
-                  </span>
-                )}
-                {table.reservedName && (
-                  <small style={{ color: "#6b7280", fontStyle: "italic", fontSize: "0.7rem" }}>
-                    {table.reservedName}
-                  </small>
-                )}
-              </button>
-            );
-          })}
+                        Math.floor((now - new Date(table.activeOrder.openedAt).getTime()) / 60_000),
+                      )}{" "}
+                      min
+                    </small>
+                  ) : null}
+                  {table.reservation ? (
+                    <small>Reserva: {table.reservation.customerName}</small>
+                  ) : null}
+                  {table.groupId && (
+                    <span
+                      className="group-badge"
+                      style={{
+                        background: gColor,
+                        position: "absolute",
+                        top: -8,
+                        right: -8,
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        color: "#07111b",
+                        fontSize: "0.6rem",
+                        fontWeight: 800,
+                      }}
+                    >
+                      <Link2 size={10} /> Grupo
+                    </span>
+                  )}
+                  {mergeMode && (
+                    <span
+                      className={`merge-checkbox ${isSelected ? "checked" : ""}`}
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                        width: 20,
+                        height: 20,
+                        borderRadius: "50%",
+                        border: "2px solid var(--line)",
+                        background: isSelected ? "#f97316" : "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.7rem",
+                        fontWeight: 800,
+                        color: "#fff",
+                      }}
+                    >
+                      {isSelected ? "✓" : ""}
+                    </span>
+                  )}
+                  {table.reservedName && (
+                    <small style={{ color: "#6b7280", fontStyle: "italic", fontSize: "0.7rem" }}>
+                      {table.reservedName}
+                    </small>
+                  )}
+                </button>
+              );
+            })}
         </div>
 
         {/* Zoom controls */}

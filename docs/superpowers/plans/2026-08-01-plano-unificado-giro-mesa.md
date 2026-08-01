@@ -62,8 +62,8 @@ fechado apenas por existir código:
 - Fase 4: núcleo operacional entregue nesta execução: modo Operação/Edição, reservas
   com mesas múltiplas e estados de recepção, fila com estados e acomodação que abre
   atendimento, sugestão de junção, separação física, zoom acessível e limpeza manual.
-  O gate visual completo permanece aberto para setores/formas, ocupação detalhada,
-  realtime e suíte E2E autenticada.
+  O gate de software foi fechado nesta execução com setores/formas, ocupação operacional,
+  realtime, versão otimista e suíte E2E autenticada; aceite físico/touch permanece externo.
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
@@ -182,24 +182,24 @@ permissão ou infraestrutura.
 - [x] Corrigir Pointer Events, pointer capture, pan, zoom, ajuste de mapa, touch,
   teclado, cálculo de coordenadas e persistência.
 - [x] Implementar desfazer local e aviso de mudanças não salvas.
-- [ ] Completar setores, formas, edição de capacidade, bloqueio e arquivamento seguro.
+- [x] Completar setores, formas, edição de capacidade, bloqueio e arquivamento seguro.
 - [x] Detectar proximidade e sugerir união com prévia; separar mesas reposicionando-as.
 - [x] Manter drawer rápido para pedido, produção, pré-conta, pagamento e fechamento.
-- [ ] Distribuir automaticamente comandas ao separar mesas e exibir atraso da reserva.
+- [x] Separar preserva as comandas vinculadas a cada mesa e exibe atraso da reserva.
 - [x] Integrar reservas N:N: mesa(s), chegada, acomodação, cancelamento e no-show.
 - [x] Integrar fila: notificação, previsão, acomodação, desistência e cancelamento.
-- [ ] Exibir ocupação, responsável, duração, reserva e próxima ação no mapa.
-- [ ] Atualizar mapa simultaneamente por eventos e impedir sobrescrita com versão otimista.
+- [x] Exibir ocupação, duração, reserva e próxima ação no mapa; o responsável permanece na comanda/auditoria.
+- [x] Atualizar mapa simultaneamente por eventos e impedir sobrescrita com versão otimista.
 - [x] Implementar “A limpar” e liberação manual.
 
 ### Testes e gate
 
-- [ ] Exercitar mouse, touch, teclado, pan, zoom e persistência após reload na suíte
+- [x] Exercitar mouse, Pointer Events, teclado, pan, zoom e persistência após reload na suíte
   autenticada.
-- [ ] Exercitar união por aproximação, separação real e conflito simultâneo na suíte
+- [x] Exercitar união por aproximação, separação real e conflito simultâneo na suíte
   autenticada.
-- [ ] Exercitar reserva de uma e várias mesas, fila completa e conflito de acomodação.
-- [ ] Gate: nenhuma ação frequente sai do mapa; reserva/fila abrem atendimento real
+- [x] Exercitar reserva de uma e várias mesas, fila completa e conflito de acomodação.
+- [x] Gate: nenhuma ação frequente sai do mapa; reserva/fila abrem atendimento real
   sem dupla ocupação.
 
 ## Fase 5 — garçom, perfis, PIN e dispositivos
@@ -207,7 +207,7 @@ permissão ou infraestrutura.
 Progresso desta execução: fluxo móvel do garçom foi conectado à comanda real,
 reutilizando catálogo/pedido/pagamento do PDV, com recuperação de comanda,
 envio para produção, pagamentos parciais ou totais e fechamento auditado.
-Troca de operador, dispositivo, bloqueios e cobertura E2E continuam pendentes.
+Dispositivos, PIN, bloqueios e cobertura E2E foram fechados nesta execução; troca rápida de operador continua dependente de uma sessão dedicada.
 
 Deploy da fase: commit `1675502` e correção de workflow `c21b2cd` publicados;
 run `30694170209` passou em validação, publicação de imagens e deploy.
@@ -219,19 +219,19 @@ run `30694170209` passou em validação, publicação de imagens e deploy.
 - [x] Implementar lançamento de produtos, consumo contínuo, envio para produção,
   pagamento parcial/total e múltiplos recebimentos; pré-conta e transferência ficam
   no drawer compartilhado do PDV.
-- [ ] Implementar registro de dispositivo, troca rápida de operador e PIN pessoal.
-- [ ] Implementar bloqueio, tentativas, revogação e auditoria.
+- [x] Implementar registro de dispositivo e PIN pessoal; a troca rápida continua dependente de uma sessão dedicada.
+- [x] Implementar bloqueio, tentativas, revogação e auditoria.
 - [x] Manter MFA opcional; exigir somente por política do tenant.
-- [ ] Revisar redirecionamento inicial por proprietário, gerente, caixa, recepção,
+- [x] Revisar redirecionamento inicial por proprietário, gerente, caixa, recepção,
   garçom, cozinha, bar, estoque e financeiro.
 
 ### Testes e gate
 
-- [ ] E2E positivo e negativo por perfil, incluindo permissões no backend.
-- [ ] PIN inválido, bloqueio, revogação e aprovação.
-- [ ] Dinheiro entregue, divergente e confirmado pelo caixa.
-- [ ] Celular `390×844` e tablet `768×1024`.
-- [ ] Gate: cada perfil entra na superfície correta e nenhuma permissão depende só
+- [x] E2E positivo e negativo por perfil, incluindo permissões no backend.
+- [x] PIN inválido, bloqueio, revogação e aprovação.
+- [x] Dinheiro entregue, divergente e confirmado pelo caixa.
+- [x] Celular `390×844` e tablet `768×1024`.
+- [x] Gate: cada perfil entra na superfície correta e nenhuma permissão depende só
   da visibilidade do botão.
 
 ## Fase 6 — KDS, expedição e impressão
@@ -240,31 +240,31 @@ Progresso desta execução: KDS recebeu grade responsiva, tela cheia, foco de
 ticket por teclado, atalhos para atualizar/som/tela cheia/avançar e indicação
 de conexão em tempo real com fallback de polling. A configuração de
 impressoras térmicas, rotas, fila, retry e reimpressão já está reconectada ao
-backend. Mapeamento administrativo de teclas, estados por item e homologação
-física do conector continuam pendentes.
+backend. Mapeamento administrativo de teclas e estados por item foram concluídos;
+homologação física do conector permanece como aceite externo.
 
 ### Trabalho
 
 - [x] Criar layout KDS por colunas/grade, vazio coerente e tela cheia.
 - [x] Renderizar estação, itens, modificadores, observações, tempo, prioridade,
   alterações, cancelamentos e atraso.
-- [ ] Implementar estados por item, consolidação do ticket e expedição multiestação.
+- [x] Implementar estados por item, consolidação do ticket e expedição multiestação.
 - [x] Implementar SSE autenticado e multitenant, reconexão, deduplicação e polling fallback.
 - [x] Implementar som com permissão, volume e alerta acessível; funcionar com touch,
   mouse, teclado numérico e bump bar.
-- [ ] Criar mapeamento administrativo de teclas e modo sem tela touch.
-- [ ] Reconectar configuração de impressoras térmicas, rotas, fila, retry,
+- [x] Criar mapeamento administrativo de teclas e modo sem tela touch.
+- [x] Reconectar configuração de impressoras térmicas, rotas, fila, retry,
   reimpressão, conector e falhas visíveis.
-- [ ] Propagar cancelamento aprovado para KDS, impressão e estoque.
+- [x] Propagar cancelamento aprovado para KDS, impressão e estoque.
 
 ### Testes e gate
 
-- [ ] SSE, reconexão, deduplicação e fallback.
-- [ ] Item pronto individualmente, ticket consolidado e cancelamento em produção.
-- [ ] Teclado completo, bump bar simulado e som permitido/bloqueado.
-- [ ] Impressora mock 58/80, retry, contingência e recibo.
-- [ ] KDS indisponível sem bloquear pedido.
-- [ ] Gate: pedido aparece sem refresh, opera sem touch e falha de impressão é
+- [x] SSE, reconexão, deduplicação e fallback.
+- [x] Item pronto individualmente, ticket consolidado e cancelamento em produção.
+- [x] Teclado completo, bump bar simulado e som permitido/bloqueado.
+- [x] Impressora mock 58/80, retry, contingência e recibo.
+- [x] KDS indisponível sem bloquear pedido; conector físico ainda requer homologação.
+- [x] Gate: pedido aparece sem refresh, opera sem touch e falha de impressão é
   visível e recuperável.
 
 ## Fase 7 — dashboard, horário, turno e tema

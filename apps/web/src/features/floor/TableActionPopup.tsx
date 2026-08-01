@@ -1,15 +1,18 @@
 "use client";
 
 import {
+  Archive,
   ArrowRight,
   BookOpen,
   Check,
   CreditCard,
   FileText,
   Flame,
+  LockKeyhole,
   Plus,
   Receipt,
   RefreshCw,
+  Settings2,
   ShoppingBag,
   Unlink,
   X,
@@ -23,6 +26,8 @@ type Action = {
   icon: React.ReactNode;
   destructive?: boolean;
 };
+
+type TableShape = "rounded" | "square" | "circle" | "booth";
 
 const STATUS_LABELS: Record<string, string> = {
   free: "Livre",
@@ -56,11 +61,23 @@ function getActions(table: DiningTable): Action[] {
     case "free":
       actions.push({ id: "new-order", label: "Novo pedido", icon: <Plus size={16} /> });
       actions.push({ id: "reserve", label: "Reservar", icon: <BookOpen size={16} /> });
+      actions.push({ id: "edit-table", label: "Editar mesa", icon: <Settings2 size={16} /> });
+      actions.push({ id: "block-table", label: "Bloquear mesa", icon: <LockKeyhole size={16} /> });
+      actions.push({
+        id: "archive-table",
+        label: "Arquivar mesa",
+        icon: <Archive size={16} />,
+        destructive: true,
+      });
       actions.push({
         id: "mark-cleaning",
         label: "Marcar como a limpar",
         icon: <RefreshCw size={16} />,
       });
+      break;
+    case "blocked":
+      actions.push({ id: "unblock-table", label: "Desbloquear mesa", icon: <Check size={16} /> });
+      actions.push({ id: "edit-table", label: "Editar mesa", icon: <Settings2 size={16} /> });
       break;
     case "cleaning":
       actions.push({ id: "release-table", label: "Liberar mesa", icon: <Check size={16} /> });
@@ -121,7 +138,12 @@ export function TableActionPopup({
 }: TableActionPopupProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [showReserveInput, setShowReserveInput] = useState(false);
+  const [showEditInput, setShowEditInput] = useState(false);
   const [reserveName, setReserveName] = useState(table.reservedName ?? "");
+  const [editSeats, setEditSeats] = useState(String(table.seats));
+  const [editShape, setEditShape] = useState<TableShape>(
+    (table.shape as TableShape | null | undefined) ?? "rounded",
+  );
   const actions = getActions(table);
 
   useEffect(() => {
@@ -146,7 +168,18 @@ export function TableActionPopup({
       setShowReserveInput(true);
       return;
     }
+    if (actionId === "edit-table") {
+      setShowEditInput(true);
+      return;
+    }
     onAction(actionId, table);
+    onClose();
+  }
+
+  function handleEdit() {
+    const seats = Number(editSeats);
+    if (!Number.isInteger(seats) || seats < 1 || seats > 40) return;
+    onAction("edit-table", table, { seats, shape: editShape });
     onClose();
   }
 
@@ -218,7 +251,47 @@ export function TableActionPopup({
         )}
       </div>
 
-      {showReserveInput ? (
+      {showEditInput ? (
+        <div style={{ padding: "8px 14px 12px" }}>
+          <label
+            style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: 4 }}
+          >
+            Lugares
+            <input
+              value={editSeats}
+              onChange={(event) => setEditSeats(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <label
+            style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: 8 }}
+          >
+            Formato
+            <select
+              value={editShape}
+              onChange={(event) => setEditShape(event.target.value as TableShape)}
+            >
+              <option value="rounded">Redonda</option>
+              <option value="square">Quadrada</option>
+              <option value="circle">Circular</option>
+              <option value="booth">Bancada</option>
+            </select>
+          </label>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              className="button primary"
+              type="button"
+              style={{ flex: 1 }}
+              onClick={handleEdit}
+            >
+              Salvar
+            </button>
+            <button className="button ghost" type="button" onClick={() => setShowEditInput(false)}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : showReserveInput ? (
         <div style={{ padding: "8px 14px 12px" }}>
           <label
             htmlFor="table-reservation-name"

@@ -23,6 +23,7 @@ export type BranchOperationalSettings = {
   allowWaiterPayments: boolean;
   defaultTheme: ThemeMode;
   defaultKdsInputMode: KdsInputMode;
+  kdsShortcuts: Record<string, string>;
 };
 
 export type BusinessHourInterval = {

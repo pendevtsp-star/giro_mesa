@@ -78,4 +78,62 @@ export class KdsService {
       audit: "kds.ticket_updated",
     };
   }
+
+  async updateTicketItem(
+    context: TenantContext,
+    ticketId: string,
+    itemId: string,
+    status: OrderItemStatus,
+  ) {
+    const conditions = [eq(kdsTickets.tenantId, context.tenantId), eq(kdsTickets.id, ticketId)];
+    if (context.branchId) conditions.push(eq(kdsTickets.branchId, context.branchId));
+    const [ticket] = await this.database.db
+      .select()
+      .from(kdsTickets)
+      .where(and(...conditions))
+      .limit(1);
+    if (!ticket) throw new NotFoundException("KDS ticket not found");
+    const payload = ticket.payload ?? {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const current = items.find(
+      (item) =>
+        Boolean(item) && typeof item === "object" && (item as { id?: unknown }).id === itemId,
+    ) as Record<string, unknown> | undefined;
+    if (!current) throw new NotFoundException("KDS item not found");
+    const currentStatus =
+      typeof current.status === "string" ? (current.status as OrderItemStatus) : "sent";
+    stateMachines.assertOrderItemTransition(currentStatus, status);
+    const nextItems = items.map((item) =>
+      item && typeof item === "object" && (item as { id?: unknown }).id === itemId
+        ? { ...(item as Record<string, unknown>), status }
+        : item,
+    );
+    const statuses = nextItems.map((item) =>
+      typeof item === "object" &&
+      item &&
+      typeof (item as Record<string, unknown>).status === "string"
+        ? (item as Record<string, unknown>).status
+        : "sent",
+    );
+    const nextTicketStatus: OrderItemStatus = statuses.every(
+      (itemStatus) => itemStatus === "served",
+    )
+      ? "served"
+      : statuses.some((itemStatus) => itemStatus === "ready")
+        ? "ready"
+        : statuses.some((itemStatus) => itemStatus === "preparing")
+          ? "preparing"
+          : "sent";
+    const [updated] = await this.database.db
+      .update(kdsTickets)
+      .set({
+        payload: { ...payload, items: nextItems },
+        status: nextTicketStatus,
+        bumpedAt: nextTicketStatus === "ready" ? new Date() : ticket.bumpedAt,
+        updatedAt: new Date(),
+      })
+      .where(and(...conditions))
+      .returning();
+    return { ...updated, audit: "kds.item_updated" };
+  }
 }

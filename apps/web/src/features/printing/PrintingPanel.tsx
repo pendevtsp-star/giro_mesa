@@ -211,7 +211,7 @@ export function PrintingPanel({
                   }))
                 }
               >
-                <option value="tcp">Rede TCP/IP</option>
+                <option value="network">Rede TCP/IP</option>
                 <option value="usb">USB</option>
               </select>
             </label>

@@ -72,6 +72,7 @@ const operationalSettingsSchema = z
     allowWaiterPayments: z.boolean().optional(),
     defaultTheme: z.enum(["light", "dark", "system"]).optional(),
     defaultKdsInputMode: z.enum(["touch", "keyboard", "hybrid", "printer"]).optional(),
+    kdsShortcuts: z.record(z.string().min(1).max(20), z.string().min(1).max(20)).optional(),
   })
   .refine((input) => Object.keys(input).length > 0, "At least one setting is required");
 const preferencesSchema = z.object({
@@ -118,6 +119,8 @@ const createTableSchema = z.object({
   code: z.string().min(1).max(40),
   name: z.string().min(1).max(80),
   seats: z.number().int().min(1).max(40),
+  shape: z.enum(["rounded", "square", "circle", "booth"]).optional(),
+  areaId: z.string().uuid().nullable().optional(),
 });
 
 const mergeTablesSchema = z.object({
@@ -183,12 +186,25 @@ export class PosController {
       .object({
         status: z.enum(tableStatuses).optional(),
         reservedName: z.string().max(120).nullable().optional(),
+        seats: z.number().int().min(1).max(40).optional(),
+        shape: z.enum(["rounded", "square", "circle", "booth"]).optional(),
+        areaId: z.string().uuid().nullable().optional(),
+        archived: z.boolean().optional(),
         expectedVersion: z.number().int().positive().optional(),
       })
       .parse(body);
     const updates = {
       ...(parsed.status !== undefined ? { status: parsed.status } : {}),
       ...(parsed.reservedName !== undefined ? { reservedName: parsed.reservedName } : {}),
+      ...(parsed.seats !== undefined ? { seats: parsed.seats } : {}),
+      ...(parsed.shape !== undefined ? { shape: parsed.shape } : {}),
+      ...(parsed.areaId !== undefined ? { areaId: parsed.areaId } : {}),
+      ...(parsed.archived !== undefined
+        ? {
+            archivedAt: parsed.archived ? new Date() : null,
+            ...(parsed.archived ? { status: "blocked" as const } : {}),
+          }
+        : {}),
     };
     return {
       data: await this.posService.updateTable(context, tableId, updates, parsed.expectedVersion),
@@ -371,11 +387,39 @@ export class PosController {
     return this.posService.setPersonalPin(context, input.branchId, input.pin);
   }
 
+  @Post("operator-pin/verify")
+  async verifyPersonalPin(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers);
+    const input = z
+      .object({ branchId: z.string().uuid(), pin: z.string().regex(/^\d{4,8}$/) })
+      .parse(body);
+    return this.posService.verifyPersonalPin(context, input.branchId, input.pin);
+  }
+
   @Post("devices")
   async registerOperationalDevice(@Headers() headers: HeaderRecord, @Body() body: unknown) {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers, "tenant:manage");
     return this.posService.registerOperationalDevice(context, deviceSchema.parse(body));
+  }
+
+  @Get("devices")
+  async listOperationalDevices(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId?: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "tenant:manage");
+    return { data: await this.posService.listOperationalDevices(context, branchId) };
+  }
+
+  @Post("devices/:deviceId/revoke")
+  async revokeOperationalDevice(
+    @Headers() headers: HeaderRecord,
+    @Param("deviceId") deviceId: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "tenant:manage");
+    return this.posService.revokeOperationalDevice(context, z.string().uuid().parse(deviceId));
   }
 
   @Get("tables/:tableId/history")

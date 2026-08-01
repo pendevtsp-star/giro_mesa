@@ -13,11 +13,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildRealtimeEventsUrl,
+  getBranchOperationalSettings,
   getSession,
   type KdsTicket,
   listKdsStations,
   listKdsTickets,
   updateKdsTicket,
+  updateKdsTicketItem,
 } from "../../../lib/giromesa-api";
 
 const statusLabel: Record<string, string> = {
@@ -33,6 +35,7 @@ type KdsPayloadItem = {
   quantity?: string | number;
   notes?: string | null;
   modifiers?: unknown;
+  status?: "sent" | "preparing" | "ready" | "served";
 };
 
 type KdsCancellation = {
@@ -68,6 +71,22 @@ function readModifierNames(modifiers: unknown) {
     : [];
 }
 
+const defaultShortcuts = {
+  refresh: "r",
+  sound: "s",
+  fullscreen: "f",
+  advance: " ",
+  up: "ArrowUp",
+  down: "ArrowDown",
+};
+
+function matchesShortcut(event: KeyboardEvent, shortcut: string | undefined) {
+  if (!shortcut) return false;
+  return shortcut.length === 1
+    ? event.key.toLowerCase() === shortcut.toLowerCase()
+    : event.key === shortcut;
+}
+
 export default function KdsPage() {
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
   const [station, setStation] = useState("all");
@@ -82,6 +101,7 @@ export default function KdsPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [focusedTicketId, setFocusedTicketId] = useState<string | null>(null);
   const [stations, setStations] = useState<Array<{ id: string; name: string }>>([]);
+  const [shortcuts, setShortcuts] = useState(defaultShortcuts);
   const soundEnabledRef = useRef(false);
   const volumeRef = useRef(0.65);
   const initializedRef = useRef(false);
@@ -89,7 +109,15 @@ export default function KdsPage() {
   const pageRef = useRef<HTMLElement | null>(null);
   async function load() {
     try {
-      const [ticketRows, stationRows] = await Promise.all([listKdsTickets(), listKdsStations()]);
+      const [ticketRows, stationRows, session] = await Promise.all([
+        listKdsTickets(),
+        listKdsStations(),
+        getSession(),
+      ]);
+      if (session.branchId) {
+        const settings = await getBranchOperationalSettings(session.branchId);
+        setShortcuts({ ...defaultShortcuts, ...settings.kdsShortcuts });
+      }
       setTickets((current) => {
         const currentIds = new Set(current.map((ticket) => ticket.id));
         if (
@@ -171,6 +199,18 @@ export default function KdsPage() {
       window.navigator.vibrate?.(80);
     }
   }
+
+  async function advanceItem(ticket: KdsTicket, item: KdsPayloadItem) {
+    if (!item.id) return;
+    const current = item.status ?? "sent";
+    const next = current === "sent" ? "preparing" : current === "preparing" ? "ready" : "served";
+    const updated = await updateKdsTicketItem(ticket.id, item.id, next);
+    setTickets((currentTickets) =>
+      currentTickets.map((currentTicket) =>
+        currentTicket.id === ticket.id ? { ...currentTicket, ...updated } : currentTicket,
+      ),
+    );
+  }
   async function toggleSound() {
     const next = !soundEnabled;
     if (next) {
@@ -208,20 +248,20 @@ export default function KdsPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, select, textarea, button")) return;
-      if (event.key.toLowerCase() === "r") {
+      if (matchesShortcut(event, shortcuts.refresh)) {
         event.preventDefault();
         void load();
-      } else if (event.key.toLowerCase() === "f") {
+      } else if (matchesShortcut(event, shortcuts.fullscreen)) {
         event.preventDefault();
         void toggleFullscreen();
-      } else if (event.key.toLowerCase() === "s") {
+      } else if (matchesShortcut(event, shortcuts.sound)) {
         event.preventDefault();
         void toggleSound();
-      } else if (event.key === " " && focusedTicketId) {
+      } else if (matchesShortcut(event, shortcuts.advance) && focusedTicketId) {
         event.preventDefault();
         const ticket = visible.find((item) => item.id === focusedTicketId);
         if (ticket) void advance(ticket);
-      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      } else if (matchesShortcut(event, shortcuts.down) || matchesShortcut(event, shortcuts.up)) {
         event.preventDefault();
         if (!visible.length) return;
         const currentIndex = visible.findIndex((item) => item.id === focusedTicketId);
@@ -229,7 +269,9 @@ export default function KdsPage() {
           setFocusedTicketId(visible[0]?.id ?? null);
           return;
         }
-        const nextIndex = event.key === "ArrowDown" ? currentIndex + 1 : currentIndex - 1;
+        const nextIndex = matchesShortcut(event, shortcuts.down)
+          ? currentIndex + 1
+          : currentIndex - 1;
         setFocusedTicketId(visible[(nextIndex + visible.length) % visible.length]?.id ?? null);
       }
     };
@@ -239,7 +281,7 @@ export default function KdsPage() {
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [focusedTicketId, visible]);
+  }, [focusedTicketId, shortcuts, visible]);
 
   return (
     <main className="kds-page" ref={pageRef}>
@@ -280,7 +322,7 @@ export default function KdsPage() {
             aria-label={isFullscreen ? "Sair da tela cheia" : "Abrir tela cheia"}
             className="button secondary compact"
             onClick={() => void toggleFullscreen()}
-            title="Tela cheia (F)"
+            title={`Tela cheia (${shortcuts.fullscreen})`}
             type="button"
           >
             {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
@@ -324,8 +366,13 @@ export default function KdsPage() {
             <option value="served">Entregues</option>
           </select>
         </label>
-        <p className="kds-shortcuts" title="Atalhos disponíveis">
-          <Keyboard size={15} /> R atualizar · S som · F tela cheia · ↑↓ selecionar · Espaço avançar
+        <p className="kds-shortcuts" title="Atalhos configurados pela administração">
+          <Keyboard size={15} />
+          <span>
+            {shortcuts.refresh.toUpperCase()} atualizar · {shortcuts.sound.toUpperCase()} som ·{" "}
+            {shortcuts.fullscreen.toUpperCase()} tela cheia · {shortcuts.up}/{shortcuts.down}{" "}
+            selecionar · {shortcuts.advance === " " ? "Espaço" : shortcuts.advance} avançar
+          </span>
         </p>
       </section>
       <section className="kds-board">
@@ -368,6 +415,21 @@ export default function KdsPage() {
                         </strong>
                         {modifiers.length ? <span>{modifiers.join(" · ")}</span> : null}
                         {item.notes ? <small>{item.notes}</small> : null}
+                        {item.id ? (
+                          <button
+                            className="button ghost compact kds-item-action"
+                            type="button"
+                            onClick={() => void advanceItem(ticket, item)}
+                          >
+                            {item.status === "sent" || !item.status
+                              ? "Iniciar item"
+                              : item.status === "preparing"
+                                ? "Marcar item pronto"
+                                : item.status === "ready"
+                                  ? "Entregar item"
+                                  : "Entregue"}
+                          </button>
+                        ) : null}
                       </li>
                     );
                   })}

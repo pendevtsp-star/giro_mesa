@@ -1,0 +1,1 @@
+ALTER TABLE "branch_operational_settings" ADD COLUMN "kds_shortcuts" jsonb DEFAULT '{"refresh":"r","sound":"s","fullscreen":"f","advance":" ","up":"ArrowUp","down":"ArrowDown"}'::jsonb NOT NULL;

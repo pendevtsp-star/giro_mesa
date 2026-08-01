@@ -45,7 +45,7 @@ const emptyConnector: PrinterConnectorConfig = {
 const initialPrinterForm = {
   name: "",
   role: "kitchen",
-  connectionType: "tcp",
+  connectionType: "network",
   address: "",
   port: "9100",
   paperWidth: "80",

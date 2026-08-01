@@ -9,6 +9,9 @@ import { KdsService } from "./kds.service";
 const updateTicketSchema = z.object({
   status: z.enum(orderItemStatuses),
 });
+const updateTicketItemSchema = z.object({
+  status: z.enum(orderItemStatuses),
+});
 
 @Controller("kds")
 export class KdsController {
@@ -45,6 +48,23 @@ export class KdsController {
     const context = await this.contextWithPermission(headers);
     const input = updateTicketSchema.parse(body);
     return this.kdsService.updateTicket(context, ticketId, input.status);
+  }
+
+  @Patch("tickets/:ticketId/items/:itemId")
+  async updateTicketItem(
+    @Param("ticketId") ticketId: string,
+    @Param("itemId") itemId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers);
+    return this.kdsService.updateTicketItem(
+      context,
+      ticketId,
+      itemId,
+      updateTicketItemSchema.parse(body).status,
+    );
   }
 
   private async contextWithPermission(headers: HeaderRecord) {

@@ -81,6 +81,12 @@ function controllerWithContext(permissions: string[]) {
       cashHandoverStatus: "received",
       audit: "cash_handover.received",
     })),
+    verifyPersonalPin: vi.fn(async (_context, branchId, _pin) => ({ valid: true, branchId })),
+    listOperationalDevices: vi.fn(async () => []),
+    revokeOperationalDevice: vi.fn(async (_context, deviceId) => ({
+      id: deviceId,
+      status: "revoked",
+    })),
   } as unknown as PosService;
 
   return {
@@ -90,6 +96,23 @@ function controllerWithContext(permissions: string[]) {
 }
 
 describe("PosController", () => {
+  it("keeps PIN verification and device revocation behind tenant management boundaries", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+    const branchId = "11111111-1111-4111-8111-111111111111";
+
+    await expect(controller.verifyPersonalPin({}, { branchId, pin: "1234" })).resolves.toEqual({
+      valid: true,
+      branchId,
+    });
+    expect(posService.verifyPersonalPin).toHaveBeenCalled();
+    await expect(controller.listOperationalDevices({}, branchId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await expect(controller.revokeOperationalDevice({}, branchId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
   it("requires payment permission to list order payments", async () => {
     const { controller } = controllerWithContext(["reports:read"]);
 
