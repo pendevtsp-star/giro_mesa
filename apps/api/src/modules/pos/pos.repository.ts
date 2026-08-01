@@ -27,28 +27,34 @@ export class PosRepository {
     context: TenantContext,
     input: { branchId: string; code: string; name: string; seats: number },
   ) {
-    const [table] = await this.database.db
-      .insert(diningTables)
-      .values({
-        tenantId: context.tenantId,
-        branchId: input.branchId,
-        code: input.code.trim().toUpperCase(),
-        name: input.name.trim(),
-        seats: input.seats,
-      })
-      .returning();
-    if (!table) throw new Error("Failed to create table");
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "dining_table.created",
-      entityType: "dining_table",
-      entityId: table.id,
-      metadata: { code: table.code, seats: table.seats },
+    await this.ensureBranchBelongsToTenant(context, input.branchId);
+    return this.database.db.transaction(async (tx) => {
+      const [table] = await tx
+        .insert(diningTables)
+        .values({
+          tenantId: context.tenantId,
+          branchId: input.branchId,
+          code: input.code.trim().toUpperCase(),
+          name: input.name.trim(),
+          seats: input.seats,
+        })
+        .returning();
+      if (!table) throw new Error("Failed to create table");
+      await this.insertAuditLog(
+        context,
+        {
+          branchId: input.branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "dining_table.created",
+          entityType: "dining_table",
+          entityId: table.id,
+          metadata: { code: table.code, seats: table.seats },
+        },
+        tx,
+      );
+      return table;
     });
-    return table;
   }
 
   async listTableHistory(context: TenantContext, tableId: string, limit = 24) {
@@ -119,72 +125,77 @@ export class PosRepository {
       layout: Record<string, { x: number; y: number }>;
     },
   ) {
-    const [branch] = await this.database.db
-      .select({ id: branches.id })
-      .from(branches)
-      .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId)))
-      .limit(1);
-    if (!branch) throw new NotFoundException("Branch not found");
-    const [existing] = await this.database.db
-      .select({ id: floorPlans.id, version: floorPlans.version })
-      .from(floorPlans)
-      .where(
-        and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, input.branchId)),
-      )
-      .limit(1);
-    let plan: typeof floorPlans.$inferSelect | undefined;
-    if (existing) {
-      if (existing.version !== input.expectedVersion) {
-        throw new ConflictException({
-          error: "floor_plan_version_conflict",
-          currentVersion: existing.version,
-        });
-      }
-      [plan] = await this.database.db
-        .update(floorPlans)
-        .set({
-          layout: input.layout,
-          version: sql`${floorPlans.version} + 1`,
-          updatedAt: new Date(),
-        })
+    return this.database.db.transaction(async (tx) => {
+      const [branch] = await tx
+        .select({ id: branches.id })
+        .from(branches)
+        .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId)))
+        .limit(1);
+      if (!branch) throw new NotFoundException("Branch not found");
+      const [existing] = await tx
+        .select({ id: floorPlans.id, version: floorPlans.version })
+        .from(floorPlans)
         .where(
-          and(
-            eq(floorPlans.id, existing.id),
-            eq(floorPlans.tenantId, context.tenantId),
-            eq(floorPlans.version, input.expectedVersion),
-          ),
+          and(eq(floorPlans.tenantId, context.tenantId), eq(floorPlans.branchId, input.branchId)),
         )
-        .returning();
-      if (!plan) {
-        throw new ConflictException({ error: "floor_plan_version_conflict" });
+        .limit(1);
+      let plan: typeof floorPlans.$inferSelect | undefined;
+      if (existing) {
+        if (existing.version !== input.expectedVersion) {
+          throw new ConflictException({
+            error: "floor_plan_version_conflict",
+            currentVersion: existing.version,
+          });
+        }
+        [plan] = await tx
+          .update(floorPlans)
+          .set({
+            layout: input.layout,
+            version: sql`${floorPlans.version} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(floorPlans.id, existing.id),
+              eq(floorPlans.tenantId, context.tenantId),
+              eq(floorPlans.version, input.expectedVersion),
+            ),
+          )
+          .returning();
+        if (!plan) {
+          throw new ConflictException({ error: "floor_plan_version_conflict" });
+        }
+      } else {
+        if (input.expectedVersion !== 0) {
+          throw new ConflictException({ error: "floor_plan_version_conflict", currentVersion: 0 });
+        }
+        [plan] = await tx
+          .insert(floorPlans)
+          .values({
+            tenantId: context.tenantId,
+            branchId: input.branchId,
+            name: "Salão principal",
+            layout: input.layout,
+            version: 1,
+          })
+          .returning();
       }
-    } else {
-      if (input.expectedVersion !== 0) {
-        throw new ConflictException({ error: "floor_plan_version_conflict", currentVersion: 0 });
-      }
-      [plan] = await this.database.db
-        .insert(floorPlans)
-        .values({
-          tenantId: context.tenantId,
+      if (!plan) throw new Error("Failed to save floor plan");
+      await this.insertAuditLog(
+        context,
+        {
           branchId: input.branchId,
-          name: "Salão principal",
-          layout: input.layout,
-          version: 1,
-        })
-        .returning();
-    }
-    if (!plan) throw new Error("Failed to save floor plan");
-    await this.database.db.insert(auditLogs).values({
-      tenantId: context.tenantId,
-      branchId: input.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "floor_plan.updated",
-      entityType: "floor_plan",
-      entityId: plan.id,
-      metadata: { tableCount: Object.keys(input.layout).length, version: plan.version },
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "floor_plan.updated",
+          entityType: "floor_plan",
+          entityId: plan.id,
+          metadata: { tableCount: Object.keys(input.layout).length, version: plan.version },
+        },
+        tx,
+      );
+      return plan;
     });
-    return plan;
   }
 
   async ensureBranchBelongsToTenant(context: TenantContext, branchId: string) {
@@ -217,37 +228,58 @@ export class PosRepository {
     context: TenantContext,
     tableId: string,
     data: Partial<Pick<typeof diningTables.$inferInsert, "status" | "reservedName">>,
+    expectedVersion?: number,
   ) {
-    const [existing] = await this.database.db
-      .select({ id: diningTables.id, branchId: diningTables.branchId })
-      .from(diningTables)
-      .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
-      .limit(1);
-    if (!existing) throw new NotFoundException("Table not found");
+    return this.database.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({
+          id: diningTables.id,
+          branchId: diningTables.branchId,
+          version: diningTables.version,
+        })
+        .from(diningTables)
+        .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, tableId)))
+        .limit(1);
+      if (!existing) throw new NotFoundException("Table not found");
+      if (expectedVersion !== undefined && expectedVersion !== existing.version) {
+        throw new ConflictException({
+          error: "dining_table_version_conflict",
+          currentVersion: existing.version,
+        });
+      }
 
-    const [updated] = await this.database.db
-      .update(diningTables)
-      .set({ ...data, version: sql`${diningTables.version} + 1`, updatedAt: new Date() })
-      .where(
-        and(
-          eq(diningTables.tenantId, context.tenantId),
-          eq(diningTables.branchId, existing.branchId),
-          eq(diningTables.id, tableId),
-        ),
-      )
-      .returning();
+      const [updated] = await tx
+        .update(diningTables)
+        .set({ ...data, version: sql`${diningTables.version} + 1`, updatedAt: new Date() })
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, existing.branchId),
+            eq(diningTables.id, tableId),
+            ...(expectedVersion !== undefined ? [eq(diningTables.version, expectedVersion)] : []),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        throw new ConflictException({ error: "dining_table_version_conflict" });
+      }
 
-    await this.insertAuditLog(context, {
-      branchId: existing.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "dining_table.updated",
-      entityType: "dining_table",
-      entityId: tableId,
-      metadata: data,
+      await this.insertAuditLog(
+        context,
+        {
+          branchId: existing.branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "dining_table.updated",
+          entityType: "dining_table",
+          entityId: tableId,
+          metadata: { ...data, previousVersion: existing.version, version: updated.version },
+        },
+        tx,
+      );
+
+      return updated;
     });
-
-    return updated;
   }
 
   async mergeTables(context: TenantContext, branchId: string, tableIds: string[]) {

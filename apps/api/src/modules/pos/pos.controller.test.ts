@@ -16,6 +16,11 @@ function controllerWithContext(permissions: string[]) {
   } as unknown as AuthService;
 
   const posService = {
+    updateTable: vi.fn(async (_context, tableId, input, expectedVersion) => ({
+      id: tableId,
+      ...input,
+      version: expectedVersion + 1,
+    })),
     registerPayment: vi.fn(async (_context, _orderId, input) => ({
       id: "payment-id",
       amountCents: input.amountCents,
@@ -340,5 +345,22 @@ describe("PosController", () => {
       "33333333-3333-4333-8333-333333333333",
     );
     expect(result.cashHandoverStatus).toBe("received");
+  });
+
+  it("forwards the table revision for optimistic concurrency", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+
+    await controller.updateTable(
+      "11111111-1111-4111-8111-111111111111",
+      {},
+      { status: "occupied", expectedVersion: 3 },
+    );
+
+    expect(posService.updateTable).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      "11111111-1111-4111-8111-111111111111",
+      { status: "occupied" },
+      3,
+    );
   });
 });

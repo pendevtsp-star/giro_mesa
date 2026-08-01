@@ -1,0 +1,438 @@
+# GiroMesa — plano único de estabilização, redesign e conclusão
+
+**Data de consolidação:** 2026-08-01  
+**Substitui:** `2026-07-31-redesign-operacional-plan.md` e `2026-07-28-estabilizacao-mestra-plan.md`  
+**Documento de referência visual/técnica:** `docs/superpowers/specs/2026-07-31-redesign-operacional-design.md`
+
+Este é o único plano válido para a implementação do GiroMesa. O plano de
+31/07 foi usado como base quando havia duplicidade; itens exclusivos do plano
+de 28/07 foram incorporados nas fases correspondentes. Os dois documentos
+anteriores devem permanecer excluídos para evitar execução paralela.
+
+## Regras de execução
+
+1. Preservar URLs públicas e operacionais, QR Code e funcionalidades existentes.
+2. Manter dois shells: administrativo e operacional.
+3. Usar um núcleo único para pedidos, pagamentos, produção, estoque, caixa e auditoria.
+4. O backend é autoridade para tenant, filial, permissão, estado, valores e transições.
+5. Toda operação financeira, destrutiva ou concorrente exige transação, versão,
+   idempotência e auditoria proporcionais ao risco.
+6. Dados demo pertencem explicitamente a um tenant demo; tenant real nunca recebe
+   fallback silencioso.
+7. Não criar UI decorativa: toda ação precisa de endpoint, transição e estado de erro.
+8. Não publicar integração produtiva antes dos gates internos.
+9. Nenhum segredo, senha de homologação ou token real entra no repositório.
+10. O WhatsApp, quando implementado, será via QR Code e conexão não oficial; isso
+    deve ficar explícito na interface e na documentação.
+11. Fases entram por flags quando necessário, mas a aplicação final será uma única
+    substituição funcional, sem UI legada ou fallback antigo após o aceite.
+
+## Checklist mestre de conclusão
+
+As caixas só são marcadas depois do gate da fase e da evidência registrada.
+
+- [x] Fase 0 — baseline, matriz de cobertura e prevenção de regressões.
+- [x] Fase 1 — domínio, dados, segurança e contratos.
+- [ ] Fase 2 — fundação visual, shells e navegação.
+- [ ] Fase 3 — sessão operacional compartilhada e PDV.
+- [ ] Fase 4 — salão, reservas e fila.
+- [ ] Fase 5 — garçom, perfis, PIN e dispositivos.
+- [ ] Fase 6 — KDS, expedição e impressão.
+- [ ] Fase 7 — dashboard, horário, turno e tema.
+- [ ] Fase 8 — limpeza, seed e cenário de homologação.
+- [ ] Fase 9 — QR personalizado por mesa.
+- [ ] Fase 10 — integrações externas.
+- [ ] Fase 11 — aceite integral técnico, visual e operacional.
+- [ ] Fase 12 — handoff, backup e corte único.
+
+### Registro de progresso já existente
+
+Há implementação parcial em várias fases, mas nenhum gate deve ser considerado
+fechado apenas por existir código:
+
+- Fase 0: concluída no documento `docs/superpowers/baselines/2026-07-31-phase-0-baseline.md`.
+- Fase 1: fundação operacional iniciada em `75701e7`.
+- Fase 1: gate fechado nesta execução; transações de mesa/mapa/auditoria e revisão
+  otimista de mesa foram concluídas em conjunto com as fundações já existentes.
+- Fase 2: fundação visual iniciada em `03a6ed2`.
+- Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
+- O checklist continua aberto até os testes, QA e evidências de cada gate serem
+  concluídos e revisados.
+
+## Fase 0 — baseline e prevenção de regressões
+
+**Estado:** concluída em 2026-07-31.  
+**Evidência:** `docs/superpowers/baselines/2026-07-31-phase-0-baseline.md`.
+
+### Entregas
+
+- [x] Registrar branch, HEAD, worktree e comandos oficiais.
+- [x] Inventariar rotas, perfis, permissões, APIs, migrations, tabelas, eventos,
+  componentes, CSS e dependências.
+- [x] Mapear ações para endpoint, transição, permissão e auditoria.
+- [x] Identificar ações decorativas, fallbacks demo, hardcodes e estados locais duplicados.
+- [x] Capturar screenshots nos viewports de aceite.
+- [x] Registrar lint, typecheck, unitários, integração, E2E e build de referência.
+- [x] Confirmar o contrato GiroMesa–Dose Club e as migrations pendentes.
+
+### Gate
+
+Baseline reproduzível e lacunas classificadas como frontend, contrato, dado,
+permissão ou infraestrutura.
+
+## Fase 1 — domínio, dados, segurança e contratos
+
+### Trabalho
+
+- [x] Reutilizar pedidos, pagamentos, split, descontos, cancelamentos, aprovações,
+  floor plan, reservas, fila, KDS, impressão, caixa e turno existentes.
+- [x] Passar a transação Drizzle aos repositories de pedido, pagamento, caixa,
+  estoque, auditoria e outbox.
+- [x] Aplicar `expectedVersion` e resposta `409` em mutações concorrentes.
+- [x] Fazer idempotência retornar o resultado anterior para mesma chave/payload e
+  `409` para mismatch.
+- [x] Remover equivalência ampla `pos:* => pos:operate`; exigir a permissão exata.
+- [x] Garantir tenant e filial no mesmo escopo transacional; nenhuma busca de negócio
+  apenas por `id`.
+- [x] Manter demo como propriedade explícita do tenant e bloquear fallback em tenant real.
+- [x] Criar somente lacunas confirmadas: reserva N:N, horários e exceções, estado
+  “A limpar”, dispositivo operacional, PIN pessoal, preferências de tema/KDS,
+  comanda ativa, sessão agregada, roteamento de produção e eventos versionados.
+- [x] Usar expand-migrate-contract e impedir migration destrutiva em rollout novo.
+- [x] Atualizar tipos compartilhados e contratos OpenAPI.
+
+### Testes e gate
+
+- [x] Unitários de máquinas de estado, dinheiro e permissões.
+- [x] Integração PostgreSQL em banco vazio e banco de baseline.
+- [x] Isolamento multitenant, concorrência e repetição idempotente.
+- [x] Pelo menos 20 chamadas concorrentes para pagamento, fechamento e pedido QR.
+- [x] Rollback documentado para migrations que alterem dados.
+- [x] Gate: contratos cobertos, constraints aplicadas e nenhuma ação cruza tenant.
+
+## Fase 2 — fundação visual, shells e navegação
+
+### Trabalho
+
+- [ ] Consolidar tokens semânticos de superfície, texto, borda, ação e estados para
+  claro/escuro/automático.
+- [ ] Organizar CSS em tokens, base, componentes, shell e página; importar estilos
+  usados e remover classes inexistentes/órfãs.
+- [ ] Manter shell administrativo para dashboard, catálogo, estoque, relatórios,
+  equipe, configurações, billing e auditoria.
+- [ ] Manter shell operacional em tela cheia para PDV, salão, garçom e KDS.
+- [ ] Canonicalizar `/app/pos`, `/app/salon`, `/app/waiter` e `/app/kds`, preservando
+  `tableId`, filial e tarefa.
+- [ ] Criar componentes comuns de botão, campo, select, filtro, card, tabela,
+  drawer, diálogo, toast, skeleton, vazio, erro, offline, conflito, permissão e PIN.
+- [ ] Padronizar logo, branding, foco, contraste AA, alvos touch e ícones; emojis são
+  proibidos no código ativo.
+- [ ] Remover links fixos de tenant/mesa e fallback demo em tenant real.
+
+### Testes e gate
+
+- [ ] Story/harness dos componentes essenciais.
+- [ ] Screenshots em `1440×900`, `1024×768`, `768×1024`, `390×844` e KDS `1920×1080`.
+- [ ] Contraste AA, teclado, foco, labels e ausência de overflow.
+- [ ] Tema claro, escuro e automático sem flash de cor.
+- [ ] Gate: todos os shells navegáveis sem regressão de identidade.
+
+## Fase 3 — sessão operacional compartilhada e PDV
+
+### Trabalho
+
+- [ ] Criar cliente único da sessão operacional e invalidar cache por eventos.
+- [ ] Implementar Mesa/Balcão, recuperação da comanda ativa e leitura de `tableId` da rota.
+- [ ] Implementar busca, categorias, favoritos, grade, modificadores, observações,
+  cliente e preferências.
+- [ ] Separar rascunhos de lotes enviados e permitir múltiplos ambientes KDS/impressoras.
+- [ ] Implementar prévia e envio automático para produção.
+- [ ] Traduzir estados por mapa central em português.
+- [ ] Implementar recebimento total/parcial, split por valor/pessoa/item, pagamento
+  misto, dinheiro, troco, referências e histórico.
+- [ ] Implementar desconto, cancelamento e aprovação por PIN com política e auditoria.
+- [ ] Manter dinheiro do garçom como `pending_cash_handover` até confirmação física do caixa.
+- [ ] Implementar fechamento com pendências explícitas, concorrência e idempotência.
+- [ ] Conectar pré-conta e comprovante à fila térmica 58/80, não apenas ao popup A4.
+- [ ] Garantir atalhos de teclado, layout touch e operação rápida em alto fluxo.
+
+### Testes e gate
+
+- [ ] Mesa, balcão, retomada da mesma comanda por dois dispositivos.
+- [ ] Modificadores, observações, múltiplos lotes e rotas Cozinha/Bar/Copa.
+- [ ] Parcial, split, pagamento misto, desconto e cancelamento com/sem aprovação.
+- [ ] Concorrência, duplicação, fechamento e recibo mock 58/80.
+- [ ] Gate: abrir → lançar → produzir → receber → fechar funciona sem ação decorativa
+  e usa a mesma comanda em todas as leituras.
+
+## Fase 4 — salão, reservas e fila
+
+### Trabalho
+
+- [ ] Separar modos Operação e Editar mapa.
+- [ ] Corrigir Pointer Events, pointer capture, pan, zoom, fit-to-content, touch,
+  teclado, cálculo de coordenadas e persistência.
+- [ ] Implementar desfazer local, aviso de mudanças não salvas, setores, formas,
+  capacidade, bloqueio e arquivamento seguro.
+- [ ] Detectar proximidade e sugerir união com prévia; separar mesas reposicionando-as
+  e distribuindo a comanda corretamente.
+- [ ] Implementar drawer rápido para pedido, produção, pré-conta, pagamento e fechamento.
+- [ ] Integrar reservas N:N: mesa(s), chegada, acomodação, cancelamento, no-show e atraso.
+- [ ] Integrar fila: notificação, previsão, chegada, acomodação, desistência e cancelamento.
+- [ ] Exibir ocupação, responsável, duração, reserva e próxima ação no mapa.
+- [ ] Atualizar mapa simultaneamente por eventos e impedir sobrescrita com versão otimista.
+- [ ] Implementar “A limpar” e liberação manual/automática.
+
+### Testes e gate
+
+- [ ] Mouse, touch, teclado, pan, zoom e persistência após reload.
+- [ ] União por aproximação, separação real e conflito simultâneo.
+- [ ] Reserva de uma e várias mesas, fila completa e conflito de acomodação.
+- [ ] Gate: nenhuma ação frequente sai do mapa; reserva/fila abrem atendimento real
+  sem dupla ocupação.
+
+## Fase 5 — garçom, perfis, PIN e dispositivos
+
+### Trabalho
+
+- [ ] Substituir o stepper por central móvel de mesas, chamados, prontos e pendências.
+- [ ] Reutilizar sessão, catálogo, comanda, produção e pagamento do PDV.
+- [ ] Implementar lançamento de produtos, consumo contínuo, entrega, pré-conta,
+  transferência, pagamento parcial/total e múltiplos recebimentos.
+- [ ] Implementar registro de dispositivo, troca rápida de operador e PIN pessoal.
+- [ ] Implementar bloqueio, tentativas, revogação e auditoria.
+- [ ] Manter MFA opcional; exigir somente por política do tenant.
+- [ ] Revisar redirecionamento inicial por proprietário, gerente, caixa, recepção,
+  garçom, cozinha, bar, estoque e financeiro.
+
+### Testes e gate
+
+- [ ] E2E positivo e negativo por perfil, incluindo permissões no backend.
+- [ ] PIN inválido, bloqueio, revogação e aprovação.
+- [ ] Dinheiro entregue, divergente e confirmado pelo caixa.
+- [ ] Celular `390×844` e tablet `768×1024`.
+- [ ] Gate: cada perfil entra na superfície correta e nenhuma permissão depende só
+  da visibilidade do botão.
+
+## Fase 6 — KDS, expedição e impressão
+
+### Trabalho
+
+- [ ] Criar layout KDS por colunas/grade, vazio coerente e tela cheia.
+- [ ] Renderizar estação, itens, modificadores, observações, tempo, prioridade,
+  alterações, cancelamentos e atraso.
+- [ ] Implementar estados por item, consolidação do ticket e expedição multiestação.
+- [ ] Implementar SSE autenticado e multitenant, reconexão, deduplicação e polling fallback.
+- [ ] Implementar som com permissão, volume e alerta acessível; funcionar com touch,
+  mouse, teclado numérico e bump bar.
+- [ ] Criar mapeamento administrativo de teclas e modo sem tela touch.
+- [ ] Reconectar configuração de impressoras térmicas, rotas, fila, retry,
+  reimpressão, conector e falhas visíveis.
+- [ ] Propagar cancelamento aprovado para KDS, impressão e estoque.
+
+### Testes e gate
+
+- [ ] SSE, reconexão, deduplicação e fallback.
+- [ ] Item pronto individualmente, ticket consolidado e cancelamento em produção.
+- [ ] Teclado completo, bump bar simulado e som permitido/bloqueado.
+- [ ] Impressora mock 58/80, retry, contingência e recibo.
+- [ ] KDS indisponível sem bloquear pedido.
+- [ ] Gate: pedido aparece sem refresh, opera sem touch e falha de impressão é
+  visível e recuperável.
+
+## Fase 7 — dashboard, horário, turno e tema
+
+### Trabalho
+
+- [ ] Criar dashboard estratégico do proprietário e operacional do gerente.
+- [ ] Criar início específico para caixa e recepção; direcionar garçom e produção
+  às superfícies operacionais.
+- [ ] Remover banner permanente de conectividade e cards sem ação.
+- [ ] Implementar gráficos sóbrios, alternativa tabular e indicadores reconciliados
+  com pedidos, caixa e estoque.
+- [ ] Implementar horário semanal, intervalos, madrugada, feriados e exceções.
+- [ ] Implementar checklist de abertura/fechamento e bloqueios de turno.
+- [ ] Integrar caixa, dinheiro pendente, produção e aprovações ao turno.
+- [ ] Implementar tema por usuário/dispositivo e padrão da filial.
+
+### Testes e gate
+
+- [ ] Período vazio, pouco dado, erro real e totais conferidos.
+- [ ] Virada de madrugada, feriado, abertura excepcional e fechamento bloqueado.
+- [ ] Claro, escuro e automático.
+- [ ] Gate: proprietário identifica saúde do negócio e gerente identifica prioridades
+  sem divergência financeira.
+
+## Fase 8 — limpeza e seed de homologação
+
+### Trabalho
+
+- [ ] Remover componentes, CSS, links, emojis e fallbacks antigos.
+- [ ] Verificar que nenhuma ação retorna `undefined` ou apenas muda mensagem.
+- [ ] Fazer backup aplicável antes de recriar banco local ou de homologação.
+- [ ] Criar seed determinístico com tenant e filial de homologação.
+- [ ] Popular catálogo, modificadores, ficha técnica, estoque, clientes, mesas,
+  reservas, fila, pedidos, pagamentos, KDS, impressão e turnos coerentes.
+- [ ] Criar uma conta individual por perfil sem credenciais no Git.
+- [ ] Receber senha por `SEED_TEST_PASSWORD` ou mecanismo equivalente seguro.
+- [ ] Documentar comando de reset/reseed e garantir que o seed duplo não duplica dados.
+
+### Gate
+
+- [ ] Um cenário limpo, reproduzível e visualmente navegável.
+- [ ] Login, permissões e dados coerentes para todos os perfis.
+- [ ] Nenhum dado pessoal real.
+
+## Fase 9 — QR personalizado por mesa
+
+### Administração
+
+- [ ] Criar `/app/qr` no shell administrativo com filial, mesas, status e rotação.
+- [ ] Criar geração individual/lote, prévia e modelos controlados para placa 10×15,
+  adesivo 8×8 e folha A4.
+- [ ] Exportar PDF, PNG e SVG com logo, cor, estabelecimento, mesa e instrução.
+- [ ] Validar contraste, quiet zone, tamanho mínimo e legibilidade.
+- [ ] Rotacionar com confirmação, invalidar material antigo imediatamente e auditar.
+
+### Segurança e operação pública
+
+- [ ] Criar `qr_branch_settings`, versão do token em `dining_tables` e `service_requests`.
+- [ ] Usar URL com token HMAC assinado contendo tenant, filial, mesa e versão.
+- [ ] Exigir `QR_SIGNING_SECRET` fora do repositório em produção.
+- [ ] Resolver tenant/filial no backend; endpoint público nunca confia em `tenant_id`
+  ou `tenantSlug` enviado pelo cliente.
+- [ ] Aplicar rate limit, cooldown, idempotência e proteção contra reenvio.
+- [ ] Cardápio abre sem atendimento; pedido, comanda, pré-conta e chamados exigem mesa ativa.
+- [ ] Permitir acompanhar preparo, chamar garçom e solicitar pré-conta.
+- [ ] Resumo público usa comanda real, não carrinho como fonte de verdade, e não expõe
+  cliente, usuário ou dado pessoal.
+- [ ] Persistir carrinho local e impedir pedido duplicado.
+- [ ] Manter pagamento online desativado até a homologação Asaas.
+
+### Endpoints e gate
+
+- [ ] Administrativos: `/api/v1/qr/settings`, `/tables`, `/tables/:tableId/rotate`,
+  `/artwork`.
+- [ ] Públicos: `/api/v1/qr/public/:token/context`, `/order`, `/orders`,
+  `/service-requests`.
+- [ ] Testar token válido, inválido, rotacionado, mesa inativa, rate limit, duplicidade,
+  comanda e chamados.
+- [ ] Gate: dono gera lote personalizado, rotação desativa o anterior e o cliente
+  conclui os fluxos permitidos em mesa ativa.
+
+## Fase 10 — integrações externas
+
+Executar somente depois de todos os gates internos.
+
+### E-mail e autenticação
+
+- [ ] Homologar SMTP para convites, recuperação, confirmação e alertas, com fila, retry,
+  bounce e rastreio.
+- [ ] Homologar Google OAuth com origens, callback HTTPS, `state`, vínculo, revogação
+  e encaminhamento público `/api/v1` sem duplicação `/api`.
+
+### Cobrança e Dose Club
+
+- [ ] Homologar Asaas em sandbox: cliente, assinatura, checkout, Pix, webhook assinado,
+  idempotência, outbox, reconciliação, trial, inadimplência, cancelamento e entitlements.
+- [ ] Manter GiroMesa, Dose Club e combo como produtos independentes, com acesso por
+  entitlement e interfaces independentes.
+- [ ] Homologar contrato Dose Club 2026-07-30 com IDs reais de teste, filial/produto,
+  consumo individual, combos, estoque compartilhado em ml, concorrência, timeout,
+  retry, 409, estorno, webhook e `integration.shared_inventory`.
+
+### WhatsApp não oficial
+
+- [ ] Implementar adapter/worker isolado, outbox, QR de pareamento e sessão criptografada
+  por tenant/filial.
+- [ ] Exibir claramente “integração não oficial da Meta” na documentação e na interface.
+- [ ] Implementar status, reconexão, revogação, cooldown, rate limit, opt-out e fila.
+- [ ] Cobrir reserva, fila, pedido, delivery, pré-conta e comprovante sem bloquear o núcleo.
+- [ ] Proibir marketing em massa, sucesso falso e retry cego quando a entrega for incerta.
+
+### Hardware, fiscal e infraestrutura
+
+- [ ] Homologar impressoras físicas 58/80, rede/USB, conector e reimpressão.
+- [ ] Homologar Focus NFe quando contratado, com contador, certificado, contingência e cancelamento.
+- [ ] Homologar iFood quando contratado, incluindo pedidos, KDS, impressão e conciliação.
+- [ ] Configurar Cloudflare, HTTPS, observabilidade, backup externo e restauração comprovada.
+- [ ] Exigir sandbox, segredo externo, healthcheck, idempotência, reconciliação, alertas,
+  teste de indisponibilidade e desligamento por filial para cada integração.
+
+### Gate
+
+- [ ] Nenhuma integração externa é considerada pronta sem cenário real de homologação
+  e rollback/desligamento por filial.
+
+## Fase 11 — aceite integral
+
+### Suítes obrigatórias
+
+- [ ] Lint, typecheck, unitários, integração PostgreSQL, migrations em banco vazio, build.
+- [ ] E2E autenticado por proprietário, gerente, caixa, recepção, garçom, cozinha,
+  bar, estoque, financeiro e cliente QR.
+- [ ] Isolamento multitenant, concorrência, idempotência e perda/reconexão de rede.
+- [ ] Realtime/polling fallback e impressão simulada/hardware aplicável.
+- [ ] Regressão visual, acessibilidade, teclado, touch e bump bar.
+- [ ] `git diff --check`, segurança, secrets scan e migrações.
+
+### Jornada crítica
+
+- [ ] Abrir turno e caixa.
+- [ ] Acomodar reserva ou fila.
+- [ ] Abrir mesa e lançar por garçom.
+- [ ] Enviar itens a múltiplas estações.
+- [ ] Concluir KDS por item e expedição.
+- [ ] Adicionar consumo no PDV.
+- [ ] Cancelar com aprovação e compensação.
+- [ ] Dividir e pagar com múltiplos métodos.
+- [ ] Entregar dinheiro do garçom.
+- [ ] Fechar conta, limpar e liberar mesa.
+- [ ] Imprimir comprovante.
+- [ ] Fechar caixa e turno.
+- [ ] Conferir dashboard e relatórios.
+- [ ] Repetir jornada por QR público.
+- [ ] Simular indisponibilidade das integrações.
+
+### Gate
+
+- [ ] Nenhuma falha bloqueante, ação decorativa, credencial exposta, divergência
+  financeira ou acesso cruzado entre tenants.
+
+## Fase 12 — handoff, backup e corte único
+
+### Entrega
+
+- [ ] URL de homologação e resultado do smoke test.
+- [ ] Um login/senha de teste por perfil, entregue fora do Git.
+- [ ] Matriz curta de permissões e cenários sugeridos.
+- [ ] Lista de integrações, estados e aviso explícito do WhatsApp não oficial.
+- [ ] Resultado dos testes, riscos, itens opcionais desativados e plano de suporte.
+
+### Corte e rollback
+
+- [ ] Criar backup verificável e validar restauração.
+- [ ] Registrar versões de app, migrations, imagens e configuração.
+- [ ] Remover frontend operacional antigo e flags de compatibilidade aceitas.
+- [ ] Publicar uma única versão somente após autorização explícita.
+- [ ] Executar migrations, smoke, jornadas críticas e monitoramento.
+- [ ] Manter rollback conjunto de aplicação, schema e configuração.
+- [ ] Registrar compensações de mensagens/webhooks; elas não são “desprocessadas”.
+- [ ] Revogar sessões WhatsApp e segredos independentemente quando necessário.
+
+## Definição final de pronto
+
+O plano só está concluído quando o usuário aprovar visualmente todos os perfis,
+os gates técnicos estiverem registrados, as integrações requeridas estiverem
+homologadas, os bancos estiverem povoados e as credenciais de teste forem
+entregues. Isso não autoriza automaticamente produção: o corte exige autorização
+explícita, backup verificável e rollback preparado.
+
+## Fora de escopo ou condicionado
+
+- Offline completo, app nativo, TEF e editor visual livre permanecem fora deste ciclo.
+- Fiscal sem homologação, iFood e WhatsApp oficial ficam condicionados à contratação
+  e às credenciais/ambientes fornecidos.
+- Pagamento online por QR permanece desativado até Asaas homologado.
+- Integração Dose Club preserva produtos e APIs separados; estoque compartilhado só
+  é ativado por entitlement e contrato homologado.

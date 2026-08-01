@@ -323,6 +323,51 @@ runIntegration("POS QR conference behavior", () => {
     expect(current.version).toBe(1);
   });
 
+  it("replays one payment safely across twenty concurrent requests", async () => {
+    const [concurrentOrder] = await db
+      .insert(orders)
+      .values({
+        tenantId: fixture.tenant.id,
+        branchId: fixture.branch.id,
+        tableId: null,
+        channel: "table",
+        status: "opened",
+        subtotalCents: 100,
+        totalCents: 100,
+        openedAt: new Date(),
+      })
+      .returning();
+    if (!concurrentOrder) throw new Error("Failed to create concurrent payment order");
+
+    const context = {
+      tenantId: fixture.tenant.id,
+      branchId: fixture.branch.id,
+      userId: fixture.user.id,
+      requestId: "payment-concurrency-20",
+      permissions: ["pos:payment_manage"],
+    };
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        posService.registerPayment(context, concurrentOrder.id, {
+          amountCents: 100,
+          method: "pix_manual",
+          idempotencyKey: "payment-concurrency-20-key",
+        }),
+      ),
+    );
+    expect(new Set(results.map((result) => result.id)).size).toBe(1);
+    const rows = await db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.tenantId, fixture.tenant.id),
+          eq(payments.idempotencyKey, "payment-concurrency-20-key"),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+  });
+
   it("updates a legacy floor plan without creating a second plan for the branch", async () => {
     const context = {
       tenantId: fixture.tenant.id,
@@ -438,9 +483,17 @@ runIntegration("POS QR conference behavior", () => {
     );
 
     const outboxRows = await db
-      .select({ topic: outboxEvents.topic })
+      .select({ topic: outboxEvents.topic, payload: outboxEvents.payload })
       .from(outboxEvents)
-      .where(and(eq(outboxEvents.tenantId, fixture.tenant.id), eq(outboxEvents.status, "pending")));
+      .where(and(eq(outboxEvents.tenantId, fixture.tenant.id), eq(outboxEvents.status, "pending")))
+      .then((rows) =>
+        rows.filter(
+          (event) =>
+            typeof event.payload === "object" &&
+            event.payload !== null &&
+            (event.payload as Record<string, unknown>).orderId === fixture.order.id,
+        ),
+      );
     expect(outboxRows.map((event) => event.topic)).toEqual(
       expect.arrayContaining(["payment.confirmed", "order.closed"]),
     );

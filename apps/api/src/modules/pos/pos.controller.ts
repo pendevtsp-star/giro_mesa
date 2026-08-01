@@ -183,13 +183,16 @@ export class PosController {
       .object({
         status: z.enum(tableStatuses).optional(),
         reservedName: z.string().max(120).nullable().optional(),
+        expectedVersion: z.number().int().positive().optional(),
       })
       .parse(body);
     const updates = {
       ...(parsed.status !== undefined ? { status: parsed.status } : {}),
       ...(parsed.reservedName !== undefined ? { reservedName: parsed.reservedName } : {}),
     };
-    return { data: await this.posService.updateTable(context, tableId, updates) };
+    return {
+      data: await this.posService.updateTable(context, tableId, updates, parsed.expectedVersion),
+    };
   }
 
   @Post("merge-tables")

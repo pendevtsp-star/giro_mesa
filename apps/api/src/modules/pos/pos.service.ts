@@ -209,8 +209,9 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     context: TenantContext,
     tableId: string,
     data: Partial<{ status: TableStatus; reservedName: string | null }>,
+    expectedVersion?: number,
   ) {
-    return this.posRepository.updateTable(context, tableId, data);
+    return this.posRepository.updateTable(context, tableId, data, expectedVersion);
   }
 
   async mergeTables(context: TenantContext, branchId: string, tableIds: string[]) {
