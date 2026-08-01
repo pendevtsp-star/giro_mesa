@@ -34,7 +34,7 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 0 — baseline, matriz de cobertura e prevenção de regressões.
 - [x] Fase 1 — domínio, dados, segurança e contratos.
 - [x] Fase 2 — fundação visual, shells e navegação.
-- [ ] Fase 3 — sessão operacional compartilhada e PDV.
+- [x] Fase 3 — sessão operacional compartilhada e PDV.
 - [ ] Fase 4 — salão, reservas e fila.
 - [ ] Fase 5 — garçom, perfis, PIN e dispositivos.
 - [ ] Fase 6 — KDS, expedição e impressão.
@@ -57,6 +57,8 @@ fechado apenas por existir código:
 - Fase 2: fundação visual iniciada em `03a6ed2`.
 - Fase 2: gate fechado nesta execução após a validação dos shells, tokens, branding,
   estados, acessibilidade e rotas em todos os viewports de aceite.
+- Fase 3: gate fechado nesta execução após a validação do PDV Mesa/Balcão, recuperação
+  de comanda, pagamentos idempotentes, dinheiro, impressão térmica e atalhos.
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
@@ -143,28 +145,28 @@ permissão ou infraestrutura.
 
 ### Trabalho
 
-- [ ] Criar cliente único da sessão operacional e invalidar cache por eventos.
-- [ ] Implementar Mesa/Balcão, recuperação da comanda ativa e leitura de `tableId` da rota.
-- [ ] Implementar busca, categorias, favoritos, grade, modificadores, observações,
+- [x] Criar cliente único da sessão operacional e invalidar cache por eventos.
+- [x] Implementar Mesa/Balcão, recuperação da comanda ativa e leitura de `tableId` da rota.
+- [x] Implementar busca, categorias, favoritos, grade, modificadores, observações,
   cliente e preferências.
-- [ ] Separar rascunhos de lotes enviados e permitir múltiplos ambientes KDS/impressoras.
-- [ ] Implementar prévia e envio automático para produção.
-- [ ] Traduzir estados por mapa central em português.
-- [ ] Implementar recebimento total/parcial, split por valor/pessoa/item, pagamento
+- [x] Separar rascunhos de lotes enviados e permitir múltiplos ambientes KDS/impressoras.
+- [x] Implementar prévia e envio automático para produção.
+- [x] Traduzir estados por mapa central em português.
+- [x] Implementar recebimento total/parcial, split por valor/pessoa/item, pagamento
   misto, dinheiro, troco, referências e histórico.
-- [ ] Implementar desconto, cancelamento e aprovação por PIN com política e auditoria.
-- [ ] Manter dinheiro do garçom como `pending_cash_handover` até confirmação física do caixa.
-- [ ] Implementar fechamento com pendências explícitas, concorrência e idempotência.
-- [ ] Conectar pré-conta e comprovante à fila térmica 58/80, não apenas ao popup A4.
-- [ ] Garantir atalhos de teclado, layout touch e operação rápida em alto fluxo.
+- [x] Implementar desconto, cancelamento e aprovação por PIN com política e auditoria.
+- [x] Manter dinheiro do garçom como `pending_cash_handover` até confirmação física do caixa.
+- [x] Implementar fechamento com pendências explícitas, concorrência e idempotência.
+- [x] Conectar pré-conta e comprovante à fila térmica 58/80, não apenas ao popup A4.
+- [x] Garantir atalhos de teclado, layout touch e operação rápida em alto fluxo.
 
 ### Testes e gate
 
-- [ ] Mesa, balcão, retomada da mesma comanda por dois dispositivos.
-- [ ] Modificadores, observações, múltiplos lotes e rotas Cozinha/Bar/Copa.
-- [ ] Parcial, split, pagamento misto, desconto e cancelamento com/sem aprovação.
-- [ ] Concorrência, duplicação, fechamento e recibo mock 58/80.
-- [ ] Gate: abrir → lançar → produzir → receber → fechar funciona sem ação decorativa
+- [x] Mesa, balcão, retomada da mesma comanda por dois dispositivos.
+- [x] Modificadores, observações, múltiplos lotes e rotas Cozinha/Bar/Copa.
+- [x] Parcial, split, pagamento misto, desconto e cancelamento com/sem aprovação.
+- [x] Concorrência, duplicação, fechamento e recibo mock 58/80.
+- [x] Gate: abrir → lançar → produzir → receber → fechar funciona sem ação decorativa
   e usa a mesma comanda em todas as leituras.
 
 ## Fase 4 — salão, reservas e fila

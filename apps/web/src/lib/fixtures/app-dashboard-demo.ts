@@ -483,8 +483,8 @@ export const defaultAuditFilters = {
 export const paymentMethodOptions = [
   ["pix_manual", "Pix manual"],
   ["cash", "Dinheiro"],
-  ["credit_card", "Credito"],
-  ["debit_card", "Debito"],
+  ["credit_card", "Crédito"],
+  ["debit_card", "Débito"],
 ] as const;
 
 export function demoInventoryRows(): InventorySummaryItem[] {

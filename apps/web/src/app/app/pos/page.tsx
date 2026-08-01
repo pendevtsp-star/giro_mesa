@@ -20,7 +20,7 @@ import {
   demoTables,
   paymentMethodOptions,
 } from "../../../lib/fixtures/app-dashboard-demo";
-import { readCategoryLabel } from "../../../lib/formatters/app-dashboard";
+import { parseMoneyToCents, readCategoryLabel } from "../../../lib/formatters/app-dashboard";
 import {
   addOrderItem,
   assignOrderCustomer,
@@ -78,6 +78,14 @@ const statusLabels: Record<string, string> = {
   closed: "Fechado",
   canceled: "Cancelado",
   refunded: "Estornado",
+  free: "Livre",
+  occupied: "Ocupada",
+  waiting_order: "Aguardando pedido",
+  order_sent: "Pedido enviado",
+  reserved: "Reservada",
+  blocked: "Bloqueada",
+  waiting_payment: "Aguardando pagamento",
+  draft: "Rascunho",
 };
 
 const methodLabels: Record<string, string> = Object.fromEntries(
@@ -86,10 +94,6 @@ const methodLabels: Record<string, string> = Object.fromEntries(
 
 function statusLabel(status: string) {
   return statusLabels[status] ?? status.replaceAll("_", " ");
-}
-
-function centsFromInput(value: string) {
-  return Math.round((Number(value.replace(".", "").replace(",", ".")) || 0) * 100);
 }
 
 export default function PosPage() {
@@ -125,6 +129,7 @@ export default function PosPage() {
   const [customPayment, setCustomPayment] = useState("");
   const [cashReceived, setCashReceived] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
+  const [paymentIntentId, setPaymentIntentId] = useState("");
   const [splitPeople, setSplitPeople] = useState("2");
   const [splitParts, setSplitParts] = useState<Array<{ person: number; amountCents: number }>>([]);
   const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
@@ -281,6 +286,11 @@ export default function PosPage() {
         document.querySelector<HTMLInputElement>('input[aria-label="Buscar produto"]')?.focus();
         return;
       }
+      if (event.key === "F6") {
+        event.preventDefault();
+        document.querySelector<HTMLSelectElement>(".pos-table-select select")?.focus();
+        return;
+      }
       const button = shortcuts[event.key]
         ? document.querySelector<HTMLButtonElement>(
             `button[aria-keyshortcuts="${shortcuts[event.key]}"]`,
@@ -408,7 +418,7 @@ export default function PosPage() {
       ? remainingCents
       : paymentMode === "half"
         ? Math.ceil(remainingCents / 2)
-        : centsFromInput(customPayment);
+        : parseMoneyToCents(customPayment);
   }
 
   function openPayment() {
@@ -420,6 +430,7 @@ export default function PosPage() {
     setCustomPayment("");
     setCashReceived("");
     setPaymentReference("");
+    setPaymentIntentId(crypto.randomUUID());
     setSplitParts([]);
     setPaymentOpen(true);
   }
@@ -439,12 +450,13 @@ export default function PosPage() {
     const amountCents = draftPaymentAmountCents();
     if (amountCents <= 0 || amountCents > remainingCents)
       throw new Error("O valor deve estar dentro do saldo restante.");
-    if (paymentMethod === "cash" && centsFromInput(cashReceived) < amountCents)
+    if (paymentMethod === "cash" && parseMoneyToCents(cashReceived) < amountCents)
       throw new Error("O valor recebido em dinheiro é menor que o pagamento.");
+    if (!paymentIntentId) throw new Error("Inicie o recebimento novamente.");
     const paymentInput = {
       method: paymentMethod,
       registeredVia: "cashier",
-      idempotencyKey: `pos:${currentOrder.id}:${paymentMethod}:${amountCents}:${Date.now()}`,
+      idempotencyKey: `pos:${currentOrder.id}:${paymentIntentId}:${paymentMethod}:${amountCents}`,
       ...(paymentReference.trim() ? { reference: paymentReference.trim() } : {}),
     } as const;
     const payment = await registerManualPayment(currentOrder.id, amountCents, paymentInput);
@@ -472,7 +484,7 @@ export default function PosPage() {
 
   async function applyDiscount() {
     if (!currentOrder) throw new Error("Abra uma comanda antes de aplicar desconto.");
-    const amountCents = centsFromInput(discountAmount);
+    const amountCents = parseMoneyToCents(discountAmount);
     if (amountCents <= 0 || !discountReason.trim())
       throw new Error("Informe valor e motivo do desconto.");
     const result = await requestOrderDiscount(currentOrder.id, {
@@ -561,6 +573,7 @@ export default function PosPage() {
             type="button"
             onClick={() =>
               void runAction(async () => {
+                applyOrder(null);
                 setServiceMode("table");
                 await loadOrder(session?.branchId ?? "", "table", selectedTableId, "");
               })
@@ -573,6 +586,7 @@ export default function PosPage() {
             type="button"
             onClick={() =>
               void runAction(async () => {
+                applyOrder(null);
                 setServiceMode("counter");
                 await loadOrder(session?.branchId ?? "", "counter", "", counterOrderId);
               })
@@ -588,6 +602,7 @@ export default function PosPage() {
               value={selectedTableId}
               onChange={(event) =>
                 void runAction(async () => {
+                  applyOrder(null);
                   setSelectedTableId(event.target.value);
                   await loadOrder(session?.branchId ?? "", "table", event.target.value, "");
                 })
@@ -621,6 +636,9 @@ export default function PosPage() {
               </span>
               <span>
                 <kbd>F4</kbd> receber
+              </span>
+              <span>
+                <kbd>F6</kbd> selecionar mesa
               </span>
               <span>
                 <kbd>F8</kbd> enviar para produção
@@ -1170,9 +1188,9 @@ export default function PosPage() {
                   onChange={(event) => setCashReceived(event.target.value)}
                   placeholder="Ex.: 100,00"
                 />
-                {cashReceived && centsFromInput(cashReceived) >= draftPaymentAmountCents() ? (
+                {cashReceived && parseMoneyToCents(cashReceived) >= draftPaymentAmountCents() ? (
                   <small>
-                    Troco: {formatMoney(centsFromInput(cashReceived) - draftPaymentAmountCents())}
+                    Troco {formatMoney(parseMoneyToCents(cashReceived) - draftPaymentAmountCents())}
                   </small>
                 ) : null}
               </label>

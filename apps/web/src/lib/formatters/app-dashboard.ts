@@ -579,7 +579,13 @@ export function readConnectorHeartbeatValue(config: PrinterConnectorConfig, key:
 }
 
 export function parseMoneyToCents(value: string) {
-  const normalized = value.replace(/\./g, "").replace(",", ".");
+  const raw = value.trim().replace(/\s/g, "");
+  if (!raw) return 0;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : /^\d{1,3}(?:\.\d{3})+$/.test(raw)
+      ? raw.replace(/\./g, "")
+      : raw;
   const amount = Number(normalized);
   return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
 }
