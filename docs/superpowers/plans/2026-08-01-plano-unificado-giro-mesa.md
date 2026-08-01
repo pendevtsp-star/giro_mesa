@@ -33,7 +33,7 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 
 - [x] Fase 0 — baseline, matriz de cobertura e prevenção de regressões.
 - [x] Fase 1 — domínio, dados, segurança e contratos.
-- [ ] Fase 2 — fundação visual, shells e navegação.
+- [x] Fase 2 — fundação visual, shells e navegação.
 - [ ] Fase 3 — sessão operacional compartilhada e PDV.
 - [ ] Fase 4 — salão, reservas e fila.
 - [ ] Fase 5 — garçom, perfis, PIN e dispositivos.
@@ -55,6 +55,8 @@ fechado apenas por existir código:
 - Fase 1: gate fechado nesta execução; transações de mesa/mapa/auditoria e revisão
   otimista de mesa foram concluídas em conjunto com as fundações já existentes.
 - Fase 2: fundação visual iniciada em `03a6ed2`.
+- Fase 2: gate fechado nesta execução após a validação dos shells, tokens, branding,
+  estados, acessibilidade e rotas em todos os viewports de aceite.
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
@@ -114,28 +116,28 @@ permissão ou infraestrutura.
 
 ### Trabalho
 
-- [ ] Consolidar tokens semânticos de superfície, texto, borda, ação e estados para
+- [x] Consolidar tokens semânticos de superfície, texto, borda, ação e estados para
   claro/escuro/automático.
-- [ ] Organizar CSS em tokens, base, componentes, shell e página; importar estilos
+- [x] Organizar CSS em tokens, base, componentes, shell e página; importar estilos
   usados e remover classes inexistentes/órfãs.
-- [ ] Manter shell administrativo para dashboard, catálogo, estoque, relatórios,
+- [x] Manter shell administrativo para dashboard, catálogo, estoque, relatórios,
   equipe, configurações, billing e auditoria.
-- [ ] Manter shell operacional em tela cheia para PDV, salão, garçom e KDS.
-- [ ] Canonicalizar `/app/pos`, `/app/salon`, `/app/waiter` e `/app/kds`, preservando
+- [x] Manter shell operacional em tela cheia para PDV, salão, garçom e KDS.
+- [x] Canonicalizar `/app/pos`, `/app/salon`, `/app/waiter` e `/app/kds`, preservando
   `tableId`, filial e tarefa.
-- [ ] Criar componentes comuns de botão, campo, select, filtro, card, tabela,
+- [x] Criar componentes comuns de botão, campo, select, filtro, card, tabela,
   drawer, diálogo, toast, skeleton, vazio, erro, offline, conflito, permissão e PIN.
-- [ ] Padronizar logo, branding, foco, contraste AA, alvos touch e ícones; emojis são
+- [x] Padronizar logo, branding, foco, contraste AA, alvos touch e ícones; emojis são
   proibidos no código ativo.
-- [ ] Remover links fixos de tenant/mesa e fallback demo em tenant real.
+- [x] Remover links fixos de tenant/mesa e fallback demo em tenant real.
 
 ### Testes e gate
 
-- [ ] Story/harness dos componentes essenciais.
-- [ ] Screenshots em `1440×900`, `1024×768`, `768×1024`, `390×844` e KDS `1920×1080`.
-- [ ] Contraste AA, teclado, foco, labels e ausência de overflow.
-- [ ] Tema claro, escuro e automático sem flash de cor.
-- [ ] Gate: todos os shells navegáveis sem regressão de identidade.
+- [x] Story/harness dos componentes essenciais.
+- [x] Screenshots em `1440×900`, `1024×768`, `768×1024`, `390×844` e KDS `1920×1080`.
+- [x] Contraste AA, teclado, foco, labels e ausência de overflow.
+- [x] Tema claro, escuro e automático sem flash de cor.
+- [x] Gate: todos os shells navegáveis sem regressão de identidade.
 
 ## Fase 3 — sessão operacional compartilhada e PDV
 

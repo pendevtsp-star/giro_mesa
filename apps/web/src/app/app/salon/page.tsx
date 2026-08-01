@@ -1,6 +1,7 @@
 "use client";
 import { LayoutGrid, Link2, Plus, Save, Undo2, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { BrandLink } from "../../../components/app-shell/BrandMark";
 import { FloorWorkspace } from "../../../features/floor/FloorWorkspace";
 import { arrangeTablesForMerge, moveTablesInLayout } from "../../../features/floor/salon-layout";
 import { TableActionPopup } from "../../../features/floor/TableActionPopup";
@@ -459,10 +460,7 @@ export default function SalonPage() {
       style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}
     >
       <header className="kds-topbar">
-        <a className="brand" href="/app">
-          <span className="brand-mark">G</span>
-          <span>GiroMesa</span>
-        </a>
+        <BrandLink />
         <div className="toolbar">
           <button
             className="button secondary compact"
