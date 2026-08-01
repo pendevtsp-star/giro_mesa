@@ -1,5 +1,19 @@
-import { expect, request as playwrightRequest, test } from "@playwright/test";
+import {
+  type APIRequestContext,
+  expect,
+  request as playwrightRequest,
+  test,
+} from "@playwright/test";
 import { apiUrl, authenticatedApiContext, skipWhenApiUnavailable } from "./helpers";
+
+async function createOrderTestTable(api: APIRequestContext, branchId: string, suffix: string) {
+  const code = `O${suffix}${String(Date.now()).slice(-5)}`.slice(0, 40);
+  const response = await api.post("/api/v1/pos/tables", {
+    data: { branchId, code, name: `Mesa ${code}`, seats: 4 },
+  });
+  expect(response.ok()).toBe(true);
+  return (await response.json()) as { id: string; code: string };
+}
 
 test.describe("Order: create, add items, send to kitchen, pay and close", () => {
   test("creates an order on a table and adds items via API", async () => {
@@ -17,11 +31,7 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
     expect(productList.length).toBeGreaterThan(0);
     const product = productList[0];
 
-    const tables = await api.get(`/api/v1/pos/tables?branchId=${context.branchId}`);
-    expect(tables.ok()).toBe(true);
-    const tableList = (await tables.json()).data as { id: string; code: string }[];
-    expect(tableList.length).toBeGreaterThan(0);
-    const table = tableList[0];
+    const table = await createOrderTestTable(api, context.branchId, "A");
 
     const opened = await api.post("/api/v1/pos/orders/open", {
       data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 2 },
@@ -57,9 +67,7 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
 
     const products = await api.get("/api/v1/catalog/products");
     const productList = (await products.json()).data as { id: string }[];
-    const tables = await api.get(`/api/v1/pos/tables?branchId=${context.branchId}`);
-    const tableList = (await tables.json()).data as { id: string }[];
-    const table = tableList[0];
+    const table = await createOrderTestTable(api, context.branchId, "B");
 
     const opened = await api.post("/api/v1/pos/orders/open", {
       data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 1 },
@@ -88,9 +96,7 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
 
     const products = await api.get("/api/v1/catalog/products");
     const productList = (await products.json()).data as { id: string }[];
-    const tables = await api.get(`/api/v1/pos/tables?branchId=${context.branchId}`);
-    const tableList = (await tables.json()).data as { id: string }[];
-    const table = tableList.find((t) => t.code === "M01") ?? tableList[0];
+    const table = await createOrderTestTable(api, context.branchId, "C");
 
     const opened = await api.post("/api/v1/pos/orders/open", {
       data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 1 },

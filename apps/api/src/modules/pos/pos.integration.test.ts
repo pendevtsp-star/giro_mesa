@@ -20,6 +20,7 @@ import { and, eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CatalogService } from "../catalog/catalog.service";
 import type { DatabaseService } from "../database/database.service";
 import type { FiscalService } from "../fiscal/fiscal.service";
 import type { CashService } from "./cash.service";
@@ -65,6 +66,7 @@ async function createPosFixture(db: Db, name: string) {
       name,
       slug: `pos-${name.toLowerCase().replaceAll(" ", "-")}-${Date.now()}`,
       status: "active",
+      isDemo: true,
     })
     .returning();
   if (!tenant) {
@@ -172,6 +174,7 @@ async function createPosFixture(db: Db, name: string) {
       quantity: "1",
       unitPriceCents: 3200,
       totalCents: 3200,
+      sourceChannel: "qr",
       notes: "manter",
     })
     .returning();
@@ -185,6 +188,7 @@ async function createPosFixture(db: Db, name: string) {
       quantity: "1",
       unitPriceCents: 2200,
       totalCents: 2200,
+      sourceChannel: "qr",
       notes: "cancelar",
     })
     .returning();
@@ -206,12 +210,14 @@ runIntegration("POS QR conference behavior", () => {
   let pool: Pool;
   let db: Db;
   let posService: PosService;
+  let catalogService: CatalogService;
   let fixture: Awaited<ReturnType<typeof createPosFixture>>;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
     db = drizzle(pool, { schema });
     const databaseService = { db } as DatabaseService;
+    catalogService = new CatalogService(databaseService);
     const posRepository = new PosRepository(databaseService);
     const orderRepository = new OrderRepository(databaseService);
     const ordersService = new OrdersService(
@@ -256,6 +262,37 @@ runIntegration("POS QR conference behavior", () => {
         peopleCount: 2,
       }),
     ).rejects.toThrow("Table does not belong to the selected branch");
+  });
+
+  it("adds QR items to the active table order instead of opening a parallel order", async () => {
+    const result = await catalogService.createPublicQrOrder(fixture.table.code, {
+      tenantSlug: fixture.tenant.slug,
+      items: [{ productId: fixture.burgerItem.productId, quantity: 1 }],
+    });
+
+    expect(result.orderId).toBe(fixture.order.id);
+    expect(result.items[0]?.sourceChannel).toBe("qr");
+    expect(
+      await db
+        .select({ id: orders.id })
+        .from(orders)
+        .where(and(eq(orders.tenantId, fixture.tenant.id), eq(orders.tableId, fixture.table.id))),
+    ).toHaveLength(1);
+
+    const canceled = await posService.cancelQrOrderItem(
+      {
+        tenantId: fixture.tenant.id,
+        branchId: fixture.branch.id,
+        userId: fixture.user.id,
+        requestId: "cancel-appended-qr-item",
+        permissions: ["pos:operate", "pos:qr_review"],
+      },
+      fixture.order.id,
+      result.items[0]?.id ?? "",
+      { reason: "Validação de comanda ativa" },
+    );
+    expect(canceled.order?.totalCents).toBe(5400);
+    expect(canceled.order?.status).toBe("opened");
   });
 
   it("rejects a stale floor-plan revision instead of overwriting another operator", async () => {

@@ -10,8 +10,8 @@ import {
   tenants,
 } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
-import { calculateOrderTotal } from "@giromesa/domain";
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { activeOrderStatuses, calculateOrderTotal } from "@giromesa/domain";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 import { enqueueClubWhiskyProductUpdated } from "../integrations/club-whisky-events";
@@ -379,7 +379,8 @@ export class CatalogService {
         .select()
         .from(diningTables)
         .where(and(eq(diningTables.tenantId, tenant.id), eq(diningTables.code, tableCode)))
-        .limit(1);
+        .limit(1)
+        .for("update");
 
       if (!table) {
         throw new NotFoundException("Table not found");
@@ -392,20 +393,21 @@ export class CatalogService {
       const productById = new Map(productRows.map((product) => [product.id, product]));
 
       const [order] = await tx
-        .insert(orders)
-        .values({
-          tenantId: tenant.id,
-          branchId: table.branchId,
-          tableId: table.id,
-          channel: "qr",
-          status: "opened",
-          peopleCount: 1,
-          openedAt: new Date(),
-        })
-        .returning();
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.tenantId, tenant.id),
+            eq(orders.branchId, table.branchId),
+            eq(orders.tableId, table.id),
+            inArray(orders.status, [...activeOrderStatuses]),
+          ),
+        )
+        .limit(1)
+        .for("update");
 
       if (!order) {
-        throw new Error("Failed to create QR order");
+        throw new BadRequestException("Table service is not active");
       }
 
       let subtotalCents = 0;
@@ -455,6 +457,7 @@ export class CatalogService {
             quantity: String(item.quantity),
             unitPriceCents,
             totalCents: total.totalCents,
+            sourceChannel: "qr",
             notes: item.notes,
             modifiers: resolvedModifiers,
           })
@@ -468,8 +471,13 @@ export class CatalogService {
       await tx
         .update(orders)
         .set({
-          subtotalCents,
-          totalCents: subtotalCents,
+          subtotalCents: order.subtotalCents + subtotalCents,
+          totalCents:
+            order.subtotalCents +
+            subtotalCents -
+            order.discountCents +
+            order.serviceChargeCents +
+            order.deliveryFeeCents,
           version: sql`${orders.version} + 1`,
           updatedAt: new Date(),
         })
@@ -496,10 +504,10 @@ export class CatalogService {
         action: "qr.order_created",
         entityType: "order",
         entityId: order.id,
-        metadata: { tableCode, itemCount: createdItems.length },
+        metadata: { tableCode, itemCount: createdItems.length, attachedToActiveOrder: true },
       });
 
-      return { orderId: order.id, status: "opened", items: createdItems };
+      return { orderId: order.id, status: order.status, items: createdItems };
     });
   }
 

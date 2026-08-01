@@ -210,6 +210,7 @@ describe("multi-tenant schema", () => {
     expect(Object.keys(getTableColumns(operationalPins))).toContain("pinHash");
     expect(Object.keys(getTableColumns(operationalPins))).not.toContain("pin");
     expect(Object.keys(getTableColumns(operationalEvents))).toContain("version");
+    expect(Object.keys(getTableColumns(orderItems))).toContain("sourceChannel");
     expect(Object.keys(getTableColumns(cashSessions))).toEqual(
       expect.arrayContaining(["version", "closeIdempotencyKey"]),
     );

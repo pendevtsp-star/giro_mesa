@@ -15,6 +15,7 @@ HEAD inicial: `4774e38`
 - Eventos operacionais versionados e recuperáveis por cursor, sempre limitados a tenant e filial.
 - Abertura/fechamento de turno, abertura/movimentação/fechamento de caixa, união/separação de mesas e acomodação protegidos por transação e constraints.
 - Fechamentos de caixa e turno idempotentes; divisão de conta usa o total persistido do pedido, nunca valor enviado pelo cliente.
+- Pedido QR entra como novos itens identificados na comanda ativa da mesa; não abre uma segunda comanda concorrente.
 
 O contrato HTTP está em `docs/openapi/operational-v1.yaml`.
 
@@ -22,6 +23,7 @@ O contrato HTTP está em `docs/openapi/operational-v1.yaml`.
 
 - `0019_operational_foundation.sql`: modelos operacionais, reserva N:N, versão de mesa/reserva/turno, eventos, preferências, dispositivos e roteamento.
 - `0020_atomic_cash_sessions.sql`: versão e idempotência do caixa. O índice de uma sessão aberta por filial já existia desde a migration 0011 e foi apenas incorporado ao schema atual.
+- `0021_qr_items_join_active_order.sql`: origem operacional por item para revisão do QR dentro da comanda ativa.
 - Snapshot Drizzle recomposto para incluir as migrations manuais 0017/0018; `pnpm db:generate` agora encerra com `No schema changes` sem prompt interativo.
 - Sequência completa aplicada em banco PostgreSQL vazio e em banco local existente.
 
@@ -30,11 +32,11 @@ O contrato HTTP está em `docs/openapi/operational-v1.yaml`.
 | Gate | Resultado |
 | --- | --- |
 | Migration safety | aprovado |
-| Migrations em banco vazio | aprovado, 0000–0020 |
+| Migrations em banco vazio | aprovado, 0000–0021 |
 | Geração Drizzle sem diff | aprovado |
 | Typecheck | aprovado, 8/8 pacotes |
 | Testes unitários | aprovado |
-| Integração PostgreSQL | aprovado, incluindo concorrência, multitenancy e idempotência |
+| Integração PostgreSQL | aprovado, 25 testes incluindo QR na comanda ativa, concorrência, multitenancy e idempotência |
 | Build | aprovado, 8/8 pacotes |
 | Lint | executado em Linux porque o Windows App Control bloqueia `biome.exe` local |
 | `git diff --check` | aprovado |

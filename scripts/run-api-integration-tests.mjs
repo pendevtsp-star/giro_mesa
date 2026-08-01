@@ -51,6 +51,7 @@ for (const args of [
     "src/modules/printing/connector-auth.integration.test.ts",
     "src/modules/qr/qr.integration.test.ts",
     "src/modules/pos/operational-foundation.integration.test.ts",
+    "src/modules/pos/pos.integration.test.ts",
     "--pool=threads",
     "--maxWorkers=1",
     "--minWorkers=1",

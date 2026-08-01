@@ -931,13 +931,21 @@ export const orderItems = pgTable(
     quantity: numeric("quantity", { precision: 14, scale: 3 }).notNull(),
     unitPriceCents: integer("unit_price_cents").notNull(),
     totalCents: integer("total_cents").notNull(),
+    sourceChannel: varchar("source_channel", { length: 20 }).notNull().default("pos"),
     status: orderItemStatus("status").notNull().default("pending"),
     notes: text("notes"),
     modifiers: jsonb("modifiers").$type<Record<string, unknown>[]>().notNull().default([]),
     sentToKitchenAt: timestamp("sent_to_kitchen_at", { withTimezone: true }),
     ...timestamps,
   },
-  (table) => [index("order_items_tenant_order_idx").on(table.tenantId, table.orderId)],
+  (table) => [
+    index("order_items_tenant_order_idx").on(table.tenantId, table.orderId),
+    index("order_items_tenant_source_status_idx").on(
+      table.tenantId,
+      table.sourceChannel,
+      table.status,
+    ),
+  ],
 );
 
 export const payments = pgTable(

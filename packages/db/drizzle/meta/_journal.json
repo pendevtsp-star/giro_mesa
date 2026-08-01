@@ -148,6 +148,13 @@
       "when": 1785544857014,
       "tag": "0020_atomic_cash_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785546333366,
+      "tag": "0021_qr_items_join_active_order",
+      "breakpoints": true
     }
   ]
 }

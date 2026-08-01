@@ -12,6 +12,7 @@ import {
   stockMovements,
 } from "@giromesa/db";
 import {
+  activeOrderStatuses,
   calculateOrderTotal,
   type PaymentMethod,
   type TableStatus,
@@ -273,6 +274,26 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       throw new BadRequestException("branchId is required");
     }
 
+    const pendingQrOrderIds = await this.database.db
+      .selectDistinct({ orderId: orderItems.orderId })
+      .from(orderItems)
+      .innerJoin(
+        orders,
+        and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderItems.orderId)),
+      )
+      .where(
+        and(
+          eq(orderItems.tenantId, context.tenantId),
+          eq(orderItems.sourceChannel, "qr"),
+          eq(orderItems.status, "pending"),
+          eq(orders.branchId, branchId),
+          inArray(orders.status, [...activeOrderStatuses]),
+        ),
+      )
+      .limit(12);
+    const orderIds = pendingQrOrderIds.map((row) => row.orderId);
+    if (orderIds.length === 0) return [];
+
     const rows = await this.database.db
       .select({
         id: orders.id,
@@ -295,14 +316,12 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         and(
           eq(orders.tenantId, context.tenantId),
           eq(orders.branchId, branchId),
-          eq(orders.channel, "qr"),
-          eq(orders.status, "opened"),
+          inArray(orders.id, orderIds),
         ),
       )
       .orderBy(desc(orders.createdAt))
       .limit(12);
 
-    const orderIds = rows.map((order) => order.id);
     const items =
       orderIds.length > 0
         ? await this.database.db
@@ -319,6 +338,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
               and(
                 eq(orderItems.tenantId, context.tenantId),
                 inArray(orderItems.orderId, orderIds),
+                eq(orderItems.sourceChannel, "qr"),
                 eq(orderItems.status, "pending"),
               ),
             )
@@ -352,8 +372,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
           and(
             eq(orders.tenantId, context.tenantId),
             eq(orders.id, orderId),
-            eq(orders.channel, "qr"),
-            eq(orders.status, "opened"),
+            inArray(orders.status, [...activeOrderStatuses]),
           ),
         )
         .limit(1);
@@ -370,6 +389,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
             eq(orderItems.tenantId, context.tenantId),
             eq(orderItems.orderId, orderId),
             eq(orderItems.id, itemId),
+            eq(orderItems.sourceChannel, "qr"),
             eq(orderItems.status, "pending"),
           ),
         )
@@ -397,6 +417,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
             eq(orderItems.tenantId, context.tenantId),
             eq(orderItems.orderId, orderId),
             eq(orderItems.id, itemId),
+            eq(orderItems.sourceChannel, "qr"),
             eq(orderItems.status, "pending"),
           ),
         )
@@ -460,8 +481,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
           and(
             eq(orders.tenantId, context.tenantId),
             eq(orders.id, orderId),
-            eq(orders.channel, "qr"),
-            eq(orders.status, "opened"),
+            inArray(orders.status, [...activeOrderStatuses]),
           ),
         )
         .limit(1);
@@ -478,6 +498,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
             eq(orderItems.tenantId, context.tenantId),
             eq(orderItems.orderId, orderId),
             eq(orderItems.id, itemId),
+            eq(orderItems.sourceChannel, "qr"),
             eq(orderItems.status, "pending"),
           ),
         )
@@ -499,32 +520,36 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
             eq(orderItems.tenantId, context.tenantId),
             eq(orderItems.orderId, orderId),
             eq(orderItems.id, itemId),
+            eq(orderItems.sourceChannel, "qr"),
             eq(orderItems.status, "pending"),
           ),
         )
         .returning();
 
       const remainingItems = await tx
-        .select({ id: orderItems.id, totalCents: orderItems.totalCents })
+        .select({
+          id: orderItems.id,
+          totalCents: orderItems.totalCents,
+          status: orderItems.status,
+        })
         .from(orderItems)
-        .where(
-          and(
-            eq(orderItems.tenantId, context.tenantId),
-            eq(orderItems.orderId, orderId),
-            eq(orderItems.status, "pending"),
-          ),
-        );
+        .where(and(eq(orderItems.tenantId, context.tenantId), eq(orderItems.orderId, orderId)));
 
-      const subtotalCents = remainingItems.reduce((sum, row) => sum + row.totalCents, 0);
-      const nextStatus = remainingItems.length > 0 ? order.status : "canceled";
+      const activeItems = remainingItems.filter(
+        (row) => !["canceled", "refunded"].includes(row.status),
+      );
+      const subtotalCents = activeItems.reduce((sum, row) => sum + row.totalCents, 0);
+      const nextStatus = activeItems.length > 0 ? order.status : "canceled";
 
       const [updatedOrder] = await tx
         .update(orders)
         .set({
           status: nextStatus,
           subtotalCents,
-          totalCents:
+          totalCents: Math.max(
+            0,
             subtotalCents - order.discountCents + order.serviceChargeCents + order.deliveryFeeCents,
+          ),
           version: order.version + 1,
           updatedAt: new Date(),
         })
@@ -579,8 +604,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
           and(
             eq(orders.tenantId, context.tenantId),
             eq(orders.id, orderId),
-            eq(orders.channel, "qr"),
-            eq(orders.status, "opened"),
+            inArray(orders.status, [...activeOrderStatuses]),
           ),
         )
         .limit(1);
@@ -592,15 +616,40 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       await tx
         .update(orderItems)
         .set({ status: "canceled", updatedAt: new Date() })
+        .where(
+          and(
+            eq(orderItems.tenantId, context.tenantId),
+            eq(orderItems.orderId, orderId),
+            eq(orderItems.sourceChannel, "qr"),
+            eq(orderItems.status, "pending"),
+          ),
+        );
+
+      const remainingItems = await tx
+        .select({ totalCents: orderItems.totalCents, status: orderItems.status })
+        .from(orderItems)
         .where(and(eq(orderItems.tenantId, context.tenantId), eq(orderItems.orderId, orderId)));
+      const subtotalCents = remainingItems
+        .filter((item) => !["canceled", "refunded"].includes(item.status))
+        .reduce((sum, item) => sum + item.totalCents, 0);
+      const orderCanceled = subtotalCents === 0;
 
       const [updatedOrder] = await tx
         .update(orders)
-        .set({ status: "canceled", version: order.version + 1, updatedAt: new Date() })
+        .set({
+          status: orderCanceled ? "canceled" : order.status,
+          subtotalCents,
+          totalCents: Math.max(
+            0,
+            subtotalCents - order.discountCents + order.serviceChargeCents + order.deliveryFeeCents,
+          ),
+          version: order.version + 1,
+          updatedAt: new Date(),
+        })
         .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
         .returning();
 
-      if (order.tableId) {
+      if (orderCanceled && order.tableId) {
         await tx
           .update(diningTables)
           .set({

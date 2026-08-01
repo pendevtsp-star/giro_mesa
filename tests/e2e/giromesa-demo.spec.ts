@@ -123,10 +123,17 @@ test.describe("GiroMesa commercial and operational flows", () => {
       ),
     ).toBe(true);
 
-    const tables = await api.get(`/api/v1/pos/tables?branchId=${context.branchId}`);
-    expect(tables.ok()).toBe(true);
-    const table = ((await tables.json()).data as { id: string; code: string }[])[0];
-    expect(table?.id).toBeTruthy();
+    const tableCode = `D${String(Date.now()).slice(-6)}`;
+    const createdTable = await api.post("/api/v1/pos/tables", {
+      data: {
+        branchId: context.branchId,
+        code: tableCode,
+        name: `Mesa ${tableCode}`,
+        seats: 4,
+      },
+    });
+    expect(createdTable.ok()).toBe(true);
+    const table = (await createdTable.json()) as { id: string; code: string };
 
     const currentFloorPlan = await api.get(`/api/v1/pos/floor-plan?branchId=${context.branchId}`);
     expect(currentFloorPlan.ok()).toBe(true);
