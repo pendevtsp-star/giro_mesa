@@ -108,7 +108,14 @@ async function auditRoutes(
     page.on("response", onResponse);
 
     await page.goto(route, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(650);
+    if (route.startsWith("/app")) {
+      await page
+        .locator(".access-boundary-page")
+        .waitFor({ state: "detached", timeout: 10_000 })
+        .catch(() => {});
+    }
+    await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
+    await page.waitForTimeout(300);
 
     const slug = route === "/" ? "landing" : route.replace(/^\/|\/$/g, "").replaceAll("/", "-");
     await page.screenshot({

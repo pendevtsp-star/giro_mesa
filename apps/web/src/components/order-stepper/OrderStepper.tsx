@@ -289,11 +289,7 @@ export default function OrderStepper() {
   const stepLabels = ["Mesa", "Itens", "Pagamento"];
 
   return (
-    <div
-      className="stepper-container"
-      data-theme={branding.themeMode}
-      data-accent={branding.accentPreset}
-    >
+    <div className="stepper-container" data-accent={branding.accentPreset}>
       {/* Topbar */}
       <header className="stepper-topbar">
         <a className="brand" href="/app" aria-label="Voltar ao GiroMesa">

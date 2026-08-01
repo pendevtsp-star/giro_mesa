@@ -6,14 +6,41 @@
 :root {
   color-scheme: light;
 
+  /* Semantic colors */
+  --color-canvas: #fffaf0;
+  --color-surface: #ffffff;
+  --color-surface-raised: #fff6e6;
+  --color-surface-muted: #f5f7f7;
+  --color-text: #0d1b2a;
+  --color-text-muted: #526474;
+  --color-border: #d6e0df;
+  --color-action: #facc15;
+  --color-action-hover: #eab308;
+  --color-on-action: #0d1b2a;
+  --color-info: #2563eb;
+  --color-success: #237a45;
+  --color-warning: #9a6700;
+  --color-danger: #b42331;
+
   /* Core Colors */
-  --ink: #0d1b2a;
+  --ink: var(--color-text);
   --ink-soft: #1b263b;
-  --muted: #607080;
-  --line: #dce5e3;
-  --paper: #fff6e6;
-  --surface: #ffffff;
-  --surface-soft: #fffaf0;
+  --muted: var(--color-text-muted);
+  --line: var(--color-border);
+  --paper: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-soft: var(--color-surface-raised);
+  --surface-page: var(--color-canvas);
+  --surface-muted: var(--color-surface-muted);
+  --surface-hover: var(--color-surface-muted);
+  --workspace-bg: var(--color-canvas);
+  --card: var(--color-surface);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-muted);
+  --text-muted: var(--color-text-muted);
+  --border: var(--color-border);
+  --border-soft: var(--color-border);
+  --border-subtle: var(--color-border);
 
   /* Brand Colors */
   --accent: #facc15;
@@ -34,7 +61,9 @@
   --radius-lg: 16px;
 
   /* Focus */
-  --focus-ring: 0 0 0 3px rgba(245, 166, 35, 0.24);
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.35);
+  --control-height: 2.75rem;
+  --touch-target: 2.75rem;
 
   /* Spacing Scale */
   --space-xs: 0.25rem;
@@ -66,13 +95,28 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --ink: #e2e8f0;
+  --color-canvas: #071421;
+  --color-surface: #0d2035;
+  --color-surface-raised: #132a43;
+  --color-surface-muted: #172f49;
+  --color-text: #f7fafc;
+  --color-text-muted: #a9bbce;
+  --color-border: #30465e;
+  --color-action: #facc15;
+  --color-action-hover: #fde047;
+  --color-on-action: #071421;
+  --color-info: #60a5fa;
+  --color-success: #4ade80;
+  --color-warning: #facc15;
+  --color-danger: #fb7185;
+
+  --ink: var(--color-text);
   --ink-soft: #cbd5e1;
-  --muted: #94a3b8;
-  --line: #334155;
-  --paper: #0f172a;
-  --surface: #1e293b;
-  --surface-soft: #1e293b;
+  --muted: var(--color-text-muted);
+  --line: var(--color-border);
+  --paper: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-soft: var(--color-surface-raised);
 
   --shadow: 0 18px 46px rgba(0, 0, 0, 0.4);
   --tight-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -94,7 +138,7 @@
 /* Emerald */
 :root[data-accent="emerald"] {
   --accent: #10b981;
-  --accent-strong: #059669;
+  --accent-strong: #047857;
 }
 
 :root[data-theme="dark"][data-accent="emerald"] {

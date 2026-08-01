@@ -43,7 +43,8 @@ export function hashOpaqueToken(token: string) {
 
 export function sessionCookie(token: string, maxAgeSeconds: number) {
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
-  const domain = process.env.NODE_ENV === "production" ? "" : " Domain=localhost;";
+  const cookieDomain = process.env.SESSION_COOKIE_DOMAIN?.trim();
+  const domain = cookieDomain ? ` Domain=${cookieDomain};` : "";
   return `gm_session=${encodeURIComponent(
     token,
   )}; HttpOnly;${secure} SameSite=Lax; Path=/;${domain} Max-Age=${maxAgeSeconds}`;

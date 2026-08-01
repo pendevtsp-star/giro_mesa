@@ -166,6 +166,149 @@ export function Textarea({ className = "", ...props }: ComponentPropsWithoutRef<
   return <textarea className={`gm-input ${className}`.trim()} {...props} />;
 }
 
+export function Dialog({
+  open,
+  title,
+  children,
+  actions,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  actions?: ReactNode;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="gm-dialog-backdrop">
+      <section
+        aria-label={title}
+        aria-modal="true"
+        className="gm-dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header>
+          <h2>{title}</h2>
+          <button aria-label="Fechar" className="gm-icon-button" onClick={onClose} type="button">
+            <span aria-hidden="true" className="gm-close-icon" />
+          </button>
+        </header>
+        <div className="gm-dialog-body">{children}</div>
+        {actions ? <footer>{actions}</footer> : null}
+      </section>
+    </div>
+  );
+}
+
+export function Drawer({
+  open,
+  title,
+  children,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="gm-drawer-backdrop">
+      <aside
+        aria-label={title}
+        aria-modal="true"
+        className="gm-drawer"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header>
+          <h2>{title}</h2>
+          <button aria-label="Fechar" className="gm-icon-button" onClick={onClose} type="button">
+            <span aria-hidden="true" className="gm-close-icon" />
+          </button>
+        </header>
+        {children}
+      </aside>
+    </div>
+  );
+}
+
+export function MoneyInput({
+  label,
+  className = "",
+  ...props
+}: ComponentPropsWithoutRef<"input"> & { label: string }) {
+  return (
+    <label className="gm-field">
+      <span>{label}</span>
+      <span className="gm-money-input">
+        <b>R$</b>
+        <input className={`gm-input ${className}`.trim()} inputMode="decimal" {...props} />
+      </span>
+    </label>
+  );
+}
+
+export function PinInput({
+  label = "PIN do gerente",
+  ...props
+}: ComponentPropsWithoutRef<"input"> & { label?: string }) {
+  return (
+    <label className="gm-field">
+      <span>{label}</span>
+      <input
+        autoComplete="one-time-code"
+        className="gm-input gm-pin-input"
+        inputMode="numeric"
+        maxLength={6}
+        pattern="[0-9]*"
+        type="password"
+        {...props}
+      />
+    </label>
+  );
+}
+
+export function ConfirmationDialog({
+  open,
+  title,
+  description,
+  confirmLabel = "Confirmar",
+  destructive = false,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  destructive?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      actions={
+        <>
+          <Button onClick={onCancel} variant="ghost">
+            Cancelar
+          </Button>
+          <Button onClick={onConfirm} variant={destructive ? "danger" : "primary"}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
+      onClose={onCancel}
+      open={open}
+      title={title}
+    >
+      <p>{description}</p>
+    </Dialog>
+  );
+}
+
 export function SimpleTable({
   columns,
   rows,

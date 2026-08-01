@@ -17,6 +17,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: webUrl,
+    serviceWorkers: "block",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },

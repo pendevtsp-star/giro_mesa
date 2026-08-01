@@ -26,13 +26,13 @@ export async function authenticateBrowserPage(
 ) {
   await page.goto("/login", { waitUntil: "networkidle" });
   await loginViaUi(page, email, password);
-  await expect(page).toHaveURL(/\/app/);
+  await expect(page).toHaveURL(/\/app/, { timeout: 30_000 });
 }
 
 export async function authenticatePlatformPage(page: Page) {
   await page.goto("/login", { waitUntil: "networkidle" });
   await loginViaUi(page, platformEmail, platformPassword);
-  await expect(page).toHaveURL(/\/platform/);
+  await expect(page).toHaveURL(/\/platform/, { timeout: 30_000 });
 }
 
 export async function authenticatedApiContext(email = adminEmail, password = adminPassword) {

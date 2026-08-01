@@ -148,11 +148,7 @@ export default function BillingPage() {
   }
 
   return (
-    <main
-      className="billing-page"
-      data-theme={branding.themeMode}
-      data-accent={branding.accentPreset}
-    >
+    <main className="billing-page" data-accent={branding.accentPreset}>
       <header className="billing-hero">
         <a className="button ghost" href="/app">
           <ArrowLeft size={18} /> Voltar ao painel

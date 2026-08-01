@@ -8,6 +8,7 @@ import { type Locale, useTranslation } from "../../lib/i18n";
 import { UnauthenticatedState } from "../states/AppStates";
 import { AppNavigation } from "./AppNavigation";
 import type { AppNavigationItem } from "./navigation";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function AppShell({
   branding,
@@ -44,7 +45,6 @@ export function AppShell({
     <main
       className="app-layout app-layout-night"
       data-testid="workspace-dashboard"
-      data-theme={branding.themeMode}
       data-accent={branding.accentPreset}
       data-view={isPosWorkspace ? "pos" : "dashboard"}
     >
@@ -108,6 +108,7 @@ export function AppShell({
                 Entrar
               </a>
             )}
+            <ThemeToggle defaultPreference={branding.themeMode} />
             {status === "ready" && onLogout && (
               <button className="button secondary" type="button" onClick={onLogout}>
                 <LogOut size={18} /> Sair
@@ -121,10 +122,12 @@ export function AppShell({
           </div>
         </header>
 
-        <section className={`live-banner live-banner-${status}`}>
-          <strong>{statusTitle}</strong>
-          <span>{statusMessage}</span>
-        </section>
+        {status !== "ready" ? (
+          <section className={`live-banner live-banner-${status}`}>
+            <strong>{statusTitle}</strong>
+            <span>{statusMessage}</span>
+          </section>
+        ) : null}
 
         {status !== "ready" ? (
           <UnauthenticatedState

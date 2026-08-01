@@ -110,8 +110,7 @@ function LoginPageContent() {
       }
 
       setStatus("success");
-      router.push(result.user.isPlatformUser ? "/platform" : "/app");
-      router.refresh();
+      window.location.assign(result.user.isPlatformUser ? "/platform" : "/app");
     } catch (loginError) {
       let message = t("loginErrors.generic");
 

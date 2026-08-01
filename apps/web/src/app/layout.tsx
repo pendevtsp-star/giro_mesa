@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
+import "../styles/foundation-v2.css";
 import { ServiceWorkerRegistration } from "../components/ServiceWorkerRegistration";
+
+const themeBootstrap = `(()=>{try{const k="gm_theme",s=localStorage.getItem(k)||"system",d=s==="dark"||(s==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light";document.documentElement.dataset.themePreference=s}catch{document.documentElement.dataset.theme="light"}})()`;
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -34,7 +37,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html className={poppins.variable} lang="pt-BR">
+    <html className={poppins.variable} lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script>{themeBootstrap}</script>
+      </head>
       <body>
         <ServiceWorkerRegistration />
         {children}

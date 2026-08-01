@@ -15,6 +15,7 @@ describe("http session helpers", () => {
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Max-Age=60");
+    expect(cookie).not.toContain("Domain=localhost");
     expect(parseCookies(cookie).get("gm_session")).toBe("abc");
   });
 });

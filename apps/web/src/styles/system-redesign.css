@@ -4,6 +4,9 @@
  * without changing application behavior, routing, permissions or data flow.
  */
 
+/* biome-ignore format: preserve the legacy dark-theme cascade indentation */
+@scope (html[data-theme="dark"]) {
+
 .app-layout.app-layout-night,
 .login-page.login-page-night,
 .menu-shell.menu-shell-night,
@@ -2364,4 +2367,6 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
     animation-iteration-count: 1;
     transition-duration: 1ms;
   }
+}
+
 }

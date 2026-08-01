@@ -3,6 +3,7 @@
 import type { TenantBranding } from "../../lib/giromesa-api";
 import { type Locale, useTranslation } from "../../lib/i18n";
 import { LanguageSwitcher } from "../LanguageSwitcher";
+import { BrandLink } from "./BrandMark";
 import { type AppNavigationItem, groupNavigationItems, isNavigationItemActive } from "./navigation";
 
 export function AppNavigation({
@@ -23,10 +24,7 @@ export function AppNavigation({
 
   return (
     <aside className="sidebar">
-      <a className="brand" href="/" aria-label="GiroMesa">
-        <span className="brand-mark">G</span>
-        <span>GiroMesa</span>
-      </a>
+      <BrandLink />
       <LanguageSwitcher currentLocale={locale} onLocaleChange={onLocaleChange} />
       <div className="tenant-chip">
         {branding.logoUrl ? (

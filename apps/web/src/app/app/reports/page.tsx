@@ -578,11 +578,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <main
-      className="report-page"
-      data-theme={branding.themeMode}
-      data-accent={branding.accentPreset}
-    >
+    <main className="report-page" data-accent={branding.accentPreset}>
       <header className="report-header">
         <div>
           <div className="report-brand-lockup">

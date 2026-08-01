@@ -456,7 +456,7 @@ export default function SalonPage() {
   return (
     <main
       className="salon-page"
-      style={{ display: "flex", flexDirection: "column", height: "100vh" }}
+      style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}
     >
       <header className="kds-topbar">
         <a className="brand" href="/app">

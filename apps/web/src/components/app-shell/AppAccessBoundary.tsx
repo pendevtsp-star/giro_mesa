@@ -4,8 +4,9 @@ import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { getSession } from "../../lib/giromesa-api";
+import { useSession } from "../../lib/session-context";
 import { ForbiddenState, LoadingState } from "../states/AppStates";
+import { BrandLink } from "./BrandMark";
 import { canAccessAppPath, requiredNavigationItemForPath } from "./navigation";
 
 type AccessState = "checking" | "allowed" | "forbidden" | "unauthenticated";
@@ -13,34 +14,24 @@ type AccessState = "checking" | "allowed" | "forbidden" | "unauthenticated";
 export function AppAccessBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { session, isLoading } = useSession();
   const [access, setAccess] = useState<AccessState>(pathname === "/app" ? "allowed" : "checking");
 
   useEffect(() => {
-    let active = true;
-
     if (pathname === "/app") {
       setAccess("allowed");
-      return () => {
-        active = false;
-      };
+      return;
     }
 
-    setAccess("checking");
-    void getSession()
-      .then((session) => {
-        if (!active) return;
-        setAccess(canAccessAppPath(pathname, session.permissions) ? "allowed" : "forbidden");
-      })
-      .catch(() => {
-        if (!active) return;
-        setAccess("unauthenticated");
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [pathname, router]);
+    if (isLoading) {
+      setAccess("checking");
+    } else if (session) {
+      setAccess(canAccessAppPath(pathname, session.permissions) ? "allowed" : "forbidden");
+    } else {
+      setAccess("unauthenticated");
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    }
+  }, [isLoading, pathname, router, session]);
 
   if (access === "allowed") {
     return children;
@@ -65,10 +56,7 @@ export function AppAccessBoundary({ children }: { children: ReactNode }) {
         <a className="button ghost compact" href="/app">
           <ArrowLeft size={16} /> Voltar ao painel
         </a>
-        <a className="brand" href="/">
-          <span className="brand-mark">G</span>
-          <span>GiroMesa</span>
-        </a>
+        <BrandLink />
       </header>
       <section className="workspace-heading">
         <span className="section-kicker">
