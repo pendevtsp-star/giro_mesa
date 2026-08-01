@@ -216,22 +216,27 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          scan_succeeded=false
           for attempt in 1 2 3 4 5; do
             if ssh-keyscan -T 20 -p "${{ steps.target.outputs.port }}" -H "${{ steps.target.outputs.host }}" >> ~/.ssh/known_hosts; then
+              scan_succeeded=true
               break
             fi
-            if [[ "$attempt" == "5" ]]; then
-              echo "Unable to read SSH host keys after ${attempt} attempts." >&2
-              exit 1
+            if [[ "$attempt" != "5" ]]; then
+              sleep 5
             fi
-            sleep 5
           done
+          if [[ "$scan_succeeded" != "true" ]]; then
+            echo "ssh-keyscan did not reach the host; continuing with StrictHostKeyChecking=accept-new." >&2
+            : > ~/.ssh/known_hosts
+          fi
+          printf 'SSH_OPTS=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=%s\n' "$HOME/.ssh/known_hosts" >> "$GITHUB_ENV"
 
       - name: Copy compose files
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" \
+          ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" \
             "mkdir -p /srv/apps/giro_mesa/backups"
-          scp -i ~/.ssh/deploy_key -P "${{ steps.target.outputs.port }}" docker-compose.prod.yml docker-compose.ghcr.yml scripts/deploy/ghcr-production.sh \
+          scp $SSH_OPTS -i ~/.ssh/deploy_key -P "${{ steps.target.outputs.port }}" docker-compose.prod.yml docker-compose.ghcr.yml scripts/deploy/ghcr-production.sh \
             "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}:/srv/apps/giro_mesa/"
 
       - name: Deploy on VPS
@@ -247,7 +252,7 @@ jobs:
             echo 'cd /srv/apps/giro_mesa'
             echo 'chmod 700 ghcr-production.sh'
             echo './ghcr-production.sh'
-          } | ssh -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" bash -s
+          } | ssh $SSH_OPTS -i ~/.ssh/deploy_key -p "${{ steps.target.outputs.port }}" "${{ steps.target.outputs.user }}@${{ steps.target.outputs.host }}" bash -s
         env:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN_GIRO_MESA: ${{ secrets.GHCR_TOKEN_GIRO_MESA }}
