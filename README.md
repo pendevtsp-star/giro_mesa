@@ -56,10 +56,10 @@ pnpm --filter @giromesa/web exec next dev --hostname localhost --port 3002
 
 Use `localhost` para web e API durante o desenvolvimento local. Misturar `localhost` e `127.0.0.1` pode impedir que o cookie `gm_session` seja enviado nos `fetch` autenticados. O comando `pnpm demo:reset` aplica migrations e recria o tenant `bar-aurora-demo` para manter produtos, mesas, estoque e credenciais demo previsiveis. O E2E builda a web, inicia `next start` em `3004` e executa o fluxo real da API quando `3333` esta disponivel.
 
-Credenciais seed:
-
-- Restaurante: `admin@bar-aurora-demo.local` / `Demo@12345`
-- Backoffice SaaS: `owner@giromesa.local` / `Platform@12345`
+Credenciais seed são injetadas por ambiente: `SEED_TEST_PASSWORD` para as contas do
+estabelecimento e `SEED_PLATFORM_PASSWORD` para `owner@giromesa.local`. Ambas devem ter
+ao menos 12 caracteres e nunca devem ser gravadas no repositório. Consulte
+`docs/QA_TEST_ACCESS.md` para os e-mails e o procedimento de QA.
 
 O seed demo é idempotente e limitado ao tenant `bar-aurora-demo`. Ele pode ser executado várias
 vezes para recompor dados previsíveis de QA sem apagar tenants reais. Em produção real, use tenants

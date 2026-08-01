@@ -3,9 +3,17 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 
 export const apiUrl = process.env.API_URL ?? "http://localhost:3333";
 export const adminEmail = "admin@bar-aurora-demo.local";
-export const adminPassword = "Demo@12345";
+export const adminPassword = process.env.E2E_TEST_PASSWORD ?? process.env.SEED_TEST_PASSWORD ?? "";
 export const platformEmail = "owner@giromesa.local";
-export const platformPassword = "Platform@12345";
+export const platformPassword =
+  process.env.E2E_PLATFORM_PASSWORD ?? process.env.SEED_PLATFORM_PASSWORD ?? "";
+
+function requireCredential(value: string, envName: string) {
+  if (!value) {
+    throw new Error(`${envName} must be provided for authenticated E2E tests`);
+  }
+  return value;
+}
 
 export async function skipWhenApiUnavailable() {
   const health = await playwrightRequest.newContext({ baseURL: apiUrl });
@@ -36,6 +44,7 @@ export async function authenticatePlatformPage(page: Page) {
 }
 
 export async function authenticatedApiContext(email = adminEmail, password = adminPassword) {
+  requireCredential(password, "E2E_TEST_PASSWORD/SEED_TEST_PASSWORD");
   const loginApi = await playwrightRequest.newContext({ baseURL: apiUrl });
   const login = await loginApi.post("/api/v1/auth/login", { data: { email, password } });
   expect(login.ok()).toBe(true);
@@ -65,6 +74,7 @@ export async function apiContextFromCookie(cookie: string): Promise<APIRequestCo
 }
 
 export async function loginViaUi(page: Page, email: string, password: string) {
+  requireCredential(password, "E2E_TEST_PASSWORD/SEED_TEST_PASSWORD");
   await expect(page.getByTestId("login-submit")).toBeEnabled();
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill(password);

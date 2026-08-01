@@ -46,61 +46,11 @@ type CartLine = {
   modifiers: ModifierSelection[];
 };
 
-const fallbackQr: PublicQrResponse = {
-  tenant: {
-    id: "demo",
-    name: "Bar Aurora",
-    slug: "bar-aurora-demo",
-    branding: {
-      displayName: "Bar Aurora",
-      logoUrl: null,
-      themeMode: "light",
-      accentPreset: "emerald",
-    },
-  },
-  table: { id: "demo-table", branchId: "demo", code: "M03", name: "Mesa 3", status: "free" },
-};
-
-const fallbackMenu: PublicMenuResponse = {
-  tenant: fallbackQr.tenant,
-  categories: [],
-  products: [
-    {
-      id: "demo-burger",
-      name: "Burger Clássico",
-      description: "Blend da casa, queijo prato, molho especial e pão brioche.",
-      categoryId: null,
-      priceCents: 3200,
-      imageUrl: null,
-      isAvailable: true,
-      channels: ["qr"],
-      isClubEligible: false,
-      bottleVolumeMl: null,
-      defaultDoseMl: 50,
-      spiritType: null,
-    },
-    {
-      id: "demo-chopp",
-      name: "Chopp Pilsen 400ml",
-      description: "Tirado na hora, gelado e com colarinho cremoso.",
-      categoryId: null,
-      priceCents: 1400,
-      imageUrl: null,
-      isAvailable: true,
-      channels: ["qr"],
-      isClubEligible: false,
-      bottleVolumeMl: null,
-      defaultDoseMl: 50,
-      spiritType: null,
-    },
-  ],
-};
-
 export default function TableQrPage({ params }: { params: Promise<{ tableCode: string }> }) {
   const { tableCode } = use(params);
   const secureMode = tableCode.includes(".");
-  const [qr, setQr] = useState<PublicQrResponse>(fallbackQr);
-  const [menu, setMenu] = useState<PublicMenuResponse>(fallbackMenu);
+  const [qr, setQr] = useState<PublicQrResponse | null>(null);
+  const [menu, setMenu] = useState<PublicMenuResponse | null>(null);
   const [fatalError, setFatalError] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [status, setStatus] = useState("Escolha itens do cardápio ou chame o atendimento.");
@@ -135,12 +85,15 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                 slug: "",
                 branding,
               },
+              capabilities: context.capabilities,
+              reviewBeforeKds: context.reviewBeforeKds,
               table: {
                 id: context.table.id,
                 branchId: context.branchId,
                 code: context.table.code,
                 name: context.table.name,
                 status: context.table.status,
+                active: context.table.active,
               },
             } satisfies PublicQrResponse,
             menu: {
@@ -176,13 +129,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       })
       .catch(() => {
         if (!ignore) {
-          if (secureMode) {
-            setFatalError("Este QR é inválido, foi revogado ou não pertence mais a esta mesa.");
-            setMenu({ ...fallbackMenu, products: [] });
-          } else {
-            setQr({ ...fallbackQr, table: { ...fallbackQr.table, code: tableCode } });
-            setMenu(fallbackMenu);
-          }
+          setFatalError(
+            secureMode
+              ? "Este QR é inválido, foi revogado ou não pertence mais a esta mesa."
+              : "Este QR é inválido ou o atendimento está indisponível no momento.",
+          );
         }
       });
 
@@ -195,20 +146,20 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const categoryOptions = useMemo(
     () => [
       ["all", "Todos"],
-      ...menu.categories.map((category) => [category.id, category.name] as const),
+      ...(menu?.categories ?? []).map((category) => [category.id, category.name] as const),
     ],
-    [menu.categories],
+    [menu?.categories],
   );
   const visibleProducts = useMemo(() => {
     const normalizedQuery = productQuery.trim().toLowerCase();
-    return menu.products
+    return (menu?.products ?? [])
       .filter((product) => product.isAvailable)
       .filter((product) => categoryFilter === "all" || product.categoryId === categoryFilter)
       .filter((product) =>
         `${product.name} ${product.description ?? ""}`.toLowerCase().includes(normalizedQuery),
       );
-  }, [categoryFilter, menu.products, productQuery]);
-  const branding = qr.tenant.branding ?? menu.tenant.branding ?? fallbackQr.tenant.branding;
+  }, [categoryFilter, menu?.products, productQuery]);
+  const branding = qr?.tenant.branding ?? menu?.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
 
   function addProduct(product: Pick<Product, "id" | "name" | "priceCents">) {
@@ -346,8 +297,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
   function submitOrder() {
     void run(async () => {
-      if (cart.length === 0) {
+      if (!qr || cart.length === 0) {
         throw new Error("Adicione pelo menos um item ao pedido.");
+      }
+      if (secureMode && qr.table.active === false) {
+        throw new Error("O atendimento desta mesa ainda não foi ativado pela equipe.");
       }
       const items = cart.map((line) => ({
         productId: line.productId,
@@ -371,6 +325,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
   function callWaiter() {
     void run(async () => {
+      if (!qr) return;
       if (secureMode) {
         await createSecureServiceRequest(tableCode, idempotencyKey(tableCode, "call-waiter"), {
           type: "call_waiter",
@@ -384,6 +339,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
   function requestPreBill() {
     void run(async () => {
+      if (!qr) return;
       if (secureMode) {
         await createSecureServiceRequest(tableCode, idempotencyKey(tableCode, "request-pre-bill"), {
           type: "request_pre_bill",
@@ -397,6 +353,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
   function openTableSummary() {
     void run(async () => {
+      if (!qr) return;
       let printLines = cart.map((line) => ({
         name: line.name,
         quantity: line.quantity,
@@ -507,6 +464,26 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       </main>
     );
   }
+
+  if (!qr || !menu) {
+    return (
+      <main className="menu-shell menu-shell-night table-qr-shell">
+        <section className="qr-card" role="status">
+          <span className="section-kicker">
+            <QrCode size={18} /> Carregando QR
+          </span>
+          <p>Consultando o atendimento desta mesa...</p>
+        </section>
+      </main>
+    );
+  }
+
+  const capabilities = new Set(
+    qr.capabilities ?? ["menu", "order", "view_tab", "call_waiter", "request_pre_bill"],
+  );
+  const canOrder = capabilities.has("order") && (qr.table.active !== false || !secureMode);
+  const canCallWaiter = capabilities.has("call_waiter");
+  const canRequestPreBill = capabilities.has("request_pre_bill") && secureMode;
 
   return (
     <main
@@ -654,7 +631,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             className="button primary full"
             type="button"
             onClick={submitOrder}
-            disabled={isBusy}
+            disabled={isBusy || !canOrder}
           >
             <Send size={17} /> Enviar pedido
           </button>
@@ -662,29 +639,33 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       </section>
 
       <section className="qr-actions">
-        <button className="qr-action" type="button" onClick={callWaiter} disabled={isBusy}>
-          <BellRing size={26} />
-          <div>
-            <h2>Chamar garçom</h2>
-            <p>Solicitação registrada para o painel do salão.</p>
-          </div>
-        </button>
-        <button
-          className="qr-action"
-          type="button"
-          onClick={requestPreBill}
-          disabled={isBusy || cart.length === 0}
-        >
-          <ReceiptText size={26} />
-          <div>
-            <h2>Pedir pré-conta</h2>
-            <p>
-              {cart.length
-                ? "O caixa recebe o pedido de fechamento da mesa."
-                : "Adicione itens para solicitar a pré-conta."}
-            </p>
-          </div>
-        </button>
+        {canCallWaiter ? (
+          <button className="qr-action" type="button" onClick={callWaiter} disabled={isBusy}>
+            <BellRing size={26} />
+            <div>
+              <h2>Chamar garçom</h2>
+              <p>Solicitação registrada para o painel do salão.</p>
+            </div>
+          </button>
+        ) : null}
+        {canRequestPreBill ? (
+          <button
+            className="qr-action"
+            type="button"
+            onClick={requestPreBill}
+            disabled={isBusy || cart.length === 0}
+          >
+            <ReceiptText size={26} />
+            <div>
+              <h2>Pedir pré-conta</h2>
+              <p>
+                {cart.length
+                  ? "O caixa recebe o pedido de fechamento da mesa."
+                  : "Adicione itens para solicitar a pré-conta."}
+              </p>
+            </div>
+          </button>
+        ) : null}
         <button className="qr-action" type="button" onClick={openTableSummary} disabled={isBusy}>
           <FileText size={26} />
           <div>

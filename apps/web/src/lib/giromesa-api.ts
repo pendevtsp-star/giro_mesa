@@ -118,6 +118,7 @@ export type QrArtwork = {
   format: "svg" | "png" | "pdf";
   size: "plate_10x15" | "sticker_8x8" | "a4";
   settings: QrBranchSettings;
+  branding?: { displayName: string; logoUrl: string | null };
   items: Array<{
     tableId: string;
     tableCode: string;
@@ -1029,7 +1030,16 @@ export type PublicModifierGroup = {
 
 export type PublicQrResponse = {
   tenant: { id: string; name: string; slug: string; branding?: TenantBranding };
-  table: { id: string; branchId: string; code: string; name: string; status: string };
+  table: {
+    id: string;
+    branchId: string;
+    code: string;
+    name: string;
+    status: string;
+    active?: boolean;
+  };
+  capabilities?: QrCapability[];
+  reviewBeforeKds?: boolean;
 };
 
 export type SecurePublicQrContext = {

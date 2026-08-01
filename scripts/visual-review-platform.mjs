@@ -5,6 +5,9 @@ import { chromium, request } from "@playwright/test";
 const webUrl = process.env.WEB_URL ?? "http://127.0.0.1:3002";
 const apiUrl = process.env.API_URL ?? "http://127.0.0.1:3333";
 const outputDir = resolve("test-results/visual-review-platform");
+const platformPassword = process.env.E2E_PLATFORM_PASSWORD ?? process.env.SEED_PLATFORM_PASSWORD;
+if (!platformPassword)
+  throw new Error("E2E_PLATFORM_PASSWORD or SEED_PLATFORM_PASSWORD is required");
 
 await mkdir(outputDir, { recursive: true });
 
@@ -12,7 +15,7 @@ const api = await request.newContext({ baseURL: apiUrl });
 const login = await api.post("/api/v1/auth/login", {
   data: {
     email: "owner@giromesa.local",
-    password: "Demo@12345",
+    password: platformPassword,
   },
 });
 

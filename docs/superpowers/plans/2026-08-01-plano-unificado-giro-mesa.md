@@ -39,8 +39,8 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 5 — garçom, perfis, PIN e dispositivos (núcleo de atendimento entregue; hardening avançado pendente abaixo).
 - [x] Fase 6 — KDS, expedição e impressão (núcleo operacional entregue; hardening avançado pendente abaixo).
 - [x] Fase 7 — dashboard, horário, turno e tema (núcleo entregue; hardening avançado pendente abaixo).
-- [ ] Fase 8 — limpeza, seed e cenário de homologação.
-- [ ] Fase 9 — QR personalizado por mesa.
+- [x] Fase 8 — limpeza, seed e cenário de homologação.
+- [x] Fase 9 — QR personalizado por mesa.
 - [ ] Fase 10 — integrações externas.
 - [ ] Fase 11 — aceite integral técnico, visual e operacional.
 - [ ] Fase 12 — handoff, backup e corte único.
@@ -301,57 +301,57 @@ primeiro rollout.
 
 ### Trabalho
 
-- [ ] Remover componentes, CSS, links, emojis e fallbacks antigos.
-- [ ] Verificar que nenhuma ação retorna `undefined` ou apenas muda mensagem.
-- [ ] Fazer backup aplicável antes de recriar banco local ou de homologação.
-- [ ] Criar seed determinístico com tenant e filial de homologação.
-- [ ] Popular catálogo, modificadores, ficha técnica, estoque, clientes, mesas,
+- [x] Remover componentes, CSS, links, emojis e fallbacks antigos.
+- [x] Verificar que nenhuma ação retorna `undefined` ou apenas muda mensagem.
+- [x] Fazer backup aplicável antes de recriar banco local ou de homologação.
+- [x] Criar seed determinístico com tenant e filial de homologação.
+- [x] Popular catálogo, modificadores, ficha técnica, estoque, clientes, mesas,
   reservas, fila, pedidos, pagamentos, KDS, impressão e turnos coerentes.
-- [ ] Criar uma conta individual por perfil sem credenciais no Git.
-- [ ] Receber senha por `SEED_TEST_PASSWORD` ou mecanismo equivalente seguro.
-- [ ] Documentar comando de reset/reseed e garantir que o seed duplo não duplica dados.
+- [x] Criar uma conta individual por perfil sem credenciais no Git.
+- [x] Receber senha por `SEED_TEST_PASSWORD` ou mecanismo equivalente seguro.
+- [x] Documentar comando de reset/reseed e garantir que o seed duplo não duplica dados.
 
 ### Gate
 
-- [ ] Um cenário limpo, reproduzível e visualmente navegável.
-- [ ] Login, permissões e dados coerentes para todos os perfis.
-- [ ] Nenhum dado pessoal real.
+- [x] Um cenário limpo, reproduzível e visualmente navegável.
+- [x] Login, permissões e dados coerentes para todos os perfis.
+- [x] Nenhum dado pessoal real.
 
 ## Fase 9 — QR personalizado por mesa
 
 ### Administração
 
-- [ ] Criar `/app/qr` no shell administrativo com filial, mesas, status e rotação.
-- [ ] Criar geração individual/lote, prévia e modelos controlados para placa 10×15,
+- [x] Criar `/app/qr` no shell administrativo com filial, mesas, status e rotação.
+- [x] Criar geração individual/lote, prévia e modelos controlados para placa 10×15,
   adesivo 8×8 e folha A4.
-- [ ] Exportar PDF, PNG e SVG com logo, cor, estabelecimento, mesa e instrução.
-- [ ] Validar contraste, quiet zone, tamanho mínimo e legibilidade.
-- [ ] Rotacionar com confirmação, invalidar material antigo imediatamente e auditar.
+- [x] Exportar PDF, PNG e SVG com logo, cor, estabelecimento, mesa e instrução.
+- [x] Validar contraste, quiet zone, tamanho mínimo e legibilidade.
+- [x] Rotacionar com confirmação, invalidar material antigo imediatamente e auditar.
 
 ### Segurança e operação pública
 
-- [ ] Criar `qr_branch_settings`, versão do token em `dining_tables` e `service_requests`.
-- [ ] Usar URL com token HMAC assinado contendo tenant, filial, mesa e versão.
-- [ ] Exigir `QR_SIGNING_SECRET` fora do repositório em produção.
-- [ ] Resolver tenant/filial no backend; endpoint público nunca confia em `tenant_id`
+- [x] Criar `qr_branch_settings`, versão do token em `dining_tables` e `service_requests`.
+- [x] Usar URL com token HMAC assinado contendo tenant, filial, mesa e versão.
+- [x] Exigir `QR_SIGNING_SECRET` fora do repositório em produção.
+- [x] Resolver tenant/filial no backend; endpoint público nunca confia em `tenant_id`
   ou `tenantSlug` enviado pelo cliente.
-- [ ] Aplicar rate limit, cooldown, idempotência e proteção contra reenvio.
-- [ ] Cardápio abre sem atendimento; pedido, comanda, pré-conta e chamados exigem mesa ativa.
-- [ ] Permitir acompanhar preparo, chamar garçom e solicitar pré-conta.
-- [ ] Resumo público usa comanda real, não carrinho como fonte de verdade, e não expõe
+- [x] Aplicar rate limit, cooldown, idempotência e proteção contra reenvio.
+- [x] Cardápio abre sem atendimento; pedido, comanda, pré-conta e chamados exigem mesa ativa.
+- [x] Permitir acompanhar preparo, chamar garçom e solicitar pré-conta.
+- [x] Resumo público usa comanda real, não carrinho como fonte de verdade, e não expõe
   cliente, usuário ou dado pessoal.
-- [ ] Persistir carrinho local e impedir pedido duplicado.
-- [ ] Manter pagamento online desativado até a homologação Asaas.
+- [x] Persistir carrinho local e impedir pedido duplicado.
+- [x] Manter pagamento online desativado até a homologação Asaas.
 
 ### Endpoints e gate
 
-- [ ] Administrativos: `/api/v1/qr/settings`, `/tables`, `/tables/:tableId/rotate`,
+- [x] Administrativos: `/api/v1/qr/settings`, `/tables`, `/tables/:tableId/rotate`,
   `/artwork`.
-- [ ] Públicos: `/api/v1/qr/public/:token/context`, `/order`, `/orders`,
+- [x] Públicos: `/api/v1/qr/public/:token/context`, `/order`, `/orders`,
   `/service-requests`.
-- [ ] Testar token válido, inválido, rotacionado, mesa inativa, rate limit, duplicidade,
+- [x] Testar token válido, inválido, rotacionado, mesa inativa, rate limit, duplicidade,
   comanda e chamados.
-- [ ] Gate: dono gera lote personalizado, rotação desativa o anterior e o cliente
+- [x] Gate: dono gera lote personalizado, rotação desativa o anterior e o cliente
   conclui os fluxos permitidos em mesa ativa.
 
 ## Fase 10 — integrações externas

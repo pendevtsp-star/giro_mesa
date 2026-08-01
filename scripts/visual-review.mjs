@@ -5,6 +5,8 @@ import { chromium, request } from "@playwright/test";
 const webUrl = process.env.WEB_URL ?? "http://localhost:3002";
 const apiUrl = process.env.API_URL ?? "http://localhost:3333";
 const outputDir = resolve("test-results/visual-review");
+const testPassword = process.env.E2E_TEST_PASSWORD ?? process.env.SEED_TEST_PASSWORD;
+if (!testPassword) throw new Error("E2E_TEST_PASSWORD or SEED_TEST_PASSWORD is required");
 
 await mkdir(outputDir, { recursive: true });
 
@@ -12,7 +14,7 @@ const api = await request.newContext({ baseURL: apiUrl });
 const login = await api.post("/api/v1/auth/login", {
   data: {
     email: "admin@bar-aurora-demo.local",
-    password: "Demo@12345",
+    password: testPassword,
   },
 });
 

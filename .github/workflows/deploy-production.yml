@@ -102,6 +102,18 @@ jobs:
       - name: Apply migrations
         run: pnpm db:migrate
 
+      - name: Configure ephemeral E2E credentials
+        shell: bash
+        run: |
+          seed_password="E2E-${GITHUB_RUN_ID}-$(openssl rand -hex 12)!"
+          platform_password="Platform-E2E-${GITHUB_RUN_ID}-$(openssl rand -hex 12)!"
+          {
+            echo "SEED_TEST_PASSWORD=$seed_password"
+            echo "SEED_PLATFORM_PASSWORD=$platform_password"
+            echo "E2E_TEST_PASSWORD=$seed_password"
+            echo "E2E_PLATFORM_PASSWORD=$platform_password"
+          } >> "$GITHUB_ENV"
+
       - name: Seed demo data for E2E
         run: pnpm --filter @giromesa/db db:seed
 

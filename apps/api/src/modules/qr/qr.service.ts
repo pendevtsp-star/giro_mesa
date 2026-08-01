@@ -213,7 +213,7 @@ export class QrService {
     },
   ) {
     const branchId = requireBranch(context);
-    const [settings, tables] = await Promise.all([
+    const [settings, tables, tenantRows] = await Promise.all([
       this.getSettings(context),
       this.database.db
         .select()
@@ -226,10 +226,16 @@ export class QrService {
           ),
         )
         .orderBy(asc(diningTables.code)),
+      this.database.db
+        .select({ name: tenants.name, settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, context.tenantId))
+        .limit(1),
     ]);
     if (tables.length !== new Set(input.tableIds).size) {
       throw new NotFoundException("One or more tables were not found");
     }
+    const branding = readBranding(tenantRows[0]?.settings ?? {}, tenantRows[0]?.name ?? "GiroMesa");
     const items = await Promise.all(
       tables.map(async (table) => {
         const url = this.publicUrl(
@@ -262,7 +268,9 @@ export class QrService {
           publicUrl: url,
           svg,
           png,
-          fileName: `giromesa-${table.code.toLowerCase()}.${input.format === "png" ? "png" : "svg"}`,
+          fileName: `giromesa-${table.code.toLowerCase()}.${
+            input.format === "png" ? "png" : input.format === "pdf" ? "pdf" : "svg"
+          }`,
         };
       }),
     );
@@ -275,14 +283,16 @@ export class QrService {
       format: input.format,
       size: input.size,
       settings,
+      branding,
       items,
-      printHtml: input.format === "pdf" ? renderPrintHtml(items, settings, input.size) : null,
+      printHtml:
+        input.format === "pdf" ? renderPrintHtml(items, settings, input.size, branding) : null,
     };
   }
 
   async getPublicContext(token: string) {
     const resolved = await this.resolveToken(token);
-    const settings = await this.settingsForBranch(resolved.table.branchId);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
     const [menuCategories, menuProducts] = await Promise.all([
       this.database.db
         .select()
@@ -341,7 +351,7 @@ export class QrService {
 
   async getPublicOrder(token: string) {
     const resolved = await this.resolveToken(token);
-    const settings = await this.settingsForBranch(resolved.table.branchId);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
     this.assertCapability(settings, "view_tab");
     this.assertActive(resolved.table.status);
     const [order] = await this.database.db
@@ -386,7 +396,7 @@ export class QrService {
 
   async createPublicOrder(token: string, idempotencyKey: string, input: PublicOrderInput) {
     const resolved = await this.resolveToken(token);
-    const settings = await this.settingsForBranch(resolved.table.branchId);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
     this.assertCapability(settings, "order");
     this.assertActive(resolved.table.status);
     return this.database.db.transaction(async (tx) => {
@@ -528,7 +538,7 @@ export class QrService {
     input: PublicServiceRequestInput,
   ) {
     const resolved = await this.resolveToken(token);
-    const settings = await this.settingsForBranch(resolved.table.branchId);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
     const capability = input.type === "request_pre_bill" ? "request_pre_bill" : "call_waiter";
     this.assertCapability(settings, capability);
     this.assertActive(resolved.table.status);
@@ -751,11 +761,11 @@ export class QrService {
     }
   }
 
-  private async settingsForBranch(branchId: string) {
+  private async settingsForBranch(tenantId: string, branchId: string) {
     const [settings] = await this.database.db
       .select()
       .from(qrBranchSettings)
-      .where(eq(qrBranchSettings.branchId, branchId))
+      .where(and(eq(qrBranchSettings.tenantId, tenantId), eq(qrBranchSettings.branchId, branchId)))
       .limit(1);
     return settings ? mapSettings(settings) : defaultSettings(branchId);
   }
@@ -918,18 +928,19 @@ function renderPrintHtml(
   items: Array<{ tableCode: string; tableName: string; svg: string }>,
   settings: QrBranchSettings,
   size: "plate_10x15" | "sticker_8x8" | "a4",
+  branding: { displayName: string; logoUrl: string | null },
 ) {
   const cards = items
     .map(
       (item) =>
-        `<article><strong>${escapeHtml(item.tableName)}</strong><span>${escapeHtml(
+        `<article><header>${branding.logoUrl ? `<img src="${escapeHtml(branding.logoUrl)}" alt="" />` : ""}<strong>${escapeHtml(branding.displayName)}</strong></header><strong>${escapeHtml(item.tableName)}</strong><span>${escapeHtml(
           item.tableCode,
         )}</span>${item.svg}<p>${escapeHtml(settings.instruction)}</p></article>`,
     )
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><style>@page{margin:8mm}body{font-family:Arial,sans-serif;display:grid;grid-template-columns:${
     size === "a4" ? "repeat(3,1fr)" : "1fr"
-  };gap:8mm}article{break-inside:avoid;border:1px solid #d8dee8;border-radius:12px;padding:8mm;text-align:center;color:#071526}strong,span{display:block}svg{width:100%;max-width:70mm;height:auto}p{font-size:12px}</style></head><body>${cards}</body></html>`;
+  };gap:8mm}article{break-inside:avoid;border:2px solid ${escapeHtml(settings.primaryColor)};border-radius:12px;padding:8mm;text-align:center;color:#071526}header{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px}header img{width:24px;height:24px;object-fit:contain}strong,span{display:block}svg{width:100%;max-width:70mm;height:auto}p{font-size:12px}</style></head><body>${cards}</body></html>`;
 }
 
 function escapeHtml(value: string) {

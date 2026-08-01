@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { loadEnvFile } from "node:process";
@@ -18,6 +19,9 @@ const webPort = Number(process.env.E2E_WEB_PORT ?? 3106);
 const apiUrl = `http://localhost:${apiPort}`;
 const webUrl = `http://localhost:${webPort}`;
 const databaseUrl = resolveE2eDatabaseUrl();
+const testPassword = process.env.SEED_TEST_PASSWORD ?? `E2E-${randomBytes(12).toString("hex")}!`;
+const platformPassword =
+  process.env.SEED_PLATFORM_PASSWORD ?? `Platform-E2E-${randomBytes(12).toString("hex")}!`;
 const runtimeEnv = {
   ...process.env,
   NODE_ENV: "test",
@@ -31,6 +35,10 @@ const runtimeEnv = {
   WEB_URL: webUrl,
   PLAYWRIGHT_SKIP_WEB_SERVER: "1",
   PLAYWRIGHT_REUSE_EXISTING_SERVER: "0",
+  SEED_TEST_PASSWORD: testPassword,
+  SEED_PLATFORM_PASSWORD: platformPassword,
+  E2E_TEST_PASSWORD: process.env.E2E_TEST_PASSWORD ?? testPassword,
+  E2E_PLATFORM_PASSWORD: process.env.E2E_PLATFORM_PASSWORD ?? platformPassword,
 };
 
 const children = [];

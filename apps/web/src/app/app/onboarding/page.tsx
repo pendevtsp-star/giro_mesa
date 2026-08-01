@@ -92,8 +92,8 @@ export default function OnboardingPage() {
                 <span>Trial, ativação e continuidade.</span>
               </a>
             </div>
-            <a className="button primary compact" href="/q/M03">
-              <QrCode size={16} /> Ver QR de exemplo
+            <a className="button primary compact" href="/app/qr">
+              <QrCode size={16} /> Gerenciar QR das mesas
             </a>
           </section>
           <section className="onboarding-progress" aria-label="Progresso da implantação">

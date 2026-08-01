@@ -81,6 +81,16 @@ if (!process.env.DATABASE_URL || !process.env.PASSWORD_PEPPER) {
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgres://giromesa:giromesa@localhost:55432/giromesa";
 const passwordPepper = process.env.PASSWORD_PEPPER ?? "local-development-password-pepper";
+const configuredSeedPassword = process.env.SEED_TEST_PASSWORD?.trim();
+const configuredPlatformPassword = process.env.SEED_PLATFORM_PASSWORD?.trim();
+
+if (!configuredSeedPassword || configuredSeedPassword.length < 12) {
+  throw new Error("SEED_TEST_PASSWORD must contain at least 12 characters");
+}
+
+if (!configuredPlatformPassword || configuredPlatformPassword.length < 12) {
+  throw new Error("SEED_PLATFORM_PASSWORD must contain at least 12 characters");
+}
 
 const pool = new Pool({ connectionString: databaseUrl });
 const db = drizzle(pool);
@@ -94,7 +104,6 @@ type DemoRoleSeed = {
 type DemoUserSeed = {
   email: string;
   name: string;
-  password: string;
   roleCode: string;
 };
 
@@ -252,6 +261,43 @@ async function upsertDemo() {
     throw new Error("Failed to seed branch");
   }
 
+  await db.insert(branchOperationalSettings).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    cleaningMode: "manual",
+    allowWaiterPayments: true,
+    defaultTheme: "light",
+    defaultKdsInputMode: "hybrid",
+    kdsShortcuts: {
+      refresh: "r",
+      sound: "s",
+      fullscreen: "f",
+      advance: " ",
+      up: "ArrowUp",
+      down: "ArrowDown",
+    },
+  });
+
+  const businessHours: Array<[number, string, string]> = [
+    [1, "17:00", "01:00"],
+    [2, "17:00", "01:00"],
+    [3, "17:00", "01:00"],
+    [4, "17:00", "02:00"],
+    [5, "17:00", "02:00"],
+    [6, "12:00", "02:00"],
+    [0, "12:00", "23:00"],
+  ];
+  await db.insert(branchBusinessHours).values(
+    businessHours.map(([weekday, opensAt, closesAt], sortOrder) => ({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      weekday,
+      opensAt,
+      closesAt,
+      sortOrder,
+    })),
+  );
+
   await db.insert(subscriptions).values({
     tenantId: tenant.id,
     planId: starterPlan.id,
@@ -363,52 +409,46 @@ async function upsertDemo() {
     {
       email: "admin@bar-aurora-demo.local",
       name: "Admin Demo",
-      password: "Demo@12345",
       roleCode: "owner",
     },
     {
       email: "gerente@bar-aurora-demo.local",
       name: "Gerente Demo",
-      password: "Gerente@12345",
       roleCode: "manager",
     },
     {
       email: "caixa@bar-aurora-demo.local",
       name: "Caixa Demo",
-      password: "Caixa@12345",
       roleCode: "cashier",
     },
     {
       email: "garcom@bar-aurora-demo.local",
       name: "Garçom Demo",
-      password: "Garcom@12345",
       roleCode: "waiter",
     },
     {
       email: "cozinha@bar-aurora-demo.local",
       name: "Cozinha Demo",
-      password: "Cozinha@12345",
       roleCode: "kitchen",
     },
     {
       email: "bar@bar-aurora-demo.local",
       name: "Bar Demo",
-      password: "BarDemo@12345",
       roleCode: "bar",
     },
     {
       email: "financeiro@bar-aurora-demo.local",
       name: "Financeiro Demo",
-      password: "Financeiro@12345",
       roleCode: "finance",
     },
   ];
 
-  const seededUsers: Array<{ email: string; password: string; roleCode: string }> = [];
+  const seededUsers: Array<{ email: string; roleCode: string }> = [];
+  const userIdByRole = new Map<string, string>();
   let ownerId: string | null = null;
 
   for (const userSeed of demoUsers) {
-    const passwordHash = await argon2.hash(`${userSeed.password}${passwordPepper}`, {
+    const passwordHash = await argon2.hash(`${configuredSeedPassword}${passwordPepper}`, {
       type: argon2.argon2id,
       memoryCost: 19_456,
       timeCost: 2,
@@ -456,9 +496,9 @@ async function upsertDemo() {
 
     seededUsers.push({
       email: userSeed.email,
-      password: userSeed.password,
       roleCode: userSeed.roleCode,
     });
+    userIdByRole.set(userSeed.roleCode, user.id);
 
     if (userSeed.roleCode === "owner") {
       ownerId = user.id;
@@ -617,29 +657,85 @@ async function upsertDemo() {
     managerPinHash,
   });
 
+  const [marina] = await db
+    .insert(customers)
+    .values({
+      tenantId: tenant.id,
+      name: "Marina Costa",
+      phone: "+55 11 99999-1234",
+      email: "marina.demo@example.test",
+      birthday: "1990-04-12",
+      marketingOptIn: true,
+      lgpdConsentAt: new Date(),
+    })
+    .returning();
+  const [rafael] = await db
+    .insert(customers)
+    .values({
+      tenantId: tenant.id,
+      name: "Rafael Lima",
+      phone: "+55 11 98888-4321",
+      email: "rafael.demo@example.test",
+      marketingOptIn: false,
+      lgpdConsentAt: new Date(),
+    })
+    .returning();
+
+  if (!marina || !rafael) {
+    throw new Error("Failed to seed customers");
+  }
+
   const reservationTable = tableByCode.get("M05");
   if (reservationTable) {
-    await db.insert(reservations).values({
-      tenantId: tenant.id,
-      branchId: branch.id,
-      tableId: reservationTable.id,
-      customerName: "Marina Costa",
-      customerPhone: "+55 11 99999-1234",
-      partySize: 6,
-      scheduledAt: new Date(Date.now() + 1000 * 60 * 90),
-      createdByUserId: ownerId,
-      notes: "Aniversário",
-    });
+    const [reservation] = await db
+      .insert(reservations)
+      .values({
+        tenantId: tenant.id,
+        branchId: branch.id,
+        tableId: reservationTable.id,
+        customerId: marina.id,
+        customerName: "Marina Costa",
+        customerPhone: "+55 11 99999-1234",
+        partySize: 6,
+        scheduledAt: new Date(Date.now() + 1000 * 60 * 90),
+        createdByUserId: ownerId,
+        notes: "Aniversário",
+      })
+      .returning();
+
+    if (reservation) {
+      await db.insert(reservationTables).values({
+        tenantId: tenant.id,
+        branchId: branch.id,
+        reservationId: reservation.id,
+        tableId: reservationTable.id,
+        isPrimary: true,
+      });
+    }
   }
 
   await db.insert(waitlistEntries).values({
     tenantId: tenant.id,
     branchId: branch.id,
+    customerId: rafael.id,
     customerName: "Rafael Lima",
     customerPhone: "+55 11 98888-4321",
     partySize: 3,
     quotedWaitMinutes: 20,
     createdByUserId: ownerId,
+  });
+
+  await db.insert(waitlistEntries).values({
+    tenantId: tenant.id,
+    branchId: branch.id,
+    customerName: "Joana Ribeiro",
+    customerPhone: "+55 11 97777-1111",
+    partySize: 2,
+    status: "notified",
+    quotedWaitMinutes: 10,
+    notifiedAt: new Date(Date.now() - 1000 * 60 * 8),
+    createdByUserId: ownerId,
+    notes: "Cliente avisado por telefone",
   });
 
   const [foodCategory] = await db
@@ -677,28 +773,31 @@ async function upsertDemo() {
     throw new Error("Failed to seed catalog base");
   }
 
-  await db.insert(printRoutes).values([
-    {
-      tenantId: tenant.id,
-      branchId: branch.id,
-      name: "Cozinha recebe pedidos do KDS",
-      trigger: "kds_ticket_created",
-      targetType: "kitchen_ticket",
-      stationId: kitchen.id,
-      printerDeviceId: kitchenPrinter.id,
-      copies: 1,
-    },
-    {
-      tenantId: tenant.id,
-      branchId: branch.id,
-      name: "Bar recebe bebidas do KDS",
-      trigger: "kds_ticket_created",
-      targetType: "bar_ticket",
-      stationId: bar.id,
-      printerDeviceId: barPrinter.id,
-      copies: 1,
-    },
-  ]);
+  const [kitchenRoute, barRoute] = await db
+    .insert(printRoutes)
+    .values([
+      {
+        tenantId: tenant.id,
+        branchId: branch.id,
+        name: "Cozinha recebe pedidos do KDS",
+        trigger: "kds_ticket_created",
+        targetType: "kitchen_ticket",
+        stationId: kitchen.id,
+        printerDeviceId: kitchenPrinter.id,
+        copies: 1,
+      },
+      {
+        tenantId: tenant.id,
+        branchId: branch.id,
+        name: "Bar recebe bebidas do KDS",
+        trigger: "kds_ticket_created",
+        targetType: "bar_ticket",
+        stationId: bar.id,
+        printerDeviceId: barPrinter.id,
+        copies: 1,
+      },
+    ])
+    .returning();
 
   const [burger] = await db
     .insert(products)
@@ -831,10 +930,23 @@ async function upsertDemo() {
     throw new Error("Failed to seed the visual order");
   }
 
+  const [visualTab] = await db
+    .insert(tabs)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      orderId: visualOrder.id,
+      code: "M03-001",
+      name: "Comanda mesa 03",
+      status: "open",
+    })
+    .returning();
+
   await db.insert(orderItems).values([
     {
       tenantId: tenant.id,
       orderId: visualOrder.id,
+      tabId: visualTab?.id,
       productId: burger.id,
       nameSnapshot: burger.name,
       quantity: "1",
@@ -846,6 +958,7 @@ async function upsertDemo() {
     {
       tenantId: tenant.id,
       orderId: visualOrder.id,
+      tabId: visualTab?.id,
       productId: beer.id,
       nameSnapshot: beer.name,
       quantity: "1",
@@ -856,18 +969,182 @@ async function upsertDemo() {
     },
   ]);
 
-  await db.insert(kdsTickets).values({
+  const [visualKdsTicket] = await db
+    .insert(kdsTickets)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      stationId: kitchen.id,
+      orderId: visualOrder.id,
+      status: "preparing",
+      payload: {
+        source: "visual_seed",
+        tableId: activeTable.id,
+        summary: "1 Burger Clássico · 1 Chopp Pilsen",
+      },
+    })
+    .returning();
+
+  if (visualKdsTicket && kitchenRoute) {
+    await db.insert(printJobs).values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      printerDeviceId: kitchenPrinter.id,
+      printRouteId: kitchenRoute.id,
+      kdsTicketId: visualKdsTicket.id,
+      orderId: visualOrder.id,
+      requestedByUserId: userIdByRole.get("waiter"),
+      kind: "kds_ticket",
+      status: "pending",
+      idempotencyKey: "seed-print-kds-m03-001",
+      copies: 1,
+      payload: { source: "visual_seed", tableCode: "M03" },
+      renderedText: "M03 | Burger Classico | Chopp Pilsen",
+    });
+  }
+
+  await db.insert(serviceRequests).values({
     tenantId: tenant.id,
     branchId: branch.id,
-    stationId: kitchen.id,
+    tableId: activeTable.id,
     orderId: visualOrder.id,
-    status: "preparing",
-    payload: {
-      source: "visual_seed",
-      tableId: activeTable.id,
-      summary: "1 Burger Clássico · 1 Chopp Pilsen",
-    },
+    type: "call_waiter",
+    status: "pending",
+    message: "Cliente solicita atendimento",
   });
+
+  const cashierId = userIdByRole.get("cashier");
+  if (!cashierId || !ownerId) {
+    throw new Error("Failed to resolve cashier and owner for the operational seed");
+  }
+
+  const [operationalShift] = await db
+    .insert(operationalShifts)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      openedByUserId: ownerId,
+      status: "open",
+      notes: "Turno de homologacao visual",
+      openingContext: { source: "visual_seed", expectedClosingAt: "02:00" },
+    })
+    .returning();
+
+  const paidTable = tableByCode.get("M01");
+  if (!paidTable || !operationalShift) {
+    throw new Error("Failed to seed the closed operational scenario");
+  }
+
+  const paidOpenedAt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const paidClosedAt = new Date(Date.now() - 90 * 60 * 1000);
+  const [paidOrder] = await db
+    .insert(orders)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      tableId: paidTable.id,
+      customerId: rafael.id,
+      channel: "table",
+      status: "paid",
+      peopleCount: 2,
+      subtotalCents: 4600,
+      totalCents: 4600,
+      openedAt: paidOpenedAt,
+      closedAt: paidClosedAt,
+    })
+    .returning();
+
+  if (!paidOrder) {
+    throw new Error("Failed to seed the paid order");
+  }
+
+  await db.insert(orderItems).values([
+    {
+      tenantId: tenant.id,
+      orderId: paidOrder.id,
+      productId: burger.id,
+      nameSnapshot: burger.name,
+      quantity: "1",
+      unitPriceCents: burger.priceCents,
+      totalCents: burger.priceCents,
+      status: "served",
+      sentToKitchenAt: paidOpenedAt,
+    },
+    {
+      tenantId: tenant.id,
+      orderId: paidOrder.id,
+      productId: beer.id,
+      nameSnapshot: beer.name,
+      quantity: "1",
+      unitPriceCents: beer.priceCents,
+      totalCents: beer.priceCents,
+      status: "served",
+      sentToKitchenAt: paidOpenedAt,
+    },
+  ]);
+
+  const [paidPayment] = await db
+    .insert(payments)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      orderId: paidOrder.id,
+      provider: "manual",
+      method: "cash",
+      status: "confirmed",
+      amountCents: paidOrder.totalCents,
+      idempotencyKey: "seed-payment-m01-001",
+      registeredByUserId: cashierId,
+      registeredVia: "cashier",
+      cashHandoverStatus: "not_required",
+      metadata: { source: "visual_seed" },
+      confirmedAt: paidClosedAt,
+    })
+    .returning();
+
+  const [cashSession] = await db
+    .insert(cashSessions)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      operatorId: cashierId,
+      status: "open",
+      openingAmountCents: 20000,
+      expectedAmountCents: 24600,
+    })
+    .returning();
+
+  if (cashSession) {
+    await db.insert(cashMovements).values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      cashSessionId: cashSession.id,
+      type: "supply",
+      amountCents: 20000,
+      reason: "Fundo de troco do turno",
+      createdByUserId: cashierId,
+    });
+  }
+
+  if (paidPayment && barRoute) {
+    await db.insert(printJobs).values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      printerDeviceId: barPrinter.id,
+      printRouteId: barRoute.id,
+      orderId: paidOrder.id,
+      requestedByUserId: cashierId,
+      kind: "payment_receipt",
+      status: "printed",
+      idempotencyKey: "seed-print-receipt-m01-001",
+      copies: 1,
+      attemptCount: 1,
+      payload: { source: "visual_seed", paymentId: paidPayment.id },
+      renderedText: "Bar Aurora | Comprovante | M01 | Total R$ 46,00",
+      printedAt: paidClosedAt,
+      lastAttemptAt: paidClosedAt,
+    });
+  }
 
   const [pointGroup] = await db
     .insert(modifierGroups)
@@ -1172,7 +1449,8 @@ async function upsertDemo() {
 }
 
 async function upsertPlatformOwner() {
-  const passwordHash = await argon2.hash(`Platform@12345${passwordPepper}`, {
+  const platformPassword = configuredPlatformPassword;
+  const passwordHash = await argon2.hash(`${platformPassword}${passwordPepper}`, {
     type: argon2.argon2id,
     memoryCost: 19_456,
     timeCost: 2,

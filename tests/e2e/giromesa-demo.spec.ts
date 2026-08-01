@@ -3,6 +3,9 @@ import { expect, request as playwrightRequest, test } from "@playwright/test";
 import { generateTotpCode } from "../../apps/api/src/common/totp";
 
 const apiUrl = process.env.API_URL ?? "http://localhost:3333";
+const testPassword = process.env.E2E_TEST_PASSWORD ?? process.env.SEED_TEST_PASSWORD ?? "";
+const platformPassword =
+  process.env.E2E_PLATFORM_PASSWORD ?? process.env.SEED_PLATFORM_PASSWORD ?? "";
 
 test.describe("GiroMesa commercial and operational flows", () => {
   test("navigates public commercial, trial and QR surfaces", async ({ page }) => {
@@ -321,12 +324,12 @@ test.describe("GiroMesa commercial and operational flows", () => {
     await skipWhenApiUnavailable();
 
     await page.goto("/login", { waitUntil: "networkidle" });
-    await loginViaUi(page, "owner@giromesa.local", "Platform@12345");
+    await loginViaUi(page, "owner@giromesa.local", platformPassword);
     await expect(page).toHaveURL(/\/platform/);
     await expect(page.getByRole("heading", { name: "Backoffice SaaS" })).toBeVisible();
 
     await page.goto("/login", { waitUntil: "networkidle" });
-    await loginViaUi(page, "admin@bar-aurora-demo.local", "Demo@12345");
+    await loginViaUi(page, "admin@bar-aurora-demo.local", testPassword);
     await expect(page).toHaveURL(/\/app/);
     await expect(page.getByTestId("workspace-dashboard")).toBeVisible();
   });
@@ -376,7 +379,7 @@ test.describe("GiroMesa commercial and operational flows", () => {
 
     const { api: platformApi } = await authenticatedApiContext(
       "owner@giromesa.local",
-      "Platform@12345",
+      platformPassword,
     );
     const suffix = Date.now();
     const created = await platformApi.post("/api/v1/platform/tenants", {
@@ -434,13 +437,13 @@ async function skipWhenApiUnavailable() {
 
 async function authenticateBrowserPage(page: Page) {
   await page.goto("/login", { waitUntil: "networkidle" });
-  await loginViaUi(page, "admin@bar-aurora-demo.local", "Demo@12345");
+  await loginViaUi(page, "admin@bar-aurora-demo.local", testPassword);
   await expect(page).toHaveURL(/\/app/);
 }
 
 async function authenticatedApiContext(
   email = "admin@bar-aurora-demo.local",
-  password = "Demo@12345",
+  password = testPassword,
 ) {
   const loginApi = await playwrightRequest.newContext({ baseURL: apiUrl });
   const login = await loginApi.post("/api/v1/auth/login", { data: { email, password } });

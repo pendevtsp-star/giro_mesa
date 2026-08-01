@@ -1,26 +1,31 @@
 import { expect, test } from "@playwright/test";
-import { authenticateBrowserPage, loginViaUi, skipWhenApiUnavailable } from "./helpers";
+import {
+  adminPassword,
+  authenticateBrowserPage,
+  loginViaUi,
+  skipWhenApiUnavailable,
+} from "./helpers";
 
 const roles = {
   owner: {
     email: "admin@bar-aurora-demo.local",
-    password: "Demo@12345",
+    password: adminPassword,
   },
   manager: {
     email: "gerente@bar-aurora-demo.local",
-    password: "Gerente@12345",
+    password: adminPassword,
   },
   cashier: {
     email: "caixa@bar-aurora-demo.local",
-    password: "Caixa@12345",
+    password: adminPassword,
   },
   waiter: {
     email: "garcom@bar-aurora-demo.local",
-    password: "Garcom@12345",
+    password: adminPassword,
   },
   kitchen: {
     email: "cozinha@bar-aurora-demo.local",
-    password: "Cozinha@12345",
+    password: adminPassword,
   },
 } as const;
 

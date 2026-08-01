@@ -7,24 +7,27 @@ dados reais do backend.
 
 ## Ambiente do Estabelecimento
 
-- `admin@bar-aurora-demo.local` / `Demo@12345`
+Todas as contas abaixo usam o valor de `SEED_TEST_PASSWORD` (injetado no ambiente,
+nunca versionado):
+
+- `admin@bar-aurora-demo.local`
   - Perfil: proprietário
-- `gerente@bar-aurora-demo.local` / `Gerente@12345`
+- `gerente@bar-aurora-demo.local`
   - Perfil: gerente
-- `caixa@bar-aurora-demo.local` / `Caixa@12345`
+- `caixa@bar-aurora-demo.local`
   - Perfil: caixa
-- `garcom@bar-aurora-demo.local` / `Garcom@12345`
+- `garcom@bar-aurora-demo.local`
   - Perfil: garçom
-- `cozinha@bar-aurora-demo.local` / `Cozinha@12345`
+- `cozinha@bar-aurora-demo.local`
   - Perfil: cozinha
-- `bar@bar-aurora-demo.local` / `BarDemo@12345`
+- `bar@bar-aurora-demo.local`
   - Perfil: bar
-- `financeiro@bar-aurora-demo.local` / `Financeiro@12345`
+- `financeiro@bar-aurora-demo.local`
   - Perfil: financeiro
 
 ## Backoffice SaaS
 
-- `owner@giromesa.local` / `Platform@12345`
+- `owner@giromesa.local` (senha em `SEED_PLATFORM_PASSWORD`)
   - Perfil: dono da plataforma
 
 ## Uso recomendado no QA
@@ -55,15 +58,20 @@ dados reais do backend.
 ## Reset da demo
 
 ```bash
+export SEED_TEST_PASSWORD='<senha-com-12-ou-mais-caracteres>'
+export SEED_PLATFORM_PASSWORD='<outra-senha-com-12-ou-mais-caracteres>'
 pnpm demo:reset
 ```
+
+No PowerShell, use `$env:SEED_TEST_PASSWORD` e `$env:SEED_PLATFORM_PASSWORD`. Nunca
+grave os valores reais em documentação, código ou logs.
 
 O reset aplica migrations e recompõe o tenant `bar-aurora-demo`. Ele deve ser idempotente e não
 deve apagar dados reais fora desse tenant.
 
 ## Diferença entre ambientes
 
-- Dev local: pode usar defaults locais e providers mock.
+- Dev local: exige as variáveis de seed e pode usar providers mock.
 - Demo pública: usa login, sessão, permissões e backend reais com dados do Bar Aurora.
 - Produção real: exige secrets fortes, URLs válidas, webhooks assinados e revisão humana de
   pagamentos, fiscal e LGPD.

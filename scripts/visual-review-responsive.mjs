@@ -5,6 +5,11 @@ import { chromium, request } from "@playwright/test";
 const webUrl = process.env.WEB_URL ?? "http://127.0.0.1";
 const apiUrl = process.env.API_URL ?? "http://127.0.0.1";
 const outputDir = resolve("test-results/visual-review-responsive");
+const testPassword = process.env.E2E_TEST_PASSWORD ?? process.env.SEED_TEST_PASSWORD;
+const platformPassword = process.env.E2E_PLATFORM_PASSWORD ?? process.env.SEED_PLATFORM_PASSWORD;
+if (!testPassword || !platformPassword) {
+  throw new Error("E2E/SEED test and platform passwords are required");
+}
 
 const viewports = [
   ["desktop", { width: 1440, height: 1000 }],
@@ -28,8 +33,8 @@ await mkdir(outputDir, { recursive: true });
 
 const api = await request.newContext({ baseURL: apiUrl });
 const sessions = {
-  admin: await login("admin@bar-aurora-demo.local", "Demo@12345"),
-  platform: await login("owner@giromesa.local", "Platform@12345"),
+  admin: await login("admin@bar-aurora-demo.local", testPassword),
+  platform: await login("owner@giromesa.local", platformPassword),
 };
 
 const browser = await chromium.launch();

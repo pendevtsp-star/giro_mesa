@@ -145,7 +145,7 @@ export default function QrManagementPage() {
     <main className="workspace-page qr-admin-page">
       <header className="workspace-topbar">
         <a className="brand" href="/app">
-          <span className="brand-mark">G</span>
+          <span className="brand-mark brand-mark-logo" aria-hidden="true" />
           <span>GiroMesa</span>
         </a>
         <button
@@ -394,6 +394,11 @@ export default function QrManagementPage() {
           <div className="qr-preview-grid">
             {artwork.items.map((item) => (
               <article className="qr-preview-card" key={item.tableId}>
+                {artwork.branding?.logoUrl ? (
+                  // biome-ignore lint/performance/noImgElement: branding URLs are tenant-managed.
+                  <img className="qr-preview-logo" src={artwork.branding.logoUrl} alt="" />
+                ) : null}
+                <span>{artwork.branding?.displayName ?? "GiroMesa"}</span>
                 <strong>{item.tableName}</strong>
                 <span>{item.tableCode}</span>
                 {/* biome-ignore lint/performance/noImgElement: prévia SVG gerada em runtime pelo backend. */}
@@ -402,19 +407,25 @@ export default function QrManagementPage() {
                   src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(item.svg)}`}
                 />
                 <p>{artwork.settings.instruction}</p>
-                <button
-                  className="button secondary compact"
-                  onClick={() =>
-                    downloadData(
-                      item.fileName,
-                      item.png ??
-                        `data:image/svg+xml;charset=utf-8,${encodeURIComponent(item.svg)}`,
-                    )
-                  }
-                  type="button"
-                >
-                  <Download size={14} /> Baixar
-                </button>
+                {artwork.format === "pdf" ? (
+                  <small className="muted-copy">
+                    Use “Imprimir / PDF” para exportar este lote.
+                  </small>
+                ) : (
+                  <button
+                    className="button secondary compact"
+                    onClick={() =>
+                      downloadData(
+                        item.fileName,
+                        item.png ??
+                          `data:image/svg+xml;charset=utf-8,${encodeURIComponent(item.svg)}`,
+                      )
+                    }
+                    type="button"
+                  >
+                    <Download size={14} /> Baixar
+                  </button>
+                )}
               </article>
             ))}
           </div>
