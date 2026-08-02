@@ -98,7 +98,7 @@ export type QrBranchSettings = {
   branchId: string;
   capabilities: QrCapability[];
   reviewBeforeKds: boolean;
-  template: "classic" | "minimal" | "premium";
+  template: "classic" | "minimal" | "premium" | "gastronomia" | "bar_noturno" | "cafe" | "doseclub";
   primaryColor: string;
   instruction: string;
   showLogo: boolean;
@@ -1049,7 +1049,7 @@ export type PublicModifierGroup = {
 };
 
 export type PublicQrSettings = {
-  template: "classic" | "minimal" | "premium";
+  template: "classic" | "minimal" | "premium" | "gastronomia" | "bar_noturno" | "cafe" | "doseclub";
   primaryColor: string;
   instruction: string;
   showLogo: boolean;

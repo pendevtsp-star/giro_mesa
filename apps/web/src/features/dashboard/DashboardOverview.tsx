@@ -1,10 +1,20 @@
-import { AlertTriangle, BadgeDollarSign, BarChart3, TrendingUp } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  BadgeDollarSign,
+  BarChart3,
+  ClipboardCheck,
+  Clock3,
+  TrendingUp,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type {
   CashSessionSummary,
   CurrentShiftResponse,
   InventoryAlert,
+  KdsTicket,
   OnboardingStatus,
+  QrPendingOrder,
   SalesByPeriodResponse,
 } from "../../lib/giromesa-api";
 import { formatMoney } from "../../lib/giromesa-api";
@@ -242,6 +252,184 @@ export function ShiftPriorities({
           </a>
         </article>
       ) : null}
+    </section>
+  );
+}
+
+type PendingAction = {
+  id: string;
+  title: string;
+  detail: string;
+  owner: string;
+  deadline: string;
+  href: string;
+  actionLabel: string;
+  tone: "danger" | "warn" | "info";
+};
+
+export type PendingCenterInput = {
+  onboardingStatus: OnboardingStatus | null;
+  currentShift: CurrentShiftResponse | null;
+  cashSummary: CashSessionSummary | null;
+  inventoryAlerts: InventoryAlert[];
+  qrPendingOrders: QrPendingOrder[];
+  tickets: KdsTicket[];
+  canManageTenant: boolean;
+  canManageCash: boolean;
+  canManageInventory: boolean;
+  canOperatePos: boolean;
+  canOperateKds: boolean;
+};
+
+export function buildPendingActions({
+  onboardingStatus,
+  currentShift,
+  cashSummary,
+  inventoryAlerts,
+  qrPendingOrders,
+  tickets,
+  canManageTenant,
+  canManageCash,
+  canManageInventory,
+  canOperatePos,
+  canOperateKds,
+}: PendingCenterInput): PendingAction[] {
+  const actions: PendingAction[] = [];
+  const activeTickets = tickets.filter((ticket) => !["ready", "served"].includes(ticket.status));
+
+  if (canManageTenant && onboardingStatus && onboardingStatus.readiness !== "ready") {
+    actions.push({
+      id: "onboarding",
+      title: "Concluir preparacao da unidade",
+      detail:
+        onboardingStatus.nextStep?.title ??
+        `${onboardingStatus.blockers.length} dependência(s) impedem a prontidao`,
+      owner: "Gestao",
+      deadline: "Antes de abrir",
+      href: "/app/onboarding",
+      actionLabel: "Abrir onboarding",
+      tone: "warn",
+    });
+  }
+
+  if (canManageCash && !currentShift?.shift) {
+    actions.push({
+      id: "shift",
+      title: "Abrir o turno",
+      detail: "Registre a abertura para liberar a operacao e a conciliacao.",
+      owner: "Caixa",
+      deadline: "Agora",
+      href: "/app/cash",
+      actionLabel: "Abrir turno",
+      tone: "danger",
+    });
+  }
+
+  if (canManageCash && cashSummary?.session?.status !== "open") {
+    actions.push({
+      id: "cash",
+      title: "Abrir o caixa",
+      detail: "Defina o fundo de troco antes de receber pagamentos.",
+      owner: "Caixa",
+      deadline: "Antes de vender",
+      href: "/app/cash",
+      actionLabel: "Abrir caixa",
+      tone: "danger",
+    });
+  }
+
+  if (canOperatePos && qrPendingOrders.length > 0) {
+    actions.push({
+      id: "qr-orders",
+      title: `${qrPendingOrders.length} pedido(s) QR aguardando revisao`,
+      detail: "Confira mesa e itens antes de liberar para a producao.",
+      owner: "Atendimento",
+      deadline: "Agora",
+      href: "/app/pos?queue=qr",
+      actionLabel: "Revisar pedidos",
+      tone: "warn",
+    });
+  }
+
+  if (canOperateKds && activeTickets.length > 0) {
+    actions.push({
+      id: "kds",
+      title: `${activeTickets.length} ticket(s) em producao`,
+      detail: "Acompanhe atrasos, alteracoes e cancelamentos nas estacoes.",
+      owner: "Producao",
+      deadline: "Agora",
+      href: "/app/kds",
+      actionLabel: "Abrir KDS",
+      tone: "warn",
+    });
+  }
+
+  if (canManageInventory && inventoryAlerts.length > 0) {
+    actions.push({
+      id: "inventory",
+      title: `${inventoryAlerts.length} alerta(s) de estoque`,
+      detail: "Itens abaixo do minimo podem interromper o turno.",
+      owner: "Estoque",
+      deadline: "Hoje",
+      href: "/app/inventory",
+      actionLabel: "Ver estoque",
+      tone: "info",
+    });
+  }
+
+  if (canManageCash && cashSummary?.openOrders.count) {
+    actions.push({
+      id: "open-orders",
+      title: `${cashSummary.openOrders.count} conta(s) ainda aberta(s)`,
+      detail: "Acompanhe recebimentos e evite encerrar o caixa com saldo pendente.",
+      owner: "Caixa",
+      deadline: "Fechamento",
+      href: "/app/cash",
+      actionLabel: "Conferir contas",
+      tone: "info",
+    });
+  }
+
+  return actions;
+}
+
+export function PendingCenter(props: PendingCenterInput) {
+  const actions = buildPendingActions(props);
+
+  return (
+    <section className="dashboard-pending-center" aria-label="Central de pendencias">
+      <div className="dashboard-pending-heading">
+        <div>
+          <span className="section-kicker">
+            <ClipboardCheck size={15} /> Central de pendencias
+          </span>
+          <h2>{actions.length ? `${actions.length} proxima(s) acao(oes)` : "Tudo em ordem"}</h2>
+        </div>
+        <Clock3 size={19} aria-hidden="true" />
+      </div>
+      {actions.length ? (
+        <div className="dashboard-pending-list">
+          {actions.map((action) => (
+            <article className={`dashboard-pending-row tone-${action.tone}`} key={action.id}>
+              <div className="dashboard-pending-copy">
+                <strong>{action.title}</strong>
+                <span>{action.detail}</span>
+              </div>
+              <div className="dashboard-pending-meta">
+                <span>{action.owner}</span>
+                <span>{action.deadline}</span>
+              </div>
+              <a className="button secondary compact" href={action.href}>
+                {action.actionLabel} <ArrowRight size={14} />
+              </a>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="dashboard-pending-empty">
+          Nao ha pendencias criticas para o seu perfil neste momento.
+        </p>
+      )}
     </section>
   );
 }

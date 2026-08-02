@@ -22,6 +22,7 @@ import type {
   PublicOrderTimeline,
   QrBranchSettings,
   QrCapability,
+  QrTemplate,
   TenantContext,
 } from "@giromesa/domain";
 import {
@@ -98,7 +99,7 @@ export class QrService {
     input: {
       capabilities?: QrCapability[] | undefined;
       reviewBeforeKds?: boolean | undefined;
-      template?: "classic" | "minimal" | "premium" | undefined;
+      template?: QrTemplate | undefined;
       primaryColor?: string | undefined;
       instruction?: string | undefined;
       showLogo?: boolean | undefined;
@@ -1060,6 +1061,18 @@ function requireBranch(context: TenantContext) {
   return context.branchId;
 }
 
+function isQrTemplate(value: unknown): value is QrTemplate {
+  return [
+    "classic",
+    "minimal",
+    "premium",
+    "gastronomia",
+    "bar_noturno",
+    "cafe",
+    "doseclub",
+  ].includes(value as QrTemplate);
+}
+
 function defaultSettings(branchId: string): QrBranchSettings {
   return {
     branchId,
@@ -1086,11 +1099,7 @@ function mergeExperienceSettings(
     ...(typeof config.reviewBeforeKds === "boolean"
       ? { reviewBeforeKds: config.reviewBeforeKds }
       : {}),
-    ...(config.template === "classic" ||
-    config.template === "minimal" ||
-    config.template === "premium"
-      ? { template: config.template }
-      : {}),
+    ...(isQrTemplate(config.template) ? { template: config.template } : {}),
     ...(typeof config.primaryColor === "string" && /^#[0-9a-f]{6}$/i.test(config.primaryColor)
       ? { primaryColor: config.primaryColor }
       : {}),
@@ -1141,7 +1150,7 @@ function mapSettings(row: typeof qrBranchSettings.$inferSelect): QrBranchSetting
     branchId: row.branchId,
     capabilities: row.capabilities,
     reviewBeforeKds: row.reviewBeforeKds,
-    template: row.template === "minimal" || row.template === "premium" ? row.template : "classic",
+    template: isQrTemplate(row.template) ? row.template : "classic",
     primaryColor: row.primaryColor,
     instruction: row.instruction,
     showLogo: row.showLogo,

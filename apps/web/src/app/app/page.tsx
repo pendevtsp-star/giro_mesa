@@ -24,10 +24,10 @@ import { filterNavigationByPermissions } from "../../components/app-shell/naviga
 import {
   OperationalReadinessPanel,
   OperationalSummaryCards,
+  PendingCenter,
   PeriodSalesCard,
   ProfileActionStrip,
   RecentAlertsSection,
-  ShiftPriorities,
 } from "../../features/dashboard/DashboardOverview";
 import type { AppStatus, DashboardMetric } from "../../features/dashboard/dashboard-types";
 import { readOperatorProfile, readStatusTitle } from "../../lib/formatters/app-dashboard";
@@ -414,14 +414,18 @@ export default function AppDashboardPage() {
 
       {widgetPrefs.shiftPriorities && !billingBlocked ? (
         <>
-          <ShiftPriorities
-            activeOrderCount={activeOrderCount}
-            ticketCount={tickets.length}
-            inventoryAlertCount={inventoryAlerts.length}
+          <PendingCenter
+            onboardingStatus={onboardingStatus}
+            currentShift={currentShift}
+            cashSummary={cashSummary}
+            inventoryAlerts={inventoryAlerts}
+            qrPendingOrders={qrPendingOrders}
+            tickets={tickets}
+            canManageTenant={canManageTenant}
+            canManageCash={canManageCash}
+            canManageInventory={canManageInventory}
             canOperatePos={canOperatePos}
             canOperateKds={canOperateKds}
-            canReadReports={canReadReports}
-            canManageInventory={canManageInventory}
           />
           <hr className="dashboard-divider" />
         </>

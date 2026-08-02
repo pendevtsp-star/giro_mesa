@@ -1045,6 +1045,22 @@ body
   color: var(--ink);
 }
 
+.menu-shell[data-template="gastronomia"] {
+  --accent: #d97706;
+  --accent-strong: #b45309;
+}
+
+.menu-shell[data-template="bar_noturno"],
+.menu-shell[data-template="doseclub"] {
+  --accent: #facc15;
+  --accent-strong: #eab308;
+}
+
+.menu-shell[data-template="cafe"] {
+  --accent: #8b5e3c;
+  --accent-strong: #6f4528;
+}
+
 .menu-shell-night .menu-hero {
   position: relative;
   min-height: clamp(20rem, 42vw, 29rem);

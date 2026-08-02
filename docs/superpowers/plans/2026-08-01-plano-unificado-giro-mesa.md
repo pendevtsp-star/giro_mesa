@@ -72,8 +72,16 @@ fechado apenas por existir código:
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
 - Fase 10: implementação parcial nesta execução; landing recebeu logo real, tema claro
   inspirado no DoseClub e entrada discreta do ecossistema.
+- Fase 11: central de pendências role-scoped adicionada ao dashboard, consolidando
+  onboarding, turno/caixa, pedidos QR, KDS, estoque e contas abertas com ação direta;
+  dashboards por perfil e comparação entre filiais continuam pendentes.
 - Fase 12/13: QR público passou a respeitar branding configurado, mostrar comanda real,
   recebimentos, restante, timeline e pré-conta com carrinho vazio.
+- Fase 13: rollback formal de experiência versionada e modelos controlados Gastronomia,
+  Bar noturno, Café e DoseClub foram adicionados sem reimpressão do QR; prévia e
+  agendamento ainda dependem de implementação dedicada.
+- Fase 14: landing do DoseClub passou a apresentar contratação independente e combo;
+  o commit separado está no repositório do DoseClub e não altera o código GiroMesa.
 - Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
   como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
   externa permanece pendente.
@@ -408,7 +416,7 @@ registro, sem duplicar movimento financeiro.
 - [ ] Criar dashboard executivo com vendas, caixa, margem, ocupação, produção, estoque e alertas.
 - [ ] Criar dashboards distintos para proprietário, gerente, caixa, recepção, estoque e produção.
 - [ ] Permitir comparação entre filiais sem misturar permissões ou dados.
-- [ ] Criar central de pendências com prioridade, responsável, prazo e ação direta.
+- [x] Criar central de pendências com prioridade, responsável, prazo e ação direta.
 
 ### Gate
 
@@ -438,7 +446,7 @@ registro, sem duplicar movimento financeiro.
 ### Trabalho
 
 - [x] Criar `GuestExperienceConfig` versionado por tenant, com sobrescrita por filial.
-- [ ] Oferecer modelos controlados: Gastronomia, Bar Noturno, Café e DoseClub.
+- [x] Oferecer modelos controlados: Gastronomia, Bar Noturno, Café e DoseClub.
 - [ ] Personalizar logo, capa, paleta validada, fonte curada, textos, idiomas e destaques.
 - [ ] Personalizar categorias, recomendações, campanhas, informações da casa e motivos de atendimento.
 - [ ] Criar rascunho, prévia, publicação, agendamento e rollback.
@@ -593,7 +601,7 @@ Executar somente depois de todos os gates internos.
 - [x] Manter `QrBranchSettings` para segurança/capacidades e referenciar configuração visual versionada.
 - [x] Expor APIs administrativas para editar, publicar e consultar histórico; pré-visualização, agendamento e rollback formal permanecem pendentes.
 - [x] Expor API pública consolidada de experiência, timeline e status de chamados.
-- [ ] Usar SSE pelo token público seguro, com polling como fallback.
+- [x] Usar SSE pelo token público seguro, com polling como fallback.
 - [ ] Validar upload, tamanho, formato e contraste; bloquear código, CSS e scripts personalizados.
 
 ### Cobrança e pagamentos

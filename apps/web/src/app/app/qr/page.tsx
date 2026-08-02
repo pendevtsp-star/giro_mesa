@@ -309,6 +309,10 @@ export default function QrManagementPage() {
                   <option value="classic">Clássico</option>
                   <option value="minimal">Minimalista</option>
                   <option value="premium">Premium</option>
+                  <option value="gastronomia">Gastronomia</option>
+                  <option value="bar_noturno">Bar noturno</option>
+                  <option value="cafe">Café</option>
+                  <option value="doseclub">DoseClub</option>
                 </select>
               </label>
               <label>

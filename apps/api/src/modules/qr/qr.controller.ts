@@ -32,7 +32,9 @@ const settingsSchema = z
   .object({
     capabilities: z.array(capabilities).min(1).optional(),
     reviewBeforeKds: z.boolean().optional(),
-    template: z.enum(["classic", "minimal", "premium"]).optional(),
+    template: z
+      .enum(["classic", "minimal", "premium", "gastronomia", "bar_noturno", "cafe", "doseclub"])
+      .optional(),
     primaryColor: z
       .string()
       .regex(/^#[0-9a-f]{6}$/i)
@@ -47,7 +49,9 @@ const settingsSchema = z
 const experienceSchema = z.object({
   capabilities: z.array(capabilities).min(1).optional(),
   reviewBeforeKds: z.boolean().optional(),
-  template: z.enum(["classic", "minimal", "premium"]).optional(),
+  template: z
+    .enum(["classic", "minimal", "premium", "gastronomia", "bar_noturno", "cafe", "doseclub"])
+    .optional(),
   primaryColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)

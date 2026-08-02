@@ -9,11 +9,20 @@ export type QrCapability =
 
 export type QrTableStatus = "active" | "revoked";
 
+export type QrTemplate =
+  | "classic"
+  | "minimal"
+  | "premium"
+  | "gastronomia"
+  | "bar_noturno"
+  | "cafe"
+  | "doseclub";
+
 export type QrBranchSettings = {
   branchId: string;
   capabilities: QrCapability[];
   reviewBeforeKds: boolean;
-  template: "classic" | "minimal" | "premium";
+  template: QrTemplate;
   primaryColor: string;
   instruction: string;
   showLogo: boolean;

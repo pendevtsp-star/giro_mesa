@@ -633,6 +633,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       className={`menu-shell table-qr-shell${useNightShell ? " menu-shell-night" : ""}`}
       data-theme={branding?.themeMode ?? "light"}
       data-accent={branding?.accentPreset ?? "emerald"}
+      data-template={qr.qrSettings?.template ?? "classic"}
     >
       <header className="menu-hero table-qr-hero">
         <a
