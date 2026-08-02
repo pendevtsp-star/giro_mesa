@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  buildSecurePublicOrderEventsUrl,
   createPublicQrOrder,
   createSecurePublicOrder,
   createSecureServiceRequest,
@@ -194,6 +195,8 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       return;
     }
     let ignore = false;
+    let eventSource: EventSource | null = null;
+    let fallbackTimer: number | null = null;
     const refreshOrder = async () => {
       try {
         const response = await getSecurePublicOrder(tableCode);
@@ -203,12 +206,39 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       }
     };
     void refreshOrder();
-    const timer = window.setInterval(() => void refreshOrder(), 15_000);
+    const startPollingFallback = () => {
+      if (fallbackTimer === null) {
+        fallbackTimer = window.setInterval(() => void refreshOrder(), 15_000);
+      }
+    };
+    if (qr.capabilities?.includes("view_tab")) {
+      try {
+        eventSource = new EventSource(buildSecurePublicOrderEventsUrl(tableCode));
+        eventSource.onmessage = (event) => {
+          try {
+            const snapshot = JSON.parse(event.data) as SecurePublicOrderSummary;
+            if (!ignore) setPublicOrder(snapshot.order);
+          } catch {
+            startPollingFallback();
+          }
+        };
+        eventSource.onerror = () => {
+          eventSource?.close();
+          eventSource = null;
+          startPollingFallback();
+        };
+      } catch {
+        startPollingFallback();
+      }
+    } else {
+      startPollingFallback();
+    }
     return () => {
       ignore = true;
-      window.clearInterval(timer);
+      eventSource?.close();
+      if (fallbackTimer !== null) window.clearInterval(fallbackTimer);
     };
-  }, [qr?.table.active, secureMode, tableCode]);
+  }, [qr?.capabilities, qr?.table.active, secureMode, tableCode]);
 
   useEffect(() => {
     if (

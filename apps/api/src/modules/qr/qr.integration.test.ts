@@ -197,6 +197,25 @@ runIntegration("secure table QR", () => {
       primaryColor: "#123456",
       welcomeMessage: "Bem-vindo",
     });
+    const secondDraft = await service.createExperienceDraft(context, {
+      template: "minimal",
+      primaryColor: "#654321",
+      welcomeMessage: "Outra versao",
+    });
+    const secondPublished = await service.publishExperience(context, secondDraft.id);
+    const restored = await service.rollbackExperience(context, published.id);
+    expect(restored).toMatchObject({
+      status: "published",
+      version: expect.any(Number),
+    });
+    expect(restored.version).toBeGreaterThan(secondPublished.version);
+    await expect(service.getPublicContext(tokenFromUrl(tokenBefore))).resolves.toMatchObject({
+      qrSettings: {
+        template: "premium",
+        primaryColor: "#123456",
+        welcomeMessage: "Bem-vindo",
+      },
+    });
     const [tableAfter] = await service.listTables(context);
     expect(tableAfter?.publicUrl).toBe(tokenBefore);
   });

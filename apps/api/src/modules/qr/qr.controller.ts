@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Sse,
+} from "@nestjs/common";
+import { distinctUntilChanged, from, interval, map, startWith, switchMap } from "rxjs";
 import { z } from "zod";
 import { firstHeader, type HeaderRecord } from "../../common/http";
 import { RateLimitService } from "../../common/rate-limit";
@@ -45,6 +57,10 @@ const experienceSchema = z.object({
   welcomeMessage: z.string().max(180).optional(),
   menuHeadline: z.string().max(120).optional(),
   marketingEnabled: z.boolean().optional(),
+});
+
+const rollbackExperienceSchema = z.object({
+  revisionId: z.string().uuid(),
 });
 
 const artworkSchema = z.object({
@@ -123,6 +139,13 @@ export class QrController {
     );
   }
 
+  @Post("experience/rollback")
+  async rollbackExperience(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const { revisionId } = rollbackExperienceSchema.parse(body);
+    return this.qrService.rollbackExperience(await this.manageContext(headers), revisionId);
+  }
+
   @Get("tables")
   async tables(@Headers() headers: HeaderRecord) {
     return { data: await this.qrService.listTables(await this.manageContext(headers)) };
@@ -153,6 +176,30 @@ export class QrController {
   @Get("public/:token/order")
   async publicOrder(@Param("token") token: string) {
     return this.qrService.getPublicOrder(token);
+  }
+
+  @Sse("public/:token/events")
+  publicEvents(@Headers() headers: HeaderRecord, @Param("token") token: string) {
+    this.rateLimit.assertAllowed(headers, {
+      namespace: "qr-events",
+      limit: 30,
+      windowMs: 60_000,
+      identifier: `${token}:${firstHeader(headers["x-forwarded-for"]) ?? "direct"}`,
+    });
+
+    return interval(5_000).pipe(
+      startWith(0),
+      switchMap(() => from(this.qrService.getPublicOrder(token))),
+      distinctUntilChanged(
+        (previous, current) => JSON.stringify(previous) === JSON.stringify(current),
+      ),
+      map((snapshot) => ({
+        id: JSON.stringify(snapshot.order?.id ?? null),
+        type: "qr.order.changed",
+        retry: 5_000,
+        data: snapshot,
+      })),
+    );
   }
 
   @Post("public/:token/orders")

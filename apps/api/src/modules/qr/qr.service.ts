@@ -218,6 +218,70 @@ export class QrService {
     return mapExperienceRevision(result);
   }
 
+  async rollbackExperience(context: TenantContext, revisionId: string) {
+    const branchId = requireBranch(context);
+    const result = await this.database.db.transaction(async (tx) => {
+      const [target] = await tx
+        .select()
+        .from(guestExperienceConfigs)
+        .where(
+          and(
+            eq(guestExperienceConfigs.id, revisionId),
+            eq(guestExperienceConfigs.tenantId, context.tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+          ),
+        )
+        .limit(1);
+      if (!target) throw new NotFoundException("QR experience revision not found");
+      if (target.status === "draft") {
+        throw new BadRequestException("Publish the draft before using it as a rollback target");
+      }
+
+      const [latest] = await tx
+        .select({ version: guestExperienceConfigs.version })
+        .from(guestExperienceConfigs)
+        .where(
+          and(
+            eq(guestExperienceConfigs.tenantId, context.tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+          ),
+        )
+        .orderBy(desc(guestExperienceConfigs.version))
+        .limit(1);
+      await tx
+        .update(guestExperienceConfigs)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(
+          and(
+            eq(guestExperienceConfigs.tenantId, context.tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+            eq(guestExperienceConfigs.status, "published"),
+          ),
+        );
+      const [rollback] = await tx
+        .insert(guestExperienceConfigs)
+        .values({
+          tenantId: context.tenantId,
+          branchId,
+          version: (latest?.version ?? 0) + 1,
+          status: "published",
+          config: target.config,
+          publishedAt: new Date(),
+          createdByUserId: context.userId ?? null,
+        })
+        .returning();
+      if (!rollback) throw new BadRequestException("Unable to restore QR experience revision");
+      return { revision: rollback, targetVersion: target.version };
+    });
+    await this.audit(context, "qr.experience_rolled_back", "branch", branchId, {
+      revisionId: result.revision.id,
+      version: result.revision.version,
+      targetRevisionId: revisionId,
+      targetVersion: result.targetVersion,
+    });
+    return mapExperienceRevision(result.revision);
+  }
+
   async listTables(context: TenantContext) {
     const branchId = requireBranch(context);
     const rows = await this.database.db

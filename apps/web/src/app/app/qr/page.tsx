@@ -23,6 +23,7 @@ import {
   type QrArtwork,
   type QrBranchSettings,
   type QrCapability,
+  rollbackQrExperience,
   rotateQrTable,
   updateQrSettings,
 } from "../../../lib/giromesa-api";
@@ -178,6 +179,41 @@ export default function QrManagementPage() {
       setMessage(`Experiência v${published.version} publicada sem trocar os QR codes.`);
     } catch (error) {
       setMessage(getErrorMessage(error, "Falha ao publicar a experiência."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rollback(revision: GuestExperienceRevision) {
+    if (revision.status === "draft" || revision.id === experience?.published?.id) return;
+    if (
+      !window.confirm(
+        `Restaurar a experiencia v${revision.version}? Uma nova versao publicada sera criada sem trocar os QR codes.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const restored = await rollbackQrExperience(revision.id);
+      setExperience((current) => ({
+        draft: null,
+        published: restored,
+        history: [restored, ...(current?.history ?? []).filter((item) => item.id !== restored.id)],
+      }));
+      setSettings((current) =>
+        current
+          ? {
+              ...current,
+              ...restored.config,
+            }
+          : current,
+      );
+      setMessage(
+        `Experiencia restaurada a partir da v${revision.version} como v${restored.version}.`,
+      );
+    } catch (error) {
+      setMessage(getErrorMessage(error, "Falha ao restaurar a experiencia."));
     } finally {
       setBusy(false);
     }
@@ -448,6 +484,47 @@ export default function QrManagementPage() {
         </section>
       ) : null}
 
+      {experience?.history.length ? (
+        <section className="workspace-list-section qr-history-section">
+          <div className="panel-heading">
+            <div>
+              <span className="section-kicker">Historico</span>
+              <h2>Versoes da experiencia publica</h2>
+            </div>
+            <span className="muted-copy">Restaurar cria uma nova versao auditavel.</span>
+          </div>
+          <div className="qr-history-list">
+            {experience.history.slice(0, 8).map((revision) => {
+              const canRestore =
+                revision.status !== "draft" && revision.id !== experience.published?.id;
+              return (
+                <article className="qr-history-row" key={revision.id}>
+                  <div>
+                    <strong>v{revision.version}</strong>
+                    <span>{experienceStatusLabel(revision.status)}</span>
+                  </div>
+                  <time dateTime={revision.createdAt}>
+                    {formatExperienceDate(revision.createdAt)}
+                  </time>
+                  {revision.id === experience.published?.id ? (
+                    <span className="count-chip">Publicada agora</span>
+                  ) : canRestore ? (
+                    <button
+                      className="button secondary compact"
+                      disabled={busy}
+                      onClick={() => void rollback(revision)}
+                      type="button"
+                    >
+                      <RotateCw size={14} /> Restaurar
+                    </button>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       <section className="workspace-list-section">
         <div className="panel-heading qr-table-heading">
           <div>
@@ -592,4 +669,17 @@ function downloadData(fileName: string, data: string) {
   anchor.href = data;
   anchor.download = fileName;
   anchor.click();
+}
+
+function experienceStatusLabel(status: GuestExperienceRevision["status"]) {
+  if (status === "published") return "Publicada";
+  if (status === "draft") return "Rascunho";
+  return "Arquivada";
+}
+
+function formatExperienceDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

@@ -1550,6 +1550,13 @@ export function publishQrExperience(revisionId: string) {
   );
 }
 
+export function rollbackQrExperience(revisionId: string) {
+  return apiRequest<GuestExperienceRevision>("/api/v1/qr/experience/rollback", {
+    method: "POST",
+    body: { revisionId },
+  });
+}
+
 export async function listQrTables() {
   const response = await apiRequest<{ data: QrAdminTable[] }>("/api/v1/qr/tables");
   return response.data;
@@ -1867,6 +1874,10 @@ export function getSecurePublicOrder(token: string) {
   return apiRequest<SecurePublicOrderSummary>(
     `/api/v1/qr/public/${encodeURIComponent(token)}/order`,
   );
+}
+
+export function buildSecurePublicOrderEventsUrl(token: string) {
+  return `${apiBaseUrl}/api/v1/qr/public/${encodeURIComponent(token)}/events`;
 }
 
 export function createSecurePublicOrder(
