@@ -1,6 +1,8 @@
 export type TenantContext = {
   tenantId: string;
   branchId?: string;
+  branchName?: string;
+  branches?: Array<{ id: string; name: string }>;
   userId?: string;
   requestId: string;
   permissions: string[];

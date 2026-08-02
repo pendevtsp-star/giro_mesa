@@ -36,6 +36,12 @@
   gap: 1rem;
 }
 
+.qr-experience-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .qr-capabilities {
   border: 0;
   display: grid;

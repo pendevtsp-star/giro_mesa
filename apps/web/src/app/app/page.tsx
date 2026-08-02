@@ -333,6 +333,7 @@ export default function AppDashboardPage() {
       isPosWorkspace={false}
       canOpenPos={canOperatePos}
       operatorLabel={operatorProfile.title}
+      branchLabel={session?.branchName ?? "Filial ativa"}
       workspaceTitle={dashboardTitle}
       workspaceDescription={dashboardDescription}
       onLogout={status === "ready" ? () => void handleLogout() : undefined}

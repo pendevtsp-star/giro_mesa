@@ -7,6 +7,7 @@ import {
   oauthAccounts,
   passwordResetTokens,
   plans,
+  purchaseIntents,
   roles,
   sessions,
   subscriptions,
@@ -39,9 +40,10 @@ import {
   fetchGoogleUserInfo,
   verifyGoogleIdToken,
 } from "../../common/google-oauth";
-import type { HeaderRecord } from "../../common/http";
 import {
   createSessionToken,
+  firstHeader,
+  type HeaderRecord,
   hashOpaqueToken,
   parseCookies,
   requestIdFromHeaders,
@@ -829,6 +831,53 @@ export class AuthService {
     }
 
     const checkoutReady = Boolean(process.env.ASAAS_API_KEY);
+    const idempotencyKey =
+      firstHeader(headers["idempotency-key"]) ??
+      `subscription-${context.tenantId}-${input.planCode}-${context.requestId}`;
+    const [intent] = await this.database.db
+      .insert(purchaseIntents)
+      .values({
+        tenantId: context.tenantId,
+        product: "giromesa",
+        planCode: input.planCode,
+        status: "pending",
+        paymentMethod: input.paymentMethod,
+        amountCents: plan.priceCents,
+        idempotencyKey,
+        ...(input.billingEmail ? { billingEmail: input.billingEmail } : {}),
+        metadata: {
+          tenantName: tenant.name,
+          tenantStatus: tenant.status,
+          hasBillingDocument: Boolean(input.billingDocument),
+          notes: sanitizeCommercialNote(input.notes),
+          checkoutReady,
+        },
+      })
+      .onConflictDoNothing()
+      .returning({ id: purchaseIntents.id, status: purchaseIntents.status });
+    if (!intent) {
+      const [existing] = await this.database.db
+        .select({ id: purchaseIntents.id, status: purchaseIntents.status })
+        .from(purchaseIntents)
+        .where(
+          and(
+            eq(purchaseIntents.tenantId, context.tenantId),
+            eq(purchaseIntents.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .limit(1);
+      return {
+        status: "queued" as const,
+        duplicate: true,
+        intentId: existing?.id,
+        planCode: input.planCode,
+        planName: plan.name,
+        priceCents: plan.priceCents,
+        checkoutReady,
+        nextStep: checkoutReady ? "asaas_checkout_pending" : "commercial_follow_up",
+        message: "Esta solicitação de assinatura já foi registrada.",
+      };
+    }
     await this.database.db.insert(auditLogs).values({
       tenantId: context.tenantId,
       branchId: context.branchId,
@@ -854,11 +903,15 @@ export class AuthService {
         hasBillingDocument: Boolean(input.billingDocument),
         notes: sanitizeCommercialNote(input.notes),
         checkoutReady,
+        purchaseIntentId: intent.id,
+        idempotencyKey,
       },
     });
 
     return {
       status: "queued" as const,
+      duplicate: false,
+      intentId: intent.id,
       planCode: input.planCode,
       planName: plan.name,
       priceCents: plan.priceCents,
@@ -910,7 +963,8 @@ export class AuthService {
       throw new UnauthorizedException("Invalid session");
     }
 
-    const access = await this.accessForUser(session.userId);
+    const requestedBranchId = firstHeader(headers["x-branch-id"]);
+    const access = await this.accessForUser(session.userId, requestedBranchId);
     if (!session.tenantId && !session.isPlatformUser) {
       throw new UnauthorizedException("Session has no tenant");
     }
@@ -930,6 +984,8 @@ export class AuthService {
         trialDaysRemaining: trialDaysRemaining(session.currentPeriodEndsAt),
       },
       ...(access.branchId ? { branchId: access.branchId } : {}),
+      ...(access.branchName ? { branchName: access.branchName } : {}),
+      ...(access.branches.length ? { branches: access.branches } : {}),
     };
   }
 
@@ -2114,7 +2170,7 @@ export class AuthService {
       });
   }
 
-  private async accessForUser(userId: string) {
+  private async accessForUser(userId: string, requestedBranchId?: string) {
     const [user] = await this.database.db
       .select({ isPlatformUser: users.isPlatformUser })
       .from(users)
@@ -2125,6 +2181,7 @@ export class AuthService {
       return {
         permissions: ["platform:read", "platform:manage"],
         branchId: undefined,
+        branches: [],
       };
     }
 
@@ -2132,14 +2189,37 @@ export class AuthService {
       .select({
         permissions: roles.permissions,
         branchId: userRoles.branchId,
+        branchName: branches.name,
       })
       .from(userRoles)
       .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .leftJoin(branches, eq(branches.id, userRoles.branchId))
       .where(eq(userRoles.userId, userId));
 
+    if (requestedBranchId && !rows.some((row) => row.branchId === requestedBranchId)) {
+      throw new UnauthorizedException("Branch access denied");
+    }
+
+    const selected =
+      rows.find((row) => row.branchId === requestedBranchId) ?? rows.find((row) => row.branchId);
+    const permissionRows = requestedBranchId
+      ? rows.filter((row) => row.branchId === null || row.branchId === requestedBranchId)
+      : rows;
+
     return {
-      permissions: [...new Set(rows.flatMap((row) => row.permissions))],
-      branchId: rows.find((row) => row.branchId)?.branchId,
+      permissions: [...new Set(permissionRows.flatMap((row) => row.permissions))],
+      branchId: selected?.branchId,
+      branchName: selected?.branchName ?? undefined,
+      branches: rows
+        .filter((row): row is typeof row & { branchId: string; branchName: string } =>
+          Boolean(row.branchId && row.branchName),
+        )
+        .reduce<Array<{ id: string; name: string }>>((result, row) => {
+          if (!result.some((branch) => branch.id === row.branchId)) {
+            result.push({ id: row.branchId, name: row.branchName });
+          }
+          return result;
+        }, []),
     };
   }
 

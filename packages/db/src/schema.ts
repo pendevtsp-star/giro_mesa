@@ -203,6 +203,32 @@ export const subscriptions = pgTable(
   (table) => [index("subscriptions_tenant_idx").on(table.tenantId)],
 );
 
+export const purchaseIntents = pgTable(
+  "purchase_intents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    product: varchar("product", { length: 40 }).notNull().default("giromesa"),
+    planCode: varchar("plan_code", { length: 40 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    paymentMethod: varchar("payment_method", { length: 40 }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("BRL"),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    billingEmail: varchar("billing_email", { length: 255 }),
+    provider: varchar("provider", { length: 40 }).notNull().default("asaas"),
+    providerReference: varchar("provider_reference", { length: 160 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("purchase_intents_tenant_key_idx").on(table.tenantId, table.idempotencyKey),
+    index("purchase_intents_tenant_status_idx").on(table.tenantId, table.status),
+  ],
+);
+
 export const branches = pgTable(
   "branches",
   {
@@ -657,6 +683,40 @@ export const qrBranchSettings = pgTable(
   (table) => [
     uniqueIndex("qr_branch_settings_branch_idx").on(table.branchId),
     index("qr_branch_settings_tenant_branch_idx").on(table.tenantId, table.branchId),
+  ],
+);
+
+export const guestExperienceConfigStatus = pgEnum("guest_experience_config_status", [
+  "draft",
+  "published",
+  "archived",
+]);
+
+export const guestExperienceConfigs = pgTable(
+  "guest_experience_configs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    version: integer("version").notNull(),
+    status: guestExperienceConfigStatus("status").notNull().default("draft"),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("guest_experience_branch_version_idx").on(table.branchId, table.version),
+    index("guest_experience_tenant_branch_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.status,
+    ),
   ],
 );
 

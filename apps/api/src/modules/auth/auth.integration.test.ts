@@ -4,6 +4,7 @@ import {
   branches,
   invitations,
   operationalEvents,
+  purchaseIntents,
   roles,
   sessions,
   subscriptions,
@@ -38,6 +39,7 @@ async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(users).where(eq(users.tenantId, tenantId));
   await db.delete(roles).where(eq(roles.tenantId, tenantId));
   await db.delete(subscriptions).where(eq(subscriptions.tenantId, tenantId));
+  await db.delete(purchaseIntents).where(eq(purchaseIntents.tenantId, tenantId));
   await db.delete(branches).where(eq(branches.tenantId, tenantId));
   await db.delete(tenants).where(eq(tenants.id, tenantId));
 }

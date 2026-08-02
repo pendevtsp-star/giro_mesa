@@ -14,6 +14,7 @@ interface SessionContextValue {
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  switchBranch: (branchId: string) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -41,12 +42,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const switchBranch = useCallback((branchId: string) => {
+    window.localStorage.setItem("gm_active_branch_id", branchId);
+    window.location.reload();
+  }, []);
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
   return (
-    <SessionContext.Provider value={{ session, branding, isLoading, error, refresh: loadData }}>
+    <SessionContext.Provider
+      value={{ session, branding, isLoading, error, refresh: loadData, switchBranch }}
+    >
       {children}
     </SessionContext.Provider>
   );
@@ -69,6 +77,7 @@ export function useSessionOrFallback() {
       isLoading: false,
       error: null,
       refresh: async () => {},
+      switchBranch: () => {},
     }
   );
 }

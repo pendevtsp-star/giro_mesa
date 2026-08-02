@@ -41,9 +41,14 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 7 — dashboard, horário, turno e tema (núcleo entregue; hardening avançado pendente abaixo).
 - [x] Fase 8 — limpeza, seed e cenário de homologação.
 - [x] Fase 9 — QR personalizado por mesa.
-- [ ] Fase 10 — integrações externas.
-- [ ] Fase 11 — aceite integral técnico, visual e operacional.
-- [ ] Fase 12 — handoff, backup e corte único.
+- [ ] Fase 10 — fundação Enterprise Premium.
+- [ ] Fase 11 — arquitetura de informação e gestão multiunidade.
+- [ ] Fase 12 — operação real e experiência do consumidor.
+- [ ] Fase 13 — personalização, QR premium e aquisição orgânica.
+- [ ] Fase 14 — ecossistema GiroMesa e DoseClub.
+- [ ] Fase 15 — integrações externas.
+- [ ] Fase 16 — aceite integral técnico, visual e operacional.
+- [ ] Fase 17 — handoff, backup, piloto e corte único.
 
 ### Registro de progresso já existente
 
@@ -65,6 +70,15 @@ fechado apenas por existir código:
   O gate de software foi fechado nesta execução com setores/formas, ocupação operacional,
   realtime, versão otimista e suíte E2E autenticada; aceite físico/touch permanece externo.
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
+- Fase 10: implementação parcial nesta execução; landing recebeu logo real, tema claro
+  inspirado no DoseClub e entrada discreta do ecossistema.
+- Fase 12/13: QR público passou a respeitar branding configurado, mostrar comanda real,
+  recebimentos, restante, timeline e pré-conta com carrinho vazio.
+- Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
+  como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
+  externa permanece pendente.
+- Fase 16: typecheck, lint, testes unitários, build e security preflight locais passaram;
+  E2E autenticado, integração PostgreSQL e QA visual completa continuam pendentes.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
 
@@ -341,7 +355,8 @@ primeiro rollout.
 - [x] Resumo público usa comanda real, não carrinho como fonte de verdade, e não expõe
   cliente, usuário ou dado pessoal.
 - [x] Persistir carrinho local e impedir pedido duplicado.
-- [x] Manter pagamento online desativado até a homologação Asaas.
+- [x] Manter pagamento online desativado até conector opcional de pagamentos homologado;
+  Asaas não processa pagamentos operacionais.
 
 ### Endpoints e gate
 
@@ -354,7 +369,112 @@ primeiro rollout.
 - [x] Gate: dono gera lote personalizado, rotação desativa o anterior e o cliente
   conclui os fluxos permitidos em mesa ativa.
 
-## Fase 10 — integrações externas
+## Fase 10 — fundação Enterprise Premium
+
+Registro desta execução (2026-08-02): GiroMesa recebeu configuração versionada da experiência pública QR por filial (`guest_experience_configs`), rascunho/publicação sem troca do token, mensagens/título configuráveis e assinatura discreta de marca. O shell recebeu busca global, troca explícita de filial e densidade compacta/confortável. Dose Club recebeu fronteira de pagamento operacional manual, entitlements independentes, catálogo de produtos incluídos nos planos e landing/subdomínio separado. Gates de QA visual, credenciais externas e hardware permanecem abertos.
+
+Progresso desta execução: a landing passou a usar a marca real, ganhou tema claro
+inspirado no DoseClub e entrada discreta do ecossistema; o shell mostra a filial
+resolvida pelo contexto autenticado; a experiência QR respeita tema, instrução e
+logo configurados e acompanha a comanda real com recebido, restante e timeline.
+O limite operacional de pagamentos foi separado do Asaas: novos pagamentos e
+estornos usam métodos externos/manuais idempotentes, enquanto webhooks Asaas
+operacionais são ignorados com auditoria. A homologação externa, a auditoria
+visual completa e os gates de multiunidade continuam pendentes.
+Estornos manuais agora aceitam chave idempotente e repetição devolve o mesmo
+registro, sem duplicar movimento financeiro.
+
+### Trabalho
+
+- [ ] Auditar visualmente rotas administrativas, operacionais, públicas e comerciais.
+- [ ] Consolidar tipografia, espaçamento, densidade, elevação, estados e componentes.
+- [ ] Refinar temas claro, escuro e automático mantendo navy, amarelo e identidade existente.
+- [x] Criar densidades confortável e compacta para gestão e operação.
+- [ ] Padronizar páginas, drawers, modais, filtros, formulários, tabelas e feedback.
+- [ ] Remover ações decorativas, excesso de informação e textos técnicos desnecessários.
+- [x] Aplicar a mesma qualidade às landings GiroMesa e DoseClub.
+
+### Gate
+
+- [ ] Experiência visual coerente, acessível e sem regressão funcional em desktop, tablet e celular.
+
+## Fase 11 — arquitetura de informação e gestão multiunidade
+
+### Trabalho
+
+- [ ] Reorganizar navegação por operação, gestão, crescimento, configurações e ecossistema.
+- [x] Criar busca global e acesso rápido às ações frequentes.
+- [x] Tornar troca de filial explícita e preservar contexto em todas as rotas.
+- [ ] Criar dashboard executivo com vendas, caixa, margem, ocupação, produção, estoque e alertas.
+- [ ] Criar dashboards distintos para proprietário, gerente, caixa, recepção, estoque e produção.
+- [ ] Permitir comparação entre filiais sem misturar permissões ou dados.
+- [ ] Criar central de pendências com prioridade, responsável, prazo e ação direta.
+
+### Gate
+
+- [ ] Cada perfil identifica a próxima ação sem interpretar indicadores desconectados.
+
+## Fase 12 — operação real e experiência do consumidor
+
+### Trabalho
+
+- [ ] Refinar PDV para reduzir cliques, melhorar atalhos e operar em alto giro.
+- [ ] Revisar jornadas de salão, reservas, fila, garçom, KDS, caixa e fechamento.
+- [ ] Garantir continuidade da mesma comanda entre dispositivos e perfis autorizados.
+- [x] Expandir QR para pedido contínuo, repetição, acompanhamento, comanda e atendimento.
+- [x] Criar linha do tempo: recebido, em revisão, enviado, preparando, pronto, entregue ou cancelado.
+- [ ] Permitir identificação temporária opcional por apelido ou assento, sem biometria.
+- [x] Preparar seleção de itens, divisão igual, por pessoa ou por valor.
+- [x] Manter recebimento assistido enquanto não existir conector bancário opcional homologado.
+- [x] Permitir chamada de garçom por motivos configuráveis, com reconhecimento e resolução.
+- [x] Permitir pré-conta mesmo com carrinho local vazio, usando a comanda real.
+
+### Gate
+
+- [ ] Jornadas completas funcionam sem telas mortas, ambiguidades financeiras ou refresh manual.
+
+## Fase 13 — personalização, QR premium e aquisição orgânica
+
+### Trabalho
+
+- [x] Criar `GuestExperienceConfig` versionado por tenant, com sobrescrita por filial.
+- [ ] Oferecer modelos controlados: Gastronomia, Bar Noturno, Café e DoseClub.
+- [ ] Personalizar logo, capa, paleta validada, fonte curada, textos, idiomas e destaques.
+- [ ] Personalizar categorias, recomendações, campanhas, informações da casa e motivos de atendimento.
+- [ ] Criar rascunho, prévia, publicação, agendamento e rollback.
+- [x] Atualizar experiência pública sem exigir reimpressão do QR.
+- [x] Preservar quiet zone, contraste, legibilidade e rotação segura do token.
+- [x] Disponibilizar placas, adesivos e A4 com personalização controlada.
+- [x] Exibir discretamente “Tecnologia GiroMesa”.
+- [ ] Exibir “DoseClub, por GiroMesa” quando recurso estiver habilitado.
+- [ ] Adicionar “Conheça a tecnologia deste atendimento” sem competir com pedido ou pagamento.
+- [ ] Registrar somente origem comercial agregada, sem mesa, pedido ou dado pessoal.
+
+### Gate
+
+- [ ] Estabelecimento obtém identidade própria sem white-label total, código livre ou risco à leitura do QR.
+
+## Fase 14 — ecossistema GiroMesa e DoseClub
+
+### Trabalho
+
+- [x] Criar landing em `doseclube.giromesa.com.br` com apresentação, contratação e acesso.
+- [x] Manter GiroMesa, DoseClub e combo como produtos comerciais independentes.
+- [ ] Centralizar catálogo comercial, assinaturas e entitlements no GiroMesa.
+- [ ] Federar identidade por `accounts.giromesa.com.br`.
+- [x] Manter códigos, bancos, deploys e operação dos produtos separados.
+- [ ] Implementar SSO e handoff contextual sem compartilhar sessão de banco.
+- [x] Homologar estoque compartilhado em mililitros por contrato, outbox e idempotência.
+- [x] Cobrir consumo individual, combos, produtos elegíveis, estorno e reprocessamento.
+- [ ] Exibir consumo DoseClub na comanda GiroMesa como linha informativa sem cobrança duplicada.
+- [x] Permitir aquisição somente de GiroMesa, somente de DoseClub ou do combo.
+- [ ] Manter carteiras de fidelidade separadas, com campanhas comerciais cruzadas opcionais.
+
+### Gate
+
+- [ ] Indisponibilidade de um produto não corrompe nem bloqueia operação independente do outro.
+
+## Fase 15 — integrações externas
 
 Executar somente depois de todos os gates internos.
 
@@ -365,10 +485,16 @@ Executar somente depois de todos os gates internos.
 - [ ] Homologar Google OAuth com origens, callback HTTPS, `state`, vínculo, revogação
   e encaminhamento público `/api/v1` sem duplicação `/api`.
 
-### Cobrança e Dose Club
+### Cobrança SaaS, pagamentos operacionais e Dose Club
 
-- [ ] Homologar Asaas em sandbox: cliente, assinatura, checkout, Pix, webhook assinado,
+- [ ] Isolar Asaas em `platform_billing`, cobrando somente assinaturas GiroMesa, Dose Club e combo.
+- [ ] Homologar Asaas em sandbox: cliente, assinatura, checkout, webhook assinado,
   idempotência, outbox, reconciliação, trial, inadimplência, cancelamento e entitlements.
+- [ ] Impedir criação de pagamento operacional por Asaas e manter webhook SaaS separado de comandas.
+- [ ] Criar ledger neutro para dinheiro, Pix externo, crédito, débito, voucher, cortesia e outros.
+- [ ] Registrar referência/NSU, operador, filial, auditoria, pagamento parcial, misto, estorno e divergência.
+- [ ] Criar intenção de compra Dose Club; liberar saldo somente após confirmação autorizada.
+- [ ] Manter arquitetura para conectores bancários opcionais por filial, sem exigir conta Asaas.
 - [ ] Manter GiroMesa, Dose Club e combo como produtos independentes, com acesso por
   entitlement e interfaces independentes.
 - [ ] Homologar contrato Dose Club 2026-07-30 com IDs reais de teste, filial/produto,
@@ -398,7 +524,7 @@ Executar somente depois de todos os gates internos.
 - [ ] Nenhuma integração externa é considerada pronta sem cenário real de homologação
   e rollback/desligamento por filial.
 
-## Fase 11 — aceite integral
+## Fase 16 — aceite integral
 
 ### Suítes obrigatórias
 
@@ -408,6 +534,9 @@ Executar somente depois de todos os gates internos.
 - [ ] Isolamento multitenant, concorrência, idempotência e perda/reconexão de rede.
 - [ ] Realtime/polling fallback e impressão simulada/hardware aplicável.
 - [ ] Regressão visual, acessibilidade, teclado, touch e bump bar.
+- [ ] QR público: token, rotação, personalização, timeline, chamados, comanda e ausência de PII.
+- [ ] Pagamentos: Asaas rejeitado no fluxo operacional; cobrança SaaS não altera comanda.
+- [ ] Dose Club: compra individual, combo, confirmação, concorrência, retry, estorno e isolamento.
 - [ ] `git diff --check`, segurança, secrets scan e migrações.
 
 ### Jornada crítica
@@ -433,7 +562,7 @@ Executar somente depois de todos os gates internos.
 - [ ] Nenhuma falha bloqueante, ação decorativa, credencial exposta, divergência
   financeira ou acesso cruzado entre tenants.
 
-## Fase 12 — handoff, backup e corte único
+## Fase 17 — handoff, backup, piloto e corte único
 
 ### Entrega
 
@@ -442,6 +571,8 @@ Executar somente depois de todos os gates internos.
 - [ ] Matriz curta de permissões e cenários sugeridos.
 - [ ] Lista de integrações, estados e aviso explícito do WhatsApp não oficial.
 - [ ] Resultado dos testes, riscos, itens opcionais desativados e plano de suporte.
+- [ ] Selecionar estabelecimento piloto e configurar filial, catálogo, mesas, QR, KDS e impressão.
+- [ ] Executar turno real assistido antes da autorização de produção.
 
 ### Corte e rollback
 
@@ -453,6 +584,30 @@ Executar somente depois de todos os gates internos.
 - [ ] Manter rollback conjunto de aplicação, schema e configuração.
 - [ ] Registrar compensações de mensagens/webhooks; elas não são “desprocessadas”.
 - [ ] Revogar sessões WhatsApp e segredos independentemente quando necessário.
+
+## APIs, dados e tipos novos
+
+### Experiência pública
+
+- [x] Criar `GuestExperienceConfig` versionado por filial; temas e módulos controlados continuam em expansão.
+- [x] Manter `QrBranchSettings` para segurança/capacidades e referenciar configuração visual versionada.
+- [x] Expor APIs administrativas para editar, publicar e consultar histórico; pré-visualização, agendamento e rollback formal permanecem pendentes.
+- [x] Expor API pública consolidada de experiência, timeline e status de chamados.
+- [ ] Usar SSE pelo token público seguro, com polling como fallback.
+- [ ] Validar upload, tamanho, formato e contraste; bloquear código, CSS e scripts personalizados.
+
+### Cobrança e pagamentos
+
+- [ ] Separar `PlatformBilling` de `RestaurantPayments` em módulos, permissões e webhooks.
+- [x] Criar tipos e persistência de métodos externos, referências e `PurchaseIntent`.
+- [ ] Garantir idempotência, auditoria, tenant, filial, operador e concorrência em confirmações/estornos.
+- [ ] Preservar registros operacionais Asaas existentes como legado, sem permitir novos registros.
+
+### Dose Club
+
+- [x] Preservar contrato 2026-07-30, HMAC, outbox, retry e idempotência.
+- [ ] Resolver tenant por vínculo seguro do cliente de integração; nenhum banco será compartilhado diretamente.
+- [x] Manter entitlements independentes de nomes fixos de plano.
 
 ## Definição final de pronto
 
@@ -467,6 +622,6 @@ explícita, backup verificável e rollback preparado.
 - Offline completo, app nativo, TEF e editor visual livre permanecem fora deste ciclo.
 - Fiscal sem homologação, iFood e WhatsApp oficial ficam condicionados à contratação
   e às credenciais/ambientes fornecidos.
-- Pagamento online por QR permanece desativado até Asaas homologado.
+- Pagamento online por QR permanece desativado até conector opcional homologado; Asaas fica restrito a assinaturas SaaS.
 - Integração Dose Club preserva produtos e APIs separados; estoque compartilhado só
   é ativado por entitlement e contrato homologado.

@@ -169,6 +169,20 @@
       "when": 1785583124487,
       "tag": "0023_omniscient_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785705661169,
+      "tag": "0024_awesome_strong_guy",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785707636031,
+      "tag": "0025_military_polaris",
+      "breakpoints": true
     }
   ]
 }

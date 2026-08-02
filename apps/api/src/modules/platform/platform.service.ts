@@ -4,6 +4,7 @@ import {
   branches,
   invitations,
   plans,
+  purchaseIntents,
   roles,
   subscriptions,
   tenants,
@@ -745,7 +746,11 @@ export class PlatformService {
     };
   }
 
-  async prepareAsaasCheckout(context: TenantContext, tenantId: string) {
+  async prepareAsaasCheckout(
+    context: TenantContext,
+    tenantId: string,
+    requestedIdempotencyKey?: string,
+  ) {
     const [tenant] = await this.database.db
       .select({
         id: tenants.id,
@@ -769,7 +774,92 @@ export class PlatformService {
     }
 
     const env = loadEnv();
-    const reference = `gm-sub-${tenant.slug}-${Date.now()}`;
+    const idempotencyKey =
+      requestedIdempotencyKey?.trim() ||
+      `platform-checkout-${tenant.id}-${tenant.planCode ?? "starter"}`;
+    const [existingIntent] = await this.database.db
+      .select({
+        id: purchaseIntents.id,
+        status: purchaseIntents.status,
+        providerReference: purchaseIntents.providerReference,
+        metadata: purchaseIntents.metadata,
+      })
+      .from(purchaseIntents)
+      .where(
+        and(
+          eq(purchaseIntents.tenantId, tenant.id),
+          eq(purchaseIntents.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    const existingMetadata = existingIntent?.metadata ?? {};
+    const existingCheckoutUrl =
+      typeof existingMetadata.checkoutUrl === "string" ? existingMetadata.checkoutUrl : null;
+    if (existingIntent && existingCheckoutUrl) {
+      return {
+        tenantId,
+        checkoutUrl: existingCheckoutUrl,
+        reference:
+          typeof existingMetadata.reference === "string"
+            ? existingMetadata.reference
+            : `gm-sub-${tenant.slug}-${existingIntent.id}`,
+        providerCheckoutId: existingIntent.providerReference,
+        nextStep: "share_hosted_checkout_with_customer_and_monitor_webhooks",
+        mode:
+          existingMetadata.mode === "asaas_hosted_checkout"
+            ? "asaas_hosted_checkout"
+            : "homologation_mock",
+        duplicate: true,
+        intentId: existingIntent.id,
+      };
+    }
+    let intent = existingIntent;
+    if (!intent) {
+      const [createdIntent] = await this.database.db
+        .insert(purchaseIntents)
+        .values({
+          tenantId: tenant.id,
+          product: "giromesa",
+          planCode: tenant.planCode ?? "starter",
+          status: "pending",
+          paymentMethod: "asaas",
+          amountCents: tenant.priceCents ?? planCatalog.starter.priceCents,
+          idempotencyKey,
+          provider: "asaas",
+          metadata: { source: "platform_checkout", requestId: context.requestId },
+        })
+        .onConflictDoNothing()
+        .returning({
+          id: purchaseIntents.id,
+          status: purchaseIntents.status,
+          providerReference: purchaseIntents.providerReference,
+          metadata: purchaseIntents.metadata,
+        });
+      intent =
+        createdIntent ??
+        (
+          await this.database.db
+            .select({
+              id: purchaseIntents.id,
+              status: purchaseIntents.status,
+              providerReference: purchaseIntents.providerReference,
+              metadata: purchaseIntents.metadata,
+            })
+            .from(purchaseIntents)
+            .where(
+              and(
+                eq(purchaseIntents.tenantId, tenant.id),
+                eq(purchaseIntents.idempotencyKey, idempotencyKey),
+              ),
+            )
+            .limit(1)
+        )[0];
+    }
+    if (!intent) {
+      throw new BadRequestException("Unable to create platform purchase intent");
+    }
+
+    const reference = `gm-sub-${tenant.slug}-${intent.id}`;
     const fallbackCheckoutUrl = this.publicAppUrl(
       `/platform/${tenant.id}?asaas=checkout-homologation&plan=${tenant.planCode ?? "starter"}`,
     );
@@ -788,6 +878,7 @@ export class PlatformService {
         planCode: tenant.planCode ?? "starter",
         priceCents: tenant.priceCents ?? planCatalog.starter.priceCents,
         reference,
+        idempotencyKey,
       });
       checkoutUrl = asaasCheckout.checkoutUrl;
       nextStep = "share_hosted_checkout_with_customer_and_monitor_webhooks";
@@ -816,6 +907,22 @@ export class PlatformService {
         updatedAt: new Date(),
       })
       .where(eq(tenants.id, tenant.id));
+
+    await this.database.db
+      .update(purchaseIntents)
+      .set({
+        status: "checkout_ready",
+        providerReference: providerCheckoutId,
+        metadata: {
+          ...existingMetadata,
+          checkoutUrl,
+          reference,
+          mode,
+          nextStep,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseIntents.id, intent.id));
 
     if (tenant.subscriptionId && providerCheckoutId) {
       await this.database.db
@@ -852,6 +959,8 @@ export class PlatformService {
       reference,
       providerCheckoutId,
       nextStep,
+      duplicate: false,
+      intentId: intent.id,
     };
   }
 
@@ -969,6 +1078,7 @@ export class PlatformService {
     planCode: string;
     priceCents: number;
     reference: string;
+    idempotencyKey: string;
   }) {
     const callbackBase = this.publicAppUrl(`/platform/${input.tenantId}`);
     const response = await fetch(`${input.baseUrl}/checkouts`, {
@@ -976,6 +1086,7 @@ export class PlatformService {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": `GiroMesa/0.1 (${input.environment})`,
+        "Idempotency-Key": input.idempotencyKey,
         access_token: input.apiKey,
       },
       body: JSON.stringify({

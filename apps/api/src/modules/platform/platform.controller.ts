@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { z } from "zod";
-import type { HeaderRecord } from "../../common/http";
+import { firstHeader, type HeaderRecord } from "../../common/http";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
 import { BackupService } from "./backup.service";
@@ -149,7 +149,11 @@ export class PlatformController {
     const context = await this.authService.resolveContext(headers);
     requirePermission(context, "platform:manage");
 
-    return this.platformService.prepareAsaasCheckout(context, tenantId);
+    return this.platformService.prepareAsaasCheckout(
+      context,
+      tenantId,
+      firstHeader(headers["idempotency-key"]),
+    );
   }
 
   @Post("tenants/:tenantId/asaas/simulate-past-due")

@@ -15,6 +15,8 @@ let csrfTokenCache: string | null = null;
 export type TenantSession = {
   tenantId: string;
   branchId?: string;
+  branchName?: string;
+  branches?: Array<{ id: string; name: string }>;
   userId?: string;
   requestId: string;
   permissions: string[];
@@ -100,6 +102,24 @@ export type QrBranchSettings = {
   primaryColor: string;
   instruction: string;
   showLogo: boolean;
+  welcomeMessage?: string;
+  menuHeadline?: string;
+  marketingEnabled?: boolean;
+};
+
+export type GuestExperienceRevision = {
+  id: string;
+  branchId: string;
+  version: number;
+  status: "draft" | "published" | "archived";
+  config: QrBranchSettings & {
+    welcomeMessage?: string;
+    menuHeadline?: string;
+    marketingEnabled?: boolean;
+  };
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
 };
 
 export type QrAdminTable = {
@@ -1028,6 +1048,16 @@ export type PublicModifierGroup = {
   }>;
 };
 
+export type PublicQrSettings = {
+  template: "classic" | "minimal" | "premium";
+  primaryColor: string;
+  instruction: string;
+  showLogo: boolean;
+  welcomeMessage?: string;
+  menuHeadline?: string;
+  marketingEnabled?: boolean;
+};
+
 export type PublicQrResponse = {
   tenant: { id: string; name: string; slug: string; branding?: TenantBranding };
   table: {
@@ -1040,12 +1070,13 @@ export type PublicQrResponse = {
   };
   capabilities?: QrCapability[];
   reviewBeforeKds?: boolean;
+  qrSettings?: PublicQrSettings;
 };
 
 export type SecurePublicQrContext = {
   tenant: {
     name: string;
-    branding: { displayName: string; logoUrl: string | null };
+    branding: TenantBranding;
   };
   branchId: string;
   table: {
@@ -1057,6 +1088,7 @@ export type SecurePublicQrContext = {
   };
   capabilities: QrCapability[];
   reviewBeforeKds: boolean;
+  qrSettings?: PublicQrSettings;
   categories: Category[];
   products: Array<{
     id: string;
@@ -1084,6 +1116,15 @@ export type SecurePublicOrderSummary = {
     discountCents: number;
     serviceChargeCents: number;
     totalCents: number;
+    receivedCents?: number;
+    remainingCents?: number;
+    payments?: Array<{ amountCents: number; method: string; status: string }>;
+    timeline?: Array<{
+      key: string;
+      label: string;
+      state: "pending" | "active" | "completed" | "canceled";
+      at: string | null;
+    }>;
   } | null;
 };
 
@@ -1271,13 +1312,17 @@ async function buildRequestInit(path: string, method: string, options: RequestOp
     method,
     credentials: "include",
   };
-  if (options.headers) {
-    requestInit.headers = options.headers;
-  }
+  const activeBranchId =
+    typeof window !== "undefined" ? window.localStorage.getItem("gm_active_branch_id") : null;
+  const baseHeaders = {
+    ...(activeBranchId ? { "x-branch-id": activeBranchId } : {}),
+    ...options.headers,
+  };
+  if (Object.keys(baseHeaders).length > 0) requestInit.headers = baseHeaders;
 
   if (options.body !== undefined) {
     const headers: Record<string, string> = {
-      ...options.headers,
+      ...baseHeaders,
       "content-type": "application/json",
     };
     const csrfToken = await csrfTokenForRequest(path, method);
@@ -1450,8 +1495,20 @@ export function unlinkGoogleAccount() {
 }
 
 export async function getSession() {
-  const result = await apiRequest<{ context: TenantSession }>("/api/v1/auth/me");
-  return result.context;
+  try {
+    const result = await apiRequest<{ context: TenantSession }>("/api/v1/auth/me");
+    return result.context;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401 && typeof window !== "undefined") {
+      const activeBranchId = window.localStorage.getItem("gm_active_branch_id");
+      if (activeBranchId) {
+        window.localStorage.removeItem("gm_active_branch_id");
+        const result = await apiRequest<{ context: TenantSession }>("/api/v1/auth/me");
+        return result.context;
+      }
+    }
+    throw error;
+  }
 }
 
 export function getTenantBranding() {
@@ -1467,6 +1524,30 @@ export function updateQrSettings(input: Partial<Omit<QrBranchSettings, "branchId
     method: "PATCH",
     body: input,
   });
+}
+
+export function getQrExperience() {
+  return apiRequest<{
+    draft: GuestExperienceRevision | null;
+    published: GuestExperienceRevision | null;
+    history: GuestExperienceRevision[];
+  }>("/api/v1/qr/experience");
+}
+
+export function createQrExperienceDraft(
+  input: Partial<Omit<GuestExperienceRevision["config"], "branchId">>,
+) {
+  return apiRequest<GuestExperienceRevision>("/api/v1/qr/experience/draft", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function publishQrExperience(revisionId: string) {
+  return apiRequest<GuestExperienceRevision>(
+    `/api/v1/qr/experience/${encodeURIComponent(revisionId)}/publish`,
+    { method: "POST" },
+  );
 }
 
 export async function listQrTables() {
@@ -1827,6 +1908,20 @@ export function createSecureServiceRequest(
       headers: { "x-idempotency-key": idempotencyKey },
       body: input,
     },
+  );
+}
+
+export function getSecureServiceRequest(token: string, requestId: string) {
+  return apiRequest<{
+    id: string;
+    type: "call_waiter" | "request_pre_bill" | "need_help";
+    status: "pending" | "acknowledged" | "resolved" | "canceled";
+    message: string | null;
+    acknowledgedAt: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+  }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/service-requests/${encodeURIComponent(requestId)}`,
   );
 }
 

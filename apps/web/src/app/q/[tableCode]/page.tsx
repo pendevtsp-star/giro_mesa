@@ -3,6 +3,8 @@
 import { escapeHtml, renderBrandedPrintDocument } from "@giromesa/domain";
 import {
   BellRing,
+  Circle,
+  CircleCheck,
   ClipboardList,
   FileText,
   Minus,
@@ -24,11 +26,13 @@ import {
   getPublicQr,
   getSecurePublicOrder,
   getSecurePublicQrContext,
+  getSecureServiceRequest,
   type Product,
   type PublicMenuResponse,
   type PublicModifierGroup,
   type PublicQrResponse,
   requestPublicQrAction,
+  type SecurePublicOrderSummary,
 } from "../../../lib/giromesa-api";
 
 type ModifierSelection = {
@@ -53,10 +57,17 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const [menu, setMenu] = useState<PublicMenuResponse | null>(null);
   const [fatalError, setFatalError] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartHydrated, setCartHydrated] = useState(false);
   const [status, setStatus] = useState("Escolha itens do cardápio ou chame o atendimento.");
   const [productQuery, setProductQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [isBusy, setIsBusy] = useState(false);
+  const [publicOrder, setPublicOrder] = useState<SecurePublicOrderSummary["order"]>(null);
+  const [serviceRequest, setServiceRequest] = useState<{
+    id: string;
+    type: string;
+    status: string;
+  } | null>(null);
 
   const [modifierModalProduct, setModifierModalProduct] = useState<
     PublicMenuResponse["products"][number] | null
@@ -68,14 +79,48 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const [modifierLoading, setModifierLoading] = useState(false);
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`giromesa:qr-cart:${tableCode}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          setCart(
+            parsed.filter((line): line is CartLine =>
+              Boolean(
+                line &&
+                  typeof line === "object" &&
+                  typeof (line as CartLine).productId === "string" &&
+                  typeof (line as CartLine).name === "string" &&
+                  Number.isInteger((line as CartLine).quantity) &&
+                  (line as CartLine).quantity > 0 &&
+                  Number.isInteger((line as CartLine).priceCents),
+              ),
+            ),
+          );
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(`giromesa:qr-cart:${tableCode}`);
+    } finally {
+      setCartHydrated(true);
+    }
+  }, [tableCode]);
+
+  useEffect(() => {
+    if (!cartHydrated) return;
+    window.localStorage.setItem(`giromesa:qr-cart:${tableCode}`, JSON.stringify(cart));
+  }, [cart, cartHydrated, tableCode]);
+
+  useEffect(() => {
     let ignore = false;
     const request = secureMode
       ? getSecurePublicQrContext(tableCode).then((context) => {
+          const configuredBranding = context.tenant.branding;
           const branding = {
-            displayName: context.tenant.branding.displayName,
-            logoUrl: context.tenant.branding.logoUrl,
-            themeMode: "light" as const,
-            accentPreset: "emerald" as const,
+            displayName: configuredBranding.displayName,
+            logoUrl: configuredBranding.logoUrl,
+            themeMode: configuredBranding.themeMode,
+            accentPreset: configuredBranding.accentPreset,
           };
           return {
             qr: {
@@ -87,6 +132,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               },
               capabilities: context.capabilities,
               reviewBeforeKds: context.reviewBeforeKds,
+              ...(context.qrSettings ? { qrSettings: context.qrSettings } : {}),
               table: {
                 id: context.table.id,
                 branchId: context.branchId,
@@ -142,6 +188,52 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     };
   }, [secureMode, tableCode]);
 
+  useEffect(() => {
+    if (!secureMode || !qr?.table.active) {
+      setPublicOrder(null);
+      return;
+    }
+    let ignore = false;
+    const refreshOrder = async () => {
+      try {
+        const response = await getSecurePublicOrder(tableCode);
+        if (!ignore) setPublicOrder(response.order);
+      } catch {
+        if (!ignore) setPublicOrder(null);
+      }
+    };
+    void refreshOrder();
+    const timer = window.setInterval(() => void refreshOrder(), 15_000);
+    return () => {
+      ignore = true;
+      window.clearInterval(timer);
+    };
+  }, [qr?.table.active, secureMode, tableCode]);
+
+  useEffect(() => {
+    if (
+      !secureMode ||
+      !serviceRequest ||
+      serviceRequest.status === "resolved" ||
+      serviceRequest.status === "canceled"
+    )
+      return;
+    let ignore = false;
+    const refreshRequest = async () => {
+      try {
+        const current = await getSecureServiceRequest(tableCode, serviceRequest.id);
+        if (!ignore) setServiceRequest(current);
+      } catch {
+        // Keep the last known status if the token is rotated while this page is open.
+      }
+    };
+    const timer = window.setInterval(() => void refreshRequest(), 5_000);
+    return () => {
+      ignore = true;
+      window.clearInterval(timer);
+    };
+  }, [secureMode, serviceRequest, tableCode]);
+
   const totalCents = cart.reduce((sum, line) => sum + line.quantity * line.priceCents, 0);
   const categoryOptions = useMemo(
     () => [
@@ -161,6 +253,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   }, [categoryFilter, menu?.products, productQuery]);
   const branding = qr?.tenant.branding ?? menu?.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
+  const activeOrderTotal = publicOrder?.totalCents ?? totalCents;
+  const activeOrderRemaining = publicOrder?.remainingCents ?? activeOrderTotal;
+  const hasActiveOrder = Boolean(publicOrder);
+  const useNightShell = branding?.themeMode === "dark";
+  const showTenantLogo = qr?.qrSettings?.showLogo !== false;
+  const customInstruction = qr?.qrSettings?.instruction?.trim();
+  const welcomeMessage = qr?.qrSettings?.welcomeMessage?.trim();
+  const menuHeadline = qr?.qrSettings?.menuHeadline?.trim();
 
   function addProduct(product: Pick<Product, "id" | "name" | "priceCents">) {
     setCart((current) => {
@@ -308,16 +408,22 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         quantity: line.quantity,
         modifiers: line.modifiers.map((m) => ({ optionId: m.optionId })),
       }));
+      const orderPayload = JSON.stringify(items);
       const response = secureMode
         ? await createSecurePublicOrder(
             tableCode,
-            idempotencyKey(tableCode, "order", JSON.stringify(items)),
+            idempotencyKey(tableCode, "order", orderPayload),
             { items },
           )
         : await createPublicQrOrder(tableCode, {
             tenantSlug: qr.tenant.slug,
             items,
           });
+      if (secureMode) {
+        const latest = await getSecurePublicOrder(tableCode);
+        setPublicOrder(latest.order);
+        window.sessionStorage.removeItem(`giromesa:qr:${tableCode}:order:${orderPayload}`);
+      }
       setCart([]);
       setStatus(`Pedido ${response.orderId.slice(0, 8)} enviado para o salão.`);
     });
@@ -327,9 +433,12 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     void run(async () => {
       if (!qr) return;
       if (secureMode) {
-        await createSecureServiceRequest(tableCode, idempotencyKey(tableCode, "call-waiter"), {
-          type: "call_waiter",
-        });
+        const request = await createSecureServiceRequest(
+          tableCode,
+          idempotencyKey(tableCode, "call-waiter"),
+          { type: "call_waiter" },
+        );
+        setServiceRequest(request);
       } else {
         await requestPublicQrAction(tableCode, "call-waiter", { tenantSlug: qr.tenant.slug });
       }
@@ -341,9 +450,12 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     void run(async () => {
       if (!qr) return;
       if (secureMode) {
-        await createSecureServiceRequest(tableCode, idempotencyKey(tableCode, "request-pre-bill"), {
-          type: "request_pre_bill",
-        });
+        const request = await createSecureServiceRequest(
+          tableCode,
+          idempotencyKey(tableCode, "request-pre-bill"),
+          { type: "request_pre_bill" },
+        );
+        setServiceRequest(request);
       } else {
         await requestPublicQrAction(tableCode, "pre-bill", { tenantSlug: qr.tenant.slug });
       }
@@ -376,6 +488,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           totalCents: item.totalCents,
         }));
         printTotalCents = response.order.totalCents;
+        setPublicOrder(response.order);
         documentSubtitle =
           "Resumo da comanda atual, carregado diretamente do atendimento registrado pelo estabelecimento.";
       } else if (printLines.length === 0) {
@@ -487,7 +600,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
   return (
     <main
-      className="menu-shell menu-shell-night table-qr-shell"
+      className={`menu-shell table-qr-shell${useNightShell ? " menu-shell-night" : ""}`}
       data-theme={branding?.themeMode ?? "light"}
       data-accent={branding?.accentPreset ?? "emerald"}
     >
@@ -498,10 +611,16 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           aria-label={branding?.displayName}
         >
           <span
-            className={branding?.logoUrl ? "brand-mark brand-mark-logo" : "brand-mark"}
-            style={branding?.logoUrl ? { backgroundImage: `url(${branding.logoUrl})` } : undefined}
+            className={
+              showTenantLogo && branding?.logoUrl ? "brand-mark brand-mark-logo" : "brand-mark"
+            }
+            style={
+              showTenantLogo && branding?.logoUrl
+                ? { backgroundImage: `url(${branding.logoUrl})` }
+                : undefined
+            }
           >
-            {branding?.logoUrl ? "" : brandInitial}
+            {showTenantLogo && branding?.logoUrl ? "" : brandInitial}
           </span>
           <span>{branding?.displayName ?? qr.tenant.name}</span>
         </a>
@@ -509,7 +628,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <QrCode size={18} /> Mesa {qr.table.code}
         </span>
         <h1>{branding?.displayName ?? qr.tenant.name}</h1>
-        <p>Monte seu pedido, chame atendimento ou solicite a pré-conta da mesa.</p>
+        <p>
+          {welcomeMessage ||
+            customInstruction ||
+            "Monte seu pedido, chame atendimento ou solicite a pré-conta da mesa."}
+        </p>
       </header>
 
       <section className="qr-order-grid">
@@ -517,7 +640,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <div className="panel-title">
             <div>
               <span className="section-kicker">Cardápio</span>
-              <h2>Pedido da mesa</h2>
+              <h2>{menuHeadline || "Pedido da mesa"}</h2>
             </div>
             {!secureMode ? (
               <a className="button secondary" href={`/m/${qr.tenant.slug}`}>
@@ -593,9 +716,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <div className="panel-title">
             <div>
               <span className="section-kicker">Comanda</span>
-              <h2>{cart.length} item(ns)</h2>
+              <h2>{publicOrder ? "Comanda atual" : `${cart.length} item(ns)`}</h2>
             </div>
-            <strong>{formatMoney(totalCents)}</strong>
+            <strong>{formatMoney(activeOrderTotal)}</strong>
           </div>
           <div className="qr-cart">
             {cart.length === 0 ? <p>Nenhum item selecionado ainda.</p> : null}
@@ -627,6 +750,68 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               </div>
             ))}
           </div>
+          {publicOrder ? (
+            <section
+              aria-label="Status da comanda"
+              style={{
+                display: "grid",
+                gap: 8,
+                margin: "14px 0",
+                borderTop: "1px solid var(--line)",
+                paddingTop: 14,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span>Status</span>
+                <strong>{orderStatusLabel(publicOrder.status)}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span>Recebido</span>
+                <strong>{formatMoney(publicOrder.receivedCents ?? 0)}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span>Restante</span>
+                <strong>{formatMoney(activeOrderRemaining)}</strong>
+              </div>
+              {publicOrder.timeline?.length ? (
+                <ol
+                  aria-label="Acompanhamento do pedido"
+                  style={{
+                    display: "grid",
+                    gap: 6,
+                    margin: "4px 0 0",
+                    padding: 0,
+                    listStyle: "none",
+                  }}
+                >
+                  {publicOrder.timeline.map((step) => (
+                    <li
+                      key={step.key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        color:
+                          step.state === "pending"
+                            ? "var(--muted)"
+                            : step.state === "canceled"
+                              ? "#b42331"
+                              : "var(--ink)",
+                        fontWeight: step.state === "active" ? 700 : 500,
+                      }}
+                    >
+                      {step.state === "pending" ? (
+                        <Circle size={14} aria-hidden="true" />
+                      ) : (
+                        <CircleCheck size={14} aria-hidden="true" />
+                      )}
+                      <span>{step.label}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </section>
+          ) : null}
           <button
             className="button primary full"
             type="button"
@@ -653,15 +838,15 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             className="qr-action"
             type="button"
             onClick={requestPreBill}
-            disabled={isBusy || cart.length === 0}
+            disabled={isBusy || !hasActiveOrder}
           >
             <ReceiptText size={26} />
             <div>
               <h2>Pedir pré-conta</h2>
               <p>
-                {cart.length
+                {hasActiveOrder
                   ? "O caixa recebe o pedido de fechamento da mesa."
-                  : "Adicione itens para solicitar a pré-conta."}
+                  : "A comanda ainda não possui consumo registrado."}
               </p>
             </div>
           </button>
@@ -675,6 +860,16 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         </button>
       </section>
       <footer className="qr-note">{status}</footer>
+      {serviceRequest ? (
+        <p className="qr-note" role="status">
+          Atendimento: {serviceRequestStatusLabel(serviceRequest.status)}.
+        </p>
+      ) : null}
+      {qr.qrSettings?.marketingEnabled !== false ? (
+        <p className="qr-note qr-marketing-note">
+          Tecnologia <a href="https://giromesa.com.br">GiroMesa</a> para uma operação mais simples.
+        </p>
+      ) : null}
 
       {modifierModalProduct && (
         <dialog
@@ -834,4 +1029,32 @@ function idempotencyKey(token: string, action: string, payload = "") {
   const value = window.crypto.randomUUID();
   window.sessionStorage.setItem(storageKey, value);
   return value;
+}
+
+function orderStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    draft: "Rascunho",
+    opened: "Recebido",
+    sent_to_kitchen: "Enviado para produÃ§Ã£o",
+    preparing: "Em preparo",
+    ready: "Pronto para servir",
+    served: "Entregue Ã  mesa",
+    waiting_payment: "Aguardando pagamento",
+    partially_paid: "Pagamento parcial",
+    paid: "Pago",
+    canceled: "Cancelado",
+    refunded: "Estornado",
+  };
+  return labels[status] ?? status;
+}
+
+function serviceRequestStatusLabel(status: string) {
+  return (
+    {
+      pending: "aguardando a equipe",
+      acknowledged: "equipe a caminho",
+      resolved: "resolvido",
+      canceled: "cancelado",
+    }[status] ?? "em acompanhamento"
+  );
 }

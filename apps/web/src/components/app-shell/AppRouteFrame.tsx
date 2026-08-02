@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, Menu, Wifi, WifiOff, X } from "lucide-react";
+import { Building2, CircleAlert, Menu, Search, Wifi, WifiOff, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { readOperatorProfile } from "../../lib/formatters/app-dashboard";
@@ -11,6 +11,7 @@ import { useTranslation } from "../../lib/i18n";
 import { useSession } from "../../lib/session-context";
 import { AppNavigation } from "./AppNavigation";
 import { BrandLink } from "./BrandMark";
+import { DensityToggle } from "./DensityToggle";
 import { filterNavigationByPermissions } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -67,6 +68,30 @@ export function AppRouteFrame({ children }: { children: ReactNode }) {
   );
 }
 
+function BranchSwitcher() {
+  const { session, switchBranch } = useSession();
+  const branches = session?.branches ?? [];
+  if (!session?.branchId || branches.length === 0) return null;
+
+  return (
+    <label className="gm-branch-switcher">
+      <Building2 size={15} aria-hidden="true" />
+      <span className="sr-only">Filial ativa</span>
+      <select
+        aria-label="Filial ativa"
+        value={session.branchId}
+        onChange={(event) => switchBranch(event.target.value)}
+      >
+        {branches.map((branch) => (
+          <option key={branch.id} value={branch.id}>
+            {branch.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function OperationalShell({ children, title }: { children: ReactNode; title: string }) {
   const online = useConnectivity();
   const { session, branding } = useSession();
@@ -108,6 +133,8 @@ function OperationalShell({ children, title }: { children: ReactNode; title: str
             {online && !degraded ? "Online" : online ? "Atenção" : "Offline"}
           </span>
           <span className="gm-operator-label">{profile.title}</span>
+          <BranchSwitcher />
+          <DensityToggle />
           <ThemeToggle defaultPreference={activeBranding.themeMode} />
         </fieldset>
       </header>
@@ -119,14 +146,38 @@ function OperationalShell({ children, title }: { children: ReactNode; title: str
 function AdministrativeShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const online = useConnectivity();
-  const { locale, setLocale } = useTranslation();
+  const { locale, setLocale, t } = useTranslation();
   const { session, branding } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickQuery, setQuickQuery] = useState("");
   const activeBranding = branding ?? fallbackBranding;
   const navigation = useMemo(
     () => filterNavigationByPermissions(session?.permissions ?? []),
     [session?.permissions],
   );
+  const quickItems = useMemo(
+    () =>
+      navigation
+        .map((item) => ({ ...item, label: t(item.labelKey) }))
+        .filter((item) => {
+          const query = quickQuery.trim().toLocaleLowerCase();
+          return !query || `${item.label} ${item.href}`.toLocaleLowerCase().includes(query);
+        }),
+    [navigation, quickQuery, t],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setQuickOpen(true);
+      }
+      if (event.key === "Escape") setQuickOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className={`gm-admin-shell ${menuOpen ? "menu-open" : ""}`}>
@@ -155,10 +206,22 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
             <span>Administração</span>
           </div>
           <div className="gm-admin-actions">
+            <button
+              className="gm-command-trigger"
+              type="button"
+              aria-label="Busca global"
+              onClick={() => setQuickOpen(true)}
+            >
+              <Search size={16} />
+              <span>{t("common.search")}</span>
+              <kbd>Ctrl K</kbd>
+            </button>
             <span className={`gm-connection ${online ? "online" : "degraded"}`} role="status">
               {online ? <Wifi size={15} /> : <WifiOff size={15} />}
               {online ? "Online" : "Offline"}
             </span>
+            <BranchSwitcher />
+            <DensityToggle />
             <ThemeToggle defaultPreference={activeBranding.themeMode} />
           </div>
         </header>
@@ -171,6 +234,41 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
           onClick={() => setMenuOpen(false)}
           type="button"
         />
+      ) : null}
+      {quickOpen ? (
+        <div className="gm-command-overlay" role="presentation">
+          <section
+            className="gm-command-palette"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Busca global"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="gm-command-search">
+              <Search size={18} aria-hidden="true" />
+              <input
+                value={quickQuery}
+                onChange={(event) => setQuickQuery(event.target.value)}
+                placeholder="Buscar módulo ou ação"
+                aria-label="Buscar módulo ou ação"
+              />
+              <kbd>Esc</kbd>
+            </div>
+            <div className="gm-command-results">
+              {quickItems.length ? (
+                quickItems.map((item) => (
+                  <a key={item.href} href={item.href} onClick={() => setQuickOpen(false)}>
+                    <item.icon size={17} aria-hidden="true" />
+                    <span>{item.label}</span>
+                    <small>{item.href}</small>
+                  </a>
+                ))
+              ) : (
+                <p className="muted-copy">{t("common.noResults")}</p>
+              )}
+            </div>
+          </section>
+        </div>
       ) : null}
     </div>
   );

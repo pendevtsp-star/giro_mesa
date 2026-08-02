@@ -4,17 +4,26 @@ import {
   auditLogs,
   categories,
   diningTables,
+  guestExperienceConfigs,
   modifierGroups,
   modifierOptions,
   orderItems,
   orders,
+  payments,
   products,
   publicRequestIdempotency,
   qrBranchSettings,
   serviceRequests,
   tenants,
 } from "@giromesa/db";
-import type { QrBranchSettings, QrCapability, TenantContext } from "@giromesa/domain";
+import type {
+  GuestExperienceConfig,
+  GuestExperienceRevision,
+  PublicOrderTimeline,
+  QrBranchSettings,
+  QrCapability,
+  TenantContext,
+} from "@giromesa/domain";
 import {
   BadRequestException,
   ConflictException,
@@ -39,6 +48,11 @@ type PublicOrderInput = {
 type PublicServiceRequestInput = {
   type: "call_waiter" | "request_pre_bill" | "need_help";
   message?: string | undefined;
+};
+type GuestExperienceDraftInput = {
+  [key in Exclude<keyof GuestExperienceConfig, "branchId">]?:
+    | GuestExperienceConfig[key]
+    | undefined;
 };
 
 const defaultCapabilities: QrCapability[] = [
@@ -106,6 +120,102 @@ export class QrService {
       .returning();
     await this.audit(context, "qr.settings_updated", "branch", branchId, input);
     return settings ? mapSettings(settings) : defaultSettings(branchId);
+  }
+
+  async getExperience(context: TenantContext) {
+    const branchId = requireBranch(context);
+    const rows = await this.database.db
+      .select()
+      .from(guestExperienceConfigs)
+      .where(
+        and(
+          eq(guestExperienceConfigs.tenantId, context.tenantId),
+          eq(guestExperienceConfigs.branchId, branchId),
+        ),
+      )
+      .orderBy(desc(guestExperienceConfigs.version));
+    const draft = rows.find((row) => row.status === "draft");
+    const published = rows.find((row) => row.status === "published");
+    return {
+      draft: draft ? mapExperienceRevision(draft) : null,
+      published: published ? mapExperienceRevision(published) : null,
+      history: rows.slice(0, 12).map(mapExperienceRevision),
+    };
+  }
+
+  async createExperienceDraft(
+    context: TenantContext,
+    input: GuestExperienceDraftInput,
+  ): Promise<GuestExperienceRevision> {
+    const branchId = requireBranch(context);
+    const current = await this.settingsForBranch(context.tenantId, branchId);
+    const latest = await this.database.db
+      .select({ version: guestExperienceConfigs.version })
+      .from(guestExperienceConfigs)
+      .where(
+        and(
+          eq(guestExperienceConfigs.tenantId, context.tenantId),
+          eq(guestExperienceConfigs.branchId, branchId),
+        ),
+      )
+      .orderBy(desc(guestExperienceConfigs.version))
+      .limit(1);
+    const [draft] = await this.database.db
+      .insert(guestExperienceConfigs)
+      .values({
+        tenantId: context.tenantId,
+        branchId,
+        version: (latest[0]?.version ?? 0) + 1,
+        status: "draft",
+        config: { ...current, ...input, branchId },
+        createdByUserId: context.userId ?? null,
+      })
+      .returning();
+    if (!draft) throw new BadRequestException("Unable to create QR experience draft");
+    await this.audit(context, "qr.experience_draft_created", "branch", branchId, {
+      revisionId: draft.id,
+      version: draft.version,
+    });
+    return mapExperienceRevision(draft);
+  }
+
+  async publishExperience(context: TenantContext, revisionId: string) {
+    const branchId = requireBranch(context);
+    const result = await this.database.db.transaction(async (tx) => {
+      const [target] = await tx
+        .select()
+        .from(guestExperienceConfigs)
+        .where(
+          and(
+            eq(guestExperienceConfigs.id, revisionId),
+            eq(guestExperienceConfigs.tenantId, context.tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+          ),
+        )
+        .limit(1);
+      if (!target) throw new NotFoundException("QR experience revision not found");
+      await tx
+        .update(guestExperienceConfigs)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(
+          and(
+            eq(guestExperienceConfigs.tenantId, context.tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+            eq(guestExperienceConfigs.status, "published"),
+          ),
+        );
+      const [published] = await tx
+        .update(guestExperienceConfigs)
+        .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
+        .where(eq(guestExperienceConfigs.id, target.id))
+        .returning();
+      return published ?? target;
+    });
+    await this.audit(context, "qr.experience_published", "branch", branchId, {
+      revisionId: result.id,
+      version: result.version,
+    });
+    return mapExperienceRevision(result);
   }
 
   async listTables(context: TenantContext) {
@@ -214,7 +324,7 @@ export class QrService {
   ) {
     const branchId = requireBranch(context);
     const [settings, tables, tenantRows] = await Promise.all([
-      this.getSettings(context),
+      this.settingsForBranch(context.tenantId, branchId),
       this.database.db
         .select()
         .from(diningTables)
@@ -344,6 +454,17 @@ export class QrService {
       },
       capabilities: settings.capabilities,
       reviewBeforeKds: settings.reviewBeforeKds,
+      qrSettings: {
+        template: settings.template,
+        primaryColor: settings.primaryColor,
+        instruction: settings.instruction,
+        showLogo: settings.showLogo,
+        ...(settings.welcomeMessage ? { welcomeMessage: settings.welcomeMessage } : {}),
+        ...(settings.menuHeadline ? { menuHeadline: settings.menuHeadline } : {}),
+        ...(settings.marketingEnabled !== undefined
+          ? { marketingEnabled: settings.marketingEnabled }
+          : {}),
+      },
       categories: menuCategories,
       products: menuProducts.filter((product) => product.channels.includes("qr")),
     };
@@ -370,17 +491,31 @@ export class QrService {
     if (!order) {
       return { order: null };
     }
-    const items = await this.database.db
-      .select({
-        name: orderItems.nameSnapshot,
-        quantity: orderItems.quantity,
-        unitPriceCents: orderItems.unitPriceCents,
-        totalCents: orderItems.totalCents,
-        status: orderItems.status,
-      })
-      .from(orderItems)
-      .where(and(eq(orderItems.tenantId, resolved.tenant.id), eq(orderItems.orderId, order.id)))
-      .orderBy(asc(orderItems.createdAt));
+    const [items, paymentRows] = await Promise.all([
+      this.database.db
+        .select({
+          name: orderItems.nameSnapshot,
+          quantity: orderItems.quantity,
+          unitPriceCents: orderItems.unitPriceCents,
+          totalCents: orderItems.totalCents,
+          status: orderItems.status,
+        })
+        .from(orderItems)
+        .where(and(eq(orderItems.tenantId, resolved.tenant.id), eq(orderItems.orderId, order.id)))
+        .orderBy(asc(orderItems.createdAt)),
+      this.database.db
+        .select({
+          amountCents: payments.amountCents,
+          method: payments.method,
+          status: payments.status,
+        })
+        .from(payments)
+        .where(and(eq(payments.tenantId, resolved.tenant.id), eq(payments.orderId, order.id))),
+    ]);
+    const receivedCents = paymentRows
+      .filter((payment) => payment.status === "confirmed")
+      .reduce((sum, payment) => sum + payment.amountCents, 0);
+    const timeline = buildTimeline(order.status, order.openedAt, order.updatedAt, order.closedAt);
     return {
       order: {
         id: order.id,
@@ -390,6 +525,14 @@ export class QrService {
         discountCents: order.discountCents,
         serviceChargeCents: order.serviceChargeCents,
         totalCents: order.totalCents,
+        receivedCents,
+        remainingCents: Math.max(order.totalCents - receivedCents, 0),
+        payments: paymentRows.map((payment) => ({
+          amountCents: payment.amountCents,
+          method: payment.method,
+          status: payment.status,
+        })),
+        timeline,
       },
     };
   }
@@ -617,6 +760,33 @@ export class QrService {
     });
   }
 
+  async getPublicServiceRequest(token: string, requestId: string) {
+    const resolved = await this.resolveToken(token);
+    this.assertActive(resolved.table.status);
+    const [request] = await this.database.db
+      .select({
+        id: serviceRequests.id,
+        type: serviceRequests.type,
+        status: serviceRequests.status,
+        message: serviceRequests.message,
+        acknowledgedAt: serviceRequests.acknowledgedAt,
+        resolvedAt: serviceRequests.resolvedAt,
+        createdAt: serviceRequests.createdAt,
+      })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.tenantId, resolved.tenant.id),
+          eq(serviceRequests.branchId, resolved.table.branchId),
+          eq(serviceRequests.tableId, resolved.table.id),
+          eq(serviceRequests.id, requestId),
+        ),
+      )
+      .limit(1);
+    if (!request) throw new NotFoundException("Service request not found");
+    return request;
+  }
+
   async listServiceRequests(
     context: TenantContext,
     status?: "pending" | "acknowledged" | "resolved" | "canceled",
@@ -767,7 +937,20 @@ export class QrService {
       .from(qrBranchSettings)
       .where(and(eq(qrBranchSettings.tenantId, tenantId), eq(qrBranchSettings.branchId, branchId)))
       .limit(1);
-    return settings ? mapSettings(settings) : defaultSettings(branchId);
+    const base = settings ? mapSettings(settings) : defaultSettings(branchId);
+    const [published] = await this.database.db
+      .select({ config: guestExperienceConfigs.config })
+      .from(guestExperienceConfigs)
+      .where(
+        and(
+          eq(guestExperienceConfigs.tenantId, tenantId),
+          eq(guestExperienceConfigs.branchId, branchId),
+          eq(guestExperienceConfigs.status, "published"),
+        ),
+      )
+      .orderBy(desc(guestExperienceConfigs.version))
+      .limit(1);
+    return published ? mergeExperienceSettings(base, published.config) : base;
   }
 
   private assertCapability(settings: QrBranchSettings, capability: QrCapability) {
@@ -822,6 +1005,70 @@ function defaultSettings(branchId: string): QrBranchSettings {
     primaryColor: "#FFCC00",
     instruction: "Aponte a câmera para acessar o cardápio",
     showLogo: true,
+  };
+}
+
+function mergeExperienceSettings(
+  base: QrBranchSettings,
+  config: Record<string, unknown>,
+): QrBranchSettings {
+  const capabilities = Array.isArray(config.capabilities)
+    ? config.capabilities.filter((value): value is QrCapability =>
+        defaultCapabilities.includes(value as QrCapability),
+      )
+    : base.capabilities;
+  return {
+    ...base,
+    ...(typeof config.reviewBeforeKds === "boolean"
+      ? { reviewBeforeKds: config.reviewBeforeKds }
+      : {}),
+    ...(config.template === "classic" ||
+    config.template === "minimal" ||
+    config.template === "premium"
+      ? { template: config.template }
+      : {}),
+    ...(typeof config.primaryColor === "string" && /^#[0-9a-f]{6}$/i.test(config.primaryColor)
+      ? { primaryColor: config.primaryColor }
+      : {}),
+    ...(typeof config.instruction === "string" ? { instruction: config.instruction } : {}),
+    ...(typeof config.showLogo === "boolean" ? { showLogo: config.showLogo } : {}),
+    ...(typeof config.welcomeMessage === "string" && config.welcomeMessage.trim()
+      ? { welcomeMessage: config.welcomeMessage.trim() }
+      : {}),
+    ...(typeof config.menuHeadline === "string" && config.menuHeadline.trim()
+      ? { menuHeadline: config.menuHeadline.trim() }
+      : {}),
+    ...(typeof config.marketingEnabled === "boolean"
+      ? { marketingEnabled: config.marketingEnabled }
+      : {}),
+    ...(capabilities.length ? { capabilities } : {}),
+  };
+}
+
+function mapExperienceRevision(
+  row: typeof guestExperienceConfigs.$inferSelect,
+): GuestExperienceRevision {
+  const branchId = row.branchId;
+  return {
+    id: row.id,
+    branchId,
+    version: row.version,
+    status: row.status,
+    config: {
+      ...mergeExperienceSettings(defaultSettings(branchId), row.config),
+      ...(typeof row.config.welcomeMessage === "string"
+        ? { welcomeMessage: row.config.welcomeMessage }
+        : {}),
+      ...(typeof row.config.menuHeadline === "string"
+        ? { menuHeadline: row.config.menuHeadline }
+        : {}),
+      ...(typeof row.config.marketingEnabled === "boolean"
+        ? { marketingEnabled: row.config.marketingEnabled }
+        : {}),
+    },
+    scheduledAt: row.scheduledAt?.toISOString() ?? null,
+    publishedAt: row.publishedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 
@@ -921,7 +1168,79 @@ function readBranding(settings: Record<string, unknown>, tenantName: string) {
         ? raw.displayName.trim()
         : tenantName,
     logoUrl: typeof raw.logoUrl === "string" ? raw.logoUrl : null,
+    themeMode: raw.themeMode === "dark" || raw.themeMode === "system" ? raw.themeMode : "light",
+    accentPreset:
+      raw.accentPreset === "blue" ||
+      raw.accentPreset === "amber" ||
+      raw.accentPreset === "rose" ||
+      raw.accentPreset === "violet"
+        ? raw.accentPreset
+        : "emerald",
   };
+}
+
+function buildTimeline(
+  status: (typeof orders.$inferSelect)["status"],
+  openedAt: Date | null,
+  updatedAt: Date,
+  closedAt: Date | null,
+): PublicOrderTimeline[] {
+  const steps: Array<PublicOrderTimeline["key"]> = [
+    "received",
+    "sent_to_kitchen",
+    "preparing",
+    "ready",
+    "served",
+  ];
+  const labels: Record<PublicOrderTimeline["key"], string> = {
+    received: "Pedido recebido",
+    sent_to_kitchen: "Enviado para produção",
+    preparing: "Em preparo",
+    ready: "Pronto para servir",
+    served: "Entregue à mesa",
+    canceled: "Pedido cancelado",
+  };
+  if (status === "canceled" || status === "refunded") {
+    return [
+      ...steps.map((key, index) => ({
+        key,
+        label: labels[key],
+        state: index === 0 ? ("completed" as const) : ("pending" as const),
+        at: index === 0 ? (openedAt?.toISOString() ?? null) : null,
+      })),
+      { key: "canceled", label: labels.canceled, state: "canceled", at: updatedAt.toISOString() },
+    ];
+  }
+  const statusIndex =
+    status === "draft" || status === "opened"
+      ? 0
+      : status === "sent_to_kitchen"
+        ? 1
+        : status === "preparing"
+          ? 2
+          : status === "ready"
+            ? 3
+            : status === "served" ||
+                status === "waiting_payment" ||
+                status === "partially_paid" ||
+                status === "paid"
+              ? 4
+              : 0;
+  return steps.map((key, index) => ({
+    key,
+    label: labels[key],
+    state: index < statusIndex ? "completed" : index === statusIndex ? "active" : "pending",
+    at:
+      index === 0
+        ? (openedAt?.toISOString() ?? null)
+        : index === 4 && closedAt
+          ? closedAt.toISOString()
+          : index === statusIndex
+            ? updatedAt.toISOString()
+            : index < statusIndex
+              ? updatedAt.toISOString()
+              : null,
+  }));
 }
 
 function renderPrintHtml(

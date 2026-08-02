@@ -17,6 +17,22 @@ export type QrBranchSettings = {
   primaryColor: string;
   instruction: string;
   showLogo: boolean;
+  welcomeMessage?: string;
+  menuHeadline?: string;
+  marketingEnabled?: boolean;
+};
+
+export type GuestExperienceConfig = QrBranchSettings;
+
+export type GuestExperienceRevision = {
+  id: string;
+  branchId: string;
+  version: number;
+  status: "draft" | "published" | "archived";
+  config: GuestExperienceConfig;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
 };
 
 export type ServiceRequest = {
@@ -46,6 +62,16 @@ export type PublicOrderSummary = {
   discountCents: number;
   serviceChargeCents: number;
   totalCents: number;
+  receivedCents?: number;
+  remainingCents?: number;
+  timeline?: PublicOrderTimeline[];
+};
+
+export type PublicOrderTimeline = {
+  key: "received" | "sent_to_kitchen" | "preparing" | "ready" | "served" | "canceled";
+  label: string;
+  state: "pending" | "active" | "completed" | "canceled";
+  at: string | null;
 };
 
 export type FloorPlanRevision = {

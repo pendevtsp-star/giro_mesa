@@ -3,6 +3,7 @@ import {
   auditLogs,
   branches,
   diningTables,
+  guestExperienceConfigs,
   operationalEvents,
   orderItems,
   orders,
@@ -91,6 +92,7 @@ runIntegration("secure table QR", () => {
       await db.delete(orders).where(eq(orders.tenantId, tenantId));
       await db.delete(products).where(eq(products.tenantId, tenantId));
       await db.delete(qrBranchSettings).where(eq(qrBranchSettings.tenantId, tenantId));
+      await db.delete(guestExperienceConfigs).where(eq(guestExperienceConfigs.tenantId, tenantId));
       await db.delete(diningTables).where(eq(diningTables.tenantId, tenantId));
       await db.delete(users).where(eq(users.tenantId, tenantId));
       await db.delete(branches).where(eq(branches.tenantId, tenantId));
@@ -151,12 +153,52 @@ runIntegration("secure table QR", () => {
       type: "call_waiter",
     });
     expect(replay).toEqual(created);
+    await expect(
+      service.getPublicServiceRequest(token, created.id as string),
+    ).resolves.toMatchObject({
+      id: created.id,
+      status: "pending",
+      type: "call_waiter",
+    });
+    const publicStatus = await service.getPublicServiceRequest(token, created.id as string);
+    expect(publicStatus).not.toHaveProperty("tenantId");
+    expect(publicStatus).not.toHaveProperty("tableId");
     await expect(service.acknowledge(context, created.id as string)).resolves.toMatchObject({
       status: "acknowledged",
     });
     await expect(service.resolve(context, created.id as string)).resolves.toMatchObject({
       status: "resolved",
     });
+  });
+
+  it("publishes a versioned guest experience without changing the QR token", async () => {
+    const context = {
+      tenantId,
+      branchId,
+      userId,
+      requestId: "qr-experience-integration",
+      permissions: ["tenant:manage", "pos:operate"],
+      isDemo: false,
+    };
+    const [table] = await service.listTables(context);
+    if (!table) throw new Error("QR table not listed");
+    const tokenBefore = table.publicUrl;
+    const draft = await service.createExperienceDraft(context, {
+      template: "premium",
+      primaryColor: "#123456",
+      welcomeMessage: "Bem-vindo",
+    });
+    expect(draft.status).toBe("draft");
+    const published = await service.publishExperience(context, draft.id);
+    expect(published).toMatchObject({ status: "published", version: draft.version });
+    const publicContext = await service.getPublicContext(tokenFromUrl(tokenBefore));
+    expect(publicContext.qrSettings).toMatchObject({
+      template: "premium",
+      primaryColor: "#123456",
+      welcomeMessage: "Bem-vindo",
+    });
+    const [tableAfter] = await service.listTables(context);
+    expect(tableAfter?.publicUrl).toBe(tokenBefore);
   });
 });
 

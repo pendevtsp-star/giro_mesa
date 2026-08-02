@@ -1,4 +1,10 @@
-import { deliveryOrders, subscriptions, tenants, webhookEvents } from "@giromesa/db";
+import {
+  deliveryOrders,
+  purchaseIntents,
+  subscriptions,
+  tenants,
+  webhookEvents,
+} from "@giromesa/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { createWhatsAppProvider } from "../../common/whatsapp-provider";
@@ -88,6 +94,7 @@ export class WebhooksService {
     const eventName = this.readEventName(payload);
     const reference = this.readExternalReference(payload);
     const tenantSlug = readReferenceTenantSlug(reference);
+    const purchaseIntentId = readReferencePurchaseIntentId(reference);
 
     if (!eventName || !tenantSlug) {
       await this.markWebhookProcessed(webhookEventId, "ignored");
@@ -109,6 +116,14 @@ export class WebhooksService {
     if (!nextStatus) {
       await this.markWebhookProcessed(webhookEventId, "processed");
       return;
+    }
+
+    const nextPurchaseIntentStatus = mapAsaasEventToPurchaseIntentStatus(eventName);
+    if (purchaseIntentId && nextPurchaseIntentStatus) {
+      await this.database.db
+        .update(purchaseIntents)
+        .set({ status: nextPurchaseIntentStatus, updatedAt: new Date() })
+        .where(eq(purchaseIntents.id, purchaseIntentId));
     }
 
     await this.database.db
@@ -221,8 +236,18 @@ function readReferenceTenantSlug(reference: string | null) {
   if (!reference?.startsWith("gm-sub-")) {
     return null;
   }
-  const slug = reference.slice("gm-sub-".length).replace(/-\d+$/, "");
+  const slug = reference
+    .slice("gm-sub-".length)
+    .replace(/-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "")
+    .replace(/-\d+$/, "");
   return slug || null;
+}
+
+function readReferencePurchaseIntentId(reference: string | null) {
+  const match = reference?.match(
+    /([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+  );
+  return match?.[1] ?? null;
 }
 
 function mapAsaasEventToTenantStatus(eventName: string) {
@@ -237,6 +262,22 @@ function mapAsaasEventToTenantStatus(eventName: string) {
   }
   if (eventName === "PAYMENT_RESTORED") {
     return "trial";
+  }
+  return null;
+}
+
+function mapAsaasEventToPurchaseIntentStatus(eventName: string) {
+  if (eventName === "PAYMENT_CONFIRMED" || eventName === "PAYMENT_RECEIVED") {
+    return "completed";
+  }
+  if (eventName === "PAYMENT_OVERDUE") {
+    return "past_due";
+  }
+  if (eventName === "PAYMENT_DELETED" || eventName === "PAYMENT_REFUNDED") {
+    return "canceled";
+  }
+  if (eventName === "PAYMENT_RESTORED") {
+    return "pending";
   }
   return null;
 }

@@ -20,6 +20,7 @@ export function AppShell({
   isPosWorkspace,
   canOpenPos,
   operatorLabel,
+  branchLabel,
   workspaceTitle,
   workspaceDescription,
   onLogout,
@@ -36,6 +37,7 @@ export function AppShell({
   isPosWorkspace: boolean;
   canOpenPos: boolean;
   operatorLabel: string;
+  branchLabel?: string;
   workspaceTitle?: string;
   workspaceDescription?: string;
   onLogout?: (() => void) | undefined;
@@ -75,7 +77,7 @@ export function AppShell({
               )}
             </span>
             <div>
-              <span className="section-kicker">Unidade Centro</span>
+              <span className="section-kicker">{branchLabel ?? "Filial ativa"}</span>
               <h1>{workspaceTitle ?? (isPosWorkspace ? "PDV do turno" : "Visão do turno")}</h1>
               <p>
                 {workspaceDescription ??

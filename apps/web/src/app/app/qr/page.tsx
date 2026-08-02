@@ -12,9 +12,13 @@ import {
 import { useEffect, useState } from "react";
 import {
   createQrArtwork,
+  createQrExperienceDraft,
+  type GuestExperienceRevision,
   getErrorMessage,
+  getQrExperience,
   getQrSettings,
   listQrTables,
+  publishQrExperience,
   type QrAdminTable,
   type QrArtwork,
   type QrBranchSettings,
@@ -35,6 +39,11 @@ const capabilityLabels: Record<QrCapability, string> = {
 
 export default function QrManagementPage() {
   const [settings, setSettings] = useState<QrBranchSettings | null>(null);
+  const [experience, setExperience] = useState<{
+    draft: GuestExperienceRevision | null;
+    published: GuestExperienceRevision | null;
+    history: GuestExperienceRevision[];
+  } | null>(null);
   const [tables, setTables] = useState<QrAdminTable[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [artwork, setArtwork] = useState<QrArtwork | null>(null);
@@ -47,8 +56,28 @@ export default function QrManagementPage() {
   async function load() {
     setBusy(true);
     try {
-      const [nextSettings, nextTables] = await Promise.all([getQrSettings(), listQrTables()]);
+      const [nextSettings, nextTables, nextExperience] = await Promise.all([
+        getQrSettings(),
+        listQrTables(),
+        getQrExperience(),
+      ]);
       setSettings(nextSettings);
+      setExperience(nextExperience);
+      const activeExperience = nextExperience.draft ?? nextExperience.published;
+      if (activeExperience) {
+        setSettings({
+          ...nextSettings,
+          ...(activeExperience.config.welcomeMessage
+            ? { welcomeMessage: activeExperience.config.welcomeMessage }
+            : {}),
+          ...(activeExperience.config.menuHeadline
+            ? { menuHeadline: activeExperience.config.menuHeadline }
+            : {}),
+          ...(activeExperience.config.marketingEnabled !== undefined
+            ? { marketingEnabled: activeExperience.config.marketingEnabled }
+            : {}),
+        });
+      }
       setTables(nextTables);
       setSelected((current) => {
         const valid = new Set(
@@ -81,7 +110,14 @@ export default function QrManagementPage() {
         instruction: settings.instruction,
         showLogo: settings.showLogo,
       });
-      setSettings(updated);
+      setSettings({
+        ...updated,
+        ...(settings.welcomeMessage ? { welcomeMessage: settings.welcomeMessage } : {}),
+        ...(settings.menuHeadline ? { menuHeadline: settings.menuHeadline } : {}),
+        ...(settings.marketingEnabled !== undefined
+          ? { marketingEnabled: settings.marketingEnabled }
+          : {}),
+      });
       setMessage("Política e identidade dos QR codes salvas.");
     } catch (error) {
       setMessage(getErrorMessage(error, "Falha ao salvar a configuração."));
@@ -105,6 +141,43 @@ export default function QrManagementPage() {
       }
     } catch (error) {
       setMessage(getErrorMessage(error, "Falha ao gerar os materiais."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDraft() {
+    if (!settings) return;
+    setBusy(true);
+    try {
+      const draft = await createQrExperienceDraft(settings);
+      setExperience((current) => ({
+        draft,
+        published: current?.published ?? null,
+        history: [draft, ...(current?.history ?? [])],
+      }));
+      setMessage(`Rascunho v${draft.version} salvo. Publique quando estiver pronto.`);
+    } catch (error) {
+      setMessage(getErrorMessage(error, "Falha ao salvar o rascunho."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function publishDraft() {
+    const revisionId = experience?.draft?.id;
+    if (!revisionId) return;
+    setBusy(true);
+    try {
+      const published = await publishQrExperience(revisionId);
+      setExperience((current) => ({
+        draft: null,
+        published,
+        history: [published, ...(current?.history ?? [])],
+      }));
+      setMessage(`Experiência v${published.version} publicada sem trocar os QR codes.`);
+    } catch (error) {
+      setMessage(getErrorMessage(error, "Falha ao publicar a experiência."));
     } finally {
       setBusy(false);
     }
@@ -222,6 +295,48 @@ export default function QrManagementPage() {
                 value={settings.instruction}
               />
             </label>
+            <div className="form-grid two-columns">
+              <label>
+                TÃ­tulo do cardÃ¡pio
+                <input
+                  maxLength={120}
+                  onChange={(event) =>
+                    setSettings({ ...settings, menuHeadline: event.target.value })
+                  }
+                  placeholder="Pedido da mesa"
+                  value={settings.menuHeadline ?? ""}
+                />
+              </label>
+              <label>
+                Mensagem de boas-vindas
+                <input
+                  maxLength={180}
+                  onChange={(event) =>
+                    setSettings({ ...settings, welcomeMessage: event.target.value })
+                  }
+                  placeholder="Bem-vindo ao nosso atendimento"
+                  value={settings.welcomeMessage ?? ""}
+                />
+              </label>
+            </div>
+            <label className="qr-switch-row">
+              <input
+                checked={settings.marketingEnabled !== false}
+                onChange={(event) =>
+                  setSettings({ ...settings, marketingEnabled: event.target.checked })
+                }
+                type="checkbox"
+              />
+              <span>Exibir a assinatura discreta Tecnologia GiroMesa na experiÃªncia pÃºblica</span>
+            </label>
+            <label className="qr-switch-row">
+              <input
+                checked={settings.showLogo}
+                onChange={(event) => setSettings({ ...settings, showLogo: event.target.checked })}
+                type="checkbox"
+              />
+              <span>Exibir a marca do estabelecimento no material e na experiência pública</span>
+            </label>
 
             <fieldset className="qr-capabilities">
               <legend>Recursos disponíveis ao cliente</legend>
@@ -254,6 +369,31 @@ export default function QrManagementPage() {
             >
               Salvar configuração
             </button>
+            <div className="qr-experience-actions">
+              <button
+                className="button secondary"
+                disabled={busy}
+                onClick={() => void saveDraft()}
+                type="button"
+              >
+                Salvar rascunho
+              </button>
+              {experience?.draft ? (
+                <button
+                  className="button primary"
+                  disabled={busy}
+                  onClick={() => void publishDraft()}
+                  type="button"
+                >
+                  Publicar v{experience.draft.version}
+                </button>
+              ) : null}
+            </div>
+            <p className="muted-copy">
+              {experience?.published
+                ? `Versão publicada: v${experience.published.version}. Alterações ficam em rascunho até a publicação.`
+                : "Nenhuma versão publicada ainda; a política atual continua ativa."}
+            </p>
           </article>
 
           <article className="workspace-list-section qr-generation-card">

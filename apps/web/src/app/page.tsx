@@ -10,6 +10,7 @@ import {
   Store,
   UtensilsCrossed,
   Warehouse,
+  Wine,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -54,6 +55,13 @@ const modules = [
     href: "/m/bar-aurora-demo",
     cta: "Abrir cardápio de demonstração",
   },
+  {
+    icon: Wine,
+    title: "DoseClub integrado",
+    body: "Controle clubes de destilados e doses com uma operação independente, conectada quando fizer sentido.",
+    href: "https://doseclube.giromesa.com.br",
+    cta: "Conhecer o DoseClub",
+  },
 ] as const;
 
 const plans = [
@@ -89,9 +97,14 @@ const photoLoop = [
 function Brand() {
   return (
     <span className="landing-brand">
-      <span className="landing-brand-mark" aria-hidden="true">
-        G
-      </span>
+      <Image
+        className="landing-brand-logo"
+        src="/images/giromesa-symbol.svg"
+        alt=""
+        width={40}
+        height={40}
+        aria-hidden="true"
+      />
       <span>
         Giro<strong>Mesa</strong>
       </span>
@@ -151,6 +164,7 @@ export default function HomePage() {
             <a href="#operacao">Operação</a>
             <a href="#seguranca">Segurança</a>
             <a href="#planos">Planos</a>
+            <a href="#ecossistema">DoseClub</a>
             <a href="/manual">Manual</a>
           </nav>
 
@@ -175,6 +189,7 @@ export default function HomePage() {
               <a href="#operacao">Operação</a>
               <a href="#seguranca">Segurança</a>
               <a href="#planos">Planos</a>
+              <a href="#ecossistema">DoseClub</a>
               <a href="/manual">Manual</a>
               <a href="/login">Entrar</a>
               <a className="landing-button landing-button-primary" href="/teste-gratis">
@@ -287,6 +302,30 @@ export default function HomePage() {
                 </article>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="landing-ecosystem" id="ecossistema" aria-labelledby="ecosystem-title">
+          <div className="landing-container landing-ecosystem-card">
+            <div className="landing-ecosystem-mark" aria-hidden="true">
+              <Wine size={28} strokeWidth={1.8} />
+            </div>
+            <div>
+              <span className="landing-section-kicker">Ecossistema GiroMesa</span>
+              <h2 id="ecosystem-title">DoseClub, por GiroMesa.</h2>
+              <p>
+                Uma experiência própria para clubes de whisky e destilados: combos, doses e estoque
+                compartilhado quando a sua casa quiser operar os dois produtos.
+              </p>
+            </div>
+            <a
+              className="landing-button landing-button-secondary"
+              href="https://doseclube.giromesa.com.br"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Conhecer o DoseClub <ArrowRight size={17} />
+            </a>
           </div>
         </section>
 
@@ -415,6 +454,9 @@ export default function HomePage() {
           <nav aria-label="Links institucionais">
             <a href="/manual">Manual</a>
             <a href="/login">Acessar sistema</a>
+            <a href="https://doseclube.giromesa.com.br" target="_blank" rel="noreferrer">
+              DoseClub
+            </a>
             <a href="/status">Status</a>
           </nav>
         </div>

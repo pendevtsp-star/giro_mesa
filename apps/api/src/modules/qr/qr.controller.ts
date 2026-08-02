@@ -32,6 +32,21 @@ const settingsSchema = z
     message: "At least one QR setting is required",
   });
 
+const experienceSchema = z.object({
+  capabilities: z.array(capabilities).min(1).optional(),
+  reviewBeforeKds: z.boolean().optional(),
+  template: z.enum(["classic", "minimal", "premium"]).optional(),
+  primaryColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+  instruction: z.string().min(4).max(180).optional(),
+  showLogo: z.boolean().optional(),
+  welcomeMessage: z.string().max(180).optional(),
+  menuHeadline: z.string().max(120).optional(),
+  marketingEnabled: z.boolean().optional(),
+});
+
 const artworkSchema = z.object({
   tableIds: z.array(z.string().uuid()).min(1).max(200),
   format: z.enum(["svg", "png", "pdf"]).default("svg"),
@@ -80,6 +95,31 @@ export class QrController {
     return this.qrService.updateSettings(
       await this.manageContext(headers),
       settingsSchema.parse(body),
+    );
+  }
+
+  @Get("experience")
+  async experience(@Headers() headers: HeaderRecord) {
+    return this.qrService.getExperience(await this.manageContext(headers));
+  }
+
+  @Post("experience/draft")
+  async experienceDraft(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    return this.qrService.createExperienceDraft(
+      await this.manageContext(headers),
+      experienceSchema.parse(body),
+    );
+  }
+
+  @Post("experience/:revisionId/publish")
+  async publishExperience(
+    @Headers() headers: HeaderRecord,
+    @Param("revisionId") revisionId: string,
+  ) {
+    return this.qrService.publishExperience(
+      await this.manageContext(headers),
+      z.string().uuid().parse(revisionId),
     );
   }
 
@@ -145,6 +185,11 @@ export class QrController {
       identifier: `${token}:${firstHeader(headers["x-forwarded-for"]) ?? "direct"}`,
     });
     return this.qrService.createServiceRequest(token, idempotencyKey, requestSchema.parse(body));
+  }
+
+  @Get("public/:token/service-requests/:id")
+  async publicServiceRequestStatus(@Param("token") token: string, @Param("id") id: string) {
+    return this.qrService.getPublicServiceRequest(token, z.string().uuid().parse(id));
   }
 
   @Get("service-requests")

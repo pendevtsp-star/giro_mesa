@@ -9,7 +9,18 @@ import { PaymentsService } from "./payments.service";
 
 const createPaymentSchema = z.object({
   orderId: z.string().min(1),
-  method: z.enum(["manual", "pix", "boleto", "credit_card"]),
+  method: z.enum([
+    "manual",
+    "cash",
+    "pix",
+    "pix_manual",
+    "credit_card",
+    "debit_card",
+    "voucher",
+    "courtesy",
+    "other",
+    "boleto",
+  ]),
   amountCents: z.number().int().positive(),
   description: z.string().optional(),
   idempotencyKey: z.string().min(8),
@@ -27,6 +38,7 @@ const refundPaymentSchema = z.object({
   paymentId: z.string().min(1),
   amountCents: z.number().int().positive().optional(),
   reason: z.string().optional(),
+  idempotencyKey: z.string().min(8).optional(),
 });
 
 @Controller("payments")
@@ -43,7 +55,17 @@ export class PaymentsController {
     const parsed = createPaymentSchema.parse(body);
     const input: {
       orderId: string;
-      method: "manual" | "pix" | "boleto" | "credit_card";
+      method:
+        | "manual"
+        | "cash"
+        | "pix"
+        | "pix_manual"
+        | "credit_card"
+        | "debit_card"
+        | "voucher"
+        | "courtesy"
+        | "other"
+        | "boleto";
       amountCents: number;
       description?: string;
       idempotencyKey: string;
@@ -89,6 +111,7 @@ export class PaymentsController {
       input.paymentId,
       input.amountCents,
       input.reason,
+      input.idempotencyKey,
     );
   }
 
