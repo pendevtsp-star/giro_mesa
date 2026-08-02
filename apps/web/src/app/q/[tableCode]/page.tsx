@@ -866,7 +866,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         </p>
       ) : null}
       {qr.qrSettings?.marketingEnabled !== false ? (
-        <p className="qr-note qr-marketing-note">
+        <p className="qr-marketing-note">
           Tecnologia <a href="https://giromesa.com.br">GiroMesa</a> para uma operação mais simples.
         </p>
       ) : null}
