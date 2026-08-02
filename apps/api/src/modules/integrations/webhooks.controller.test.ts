@@ -17,6 +17,9 @@ const productionEnv = {
   PASSWORD_PEPPER: "0123456789abcdef0123456789abcdef-pepper",
   MFA_SECRET_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef-mfa",
   QR_SIGNING_SECRET: "qr-signing-secret-0123456789abcdef0123456789",
+  EMAIL_PROVIDER: "resend",
+  EMAIL_FROM: "no-reply@giromesa.com.br",
+  RESEND_API_KEY: "re_test_key_for_config_validation",
 } satisfies NodeJS.ProcessEnv;
 
 function buildController() {
