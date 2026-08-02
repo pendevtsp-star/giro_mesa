@@ -31,6 +31,7 @@ const env: AppEnv = {
   FOCUS_NFE_HOMOLOGATION_URL: "https://homologacao.focusnfe.com.br",
   FOCUS_NFE_PRODUCTION_URL: "https://api.focusnfe.com.br",
   EMAIL_PROVIDER: "smtp",
+  RESEND_API_URL: "https://api.resend.com",
   SMTP_SECURE: "false",
   LOG_LEVEL: "info",
   BACKUP_ENABLED: "true",
