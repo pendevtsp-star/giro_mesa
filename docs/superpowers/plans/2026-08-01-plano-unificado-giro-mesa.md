@@ -360,7 +360,7 @@ Executar somente depois de todos os gates internos.
 
 ### E-mail e autenticação
 
-- [ ] Homologar SMTP para convites, recuperação, confirmação e alertas, com fila, retry,
+- [ ] Homologar Resend para convites, recuperação, confirmação e alertas, mantendo SMTP como alternativa,
   bounce e rastreio.
 - [ ] Homologar Google OAuth com origens, callback HTTPS, `state`, vínculo, revogação
   e encaminhamento público `/api/v1` sem duplicação `/api`.

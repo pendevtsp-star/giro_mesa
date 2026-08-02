@@ -14,6 +14,9 @@ const productionEnv = {
   QR_SIGNING_SECRET: `${strongSecret}-qr`,
   PASSWORD_PEPPER: `${strongSecret}-pepper`,
   MFA_SECRET_ENCRYPTION_KEY: `${strongSecret}-mfa`,
+  EMAIL_PROVIDER: "resend",
+  EMAIL_FROM: "no-reply@giromesa.com.br",
+  RESEND_API_KEY: "re_test_key_for_config_validation",
 } satisfies NodeJS.ProcessEnv;
 
 describe("loadEnv production safety", () => {
@@ -59,5 +62,23 @@ describe("loadEnv production safety", () => {
 
   it("accepts strong production configuration", () => {
     expect(loadEnv(productionEnv).NODE_ENV).toBe("production");
+  });
+
+  it("requires a real Resend key when Resend is selected", () => {
+    expect(() =>
+      loadEnv({
+        ...productionEnv,
+        RESEND_API_KEY: undefined,
+      }),
+    ).toThrow(/RESEND_API_KEY: required when EMAIL_PROVIDER=resend/);
+  });
+
+  it("rejects mock email delivery in production", () => {
+    expect(() =>
+      loadEnv({
+        ...productionEnv,
+        EMAIL_PROVIDER: "mock",
+      }),
+    ).toThrow(/EMAIL_PROVIDER: production requires resend or smtp/);
   });
 });

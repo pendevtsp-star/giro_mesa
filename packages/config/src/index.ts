@@ -50,6 +50,8 @@ const envSchema = z.object({
   FOCUS_NFE_PRODUCTION_URL: z.url().default("https://api.focusnfe.com.br"),
   EMAIL_PROVIDER: z.string().default("smtp"),
   EMAIL_FROM: z.email().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_API_URL: z.url().default("https://api.resend.com"),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
   SMTP_SECURE: z.enum(["true", "false"]).default("false"),
@@ -77,6 +79,7 @@ const requiredProductionKeys = [
   "APP_URL",
   "PUBLIC_APP_URL",
   "API_URL",
+  "EMAIL_PROVIDER",
 ] as const;
 
 const secretProductionKeys = [
@@ -133,6 +136,27 @@ function validateProductionEnv(rawInput: NodeJS.ProcessEnv, env: AppEnv) {
     } catch {
       errors.push(`${key}: must be a valid URL in production`);
     }
+  }
+
+  if (env.EMAIL_PROVIDER === "resend") {
+    if (!rawInput.RESEND_API_KEY?.trim()) {
+      errors.push("RESEND_API_KEY: required when EMAIL_PROVIDER=resend");
+    }
+    if (!rawInput.EMAIL_FROM?.trim()) {
+      errors.push("EMAIL_FROM: required when EMAIL_PROVIDER=resend");
+    }
+  } else if (env.EMAIL_PROVIDER === "smtp") {
+    for (const key of ["EMAIL_FROM", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"] as const) {
+      if (!rawInput[key]?.trim()) {
+        errors.push(`${key}: required when EMAIL_PROVIDER=smtp`);
+      }
+    }
+    const smtpHost = rawInput.SMTP_HOST?.trim();
+    if (!smtpHost || smtpHost === "smtp.example.com" || smtpHost.endsWith(".example.com")) {
+      errors.push("SMTP_HOST: placeholder is not allowed when EMAIL_PROVIDER=smtp");
+    }
+  } else {
+    errors.push("EMAIL_PROVIDER: production requires resend or smtp");
   }
 
   if (errors.length > 0) {
