@@ -21,7 +21,7 @@ import {
   Users,
 } from "lucide-react";
 
-export type AppNavigationGroup = "operation" | "management" | "settings" | "ecosystem";
+export type AppNavigationGroup = "operation" | "management" | "growth" | "settings" | "ecosystem";
 
 export type AppNavigationItem = {
   group: AppNavigationGroup;
@@ -68,20 +68,6 @@ export const appNavigationItems = [
     permissions: ["kds:operate"],
   },
   {
-    group: "operation",
-    icon: Truck,
-    labelKey: "nav.delivery",
-    href: "/app/delivery",
-    permissions: ["delivery:manage"],
-  },
-  {
-    group: "management",
-    icon: Users,
-    labelKey: "nav.customers",
-    href: "/app/customers",
-    permissions: ["pos:operate"],
-  },
-  {
     group: "management",
     icon: PackageOpen,
     labelKey: "nav.inventory",
@@ -101,6 +87,20 @@ export const appNavigationItems = [
     labelKey: "nav.reports",
     href: "/app/reports",
     permissions: ["reports:read"],
+  },
+  {
+    group: "growth",
+    icon: Users,
+    labelKey: "nav.customers",
+    href: "/app/customers",
+    permissions: ["pos:operate"],
+  },
+  {
+    group: "growth",
+    icon: Truck,
+    labelKey: "nav.delivery",
+    href: "/app/delivery",
+    permissions: ["delivery:manage"],
   },
   {
     group: "settings",

@@ -82,6 +82,7 @@ export const clubSaleSchema = z
 
 export const doseConsumptionSchema = z.strictObject({
   branchId: z.string().min(1).max(180),
+  orderId: z.string().uuid().optional(),
   productId: z.string().min(1).max(180),
   externalClubId: z.string().min(1).max(180),
   externalOfferId: z.string().min(1).max(180).optional(),

@@ -161,6 +161,47 @@
   padding-block: 10px;
 }
 
+.pos-doseclub-summary {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--gm-border, #d9e0e8);
+  border-radius: 12px;
+  background: var(--gm-surface-muted, #f7f9fb);
+}
+
+.pos-doseclub-heading,
+.pos-doseclub-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pos-doseclub-heading {
+  justify-content: flex-start;
+  color: var(--gm-text, #132238);
+}
+
+.pos-doseclub-heading div {
+  display: grid;
+  gap: 2px;
+}
+
+.pos-doseclub-heading small,
+.pos-doseclub-line small {
+  color: var(--gm-text-muted, #66758a);
+  font-size: 0.78rem;
+}
+
+.pos-doseclub-line {
+  padding-top: 8px;
+  border-top: 1px solid var(--gm-border, #d9e0e8);
+  color: var(--gm-text-muted, #66758a);
+  font-size: 0.86rem;
+}
+
 .pos-ticket-item {
   padding: 10px 0;
 }

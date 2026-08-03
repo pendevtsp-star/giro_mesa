@@ -6,6 +6,7 @@ import {
   integrationAccounts,
   inventoryItems,
   operationalEvents,
+  orders,
   outboxEvents,
   products,
   recipeItems,
@@ -15,7 +16,7 @@ import {
   tenants,
   webhookEvents,
 } from "@giromesa/db";
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -46,6 +47,7 @@ async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(recipeItems).where(eq(recipeItems.tenantId, tenantId));
   await db.delete(recipes).where(eq(recipes.tenantId, tenantId));
   await db.delete(stockLocations).where(eq(stockLocations.tenantId, tenantId));
+  await db.delete(orders).where(eq(orders.tenantId, tenantId));
   await db.delete(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
   await db.delete(products).where(eq(products.tenantId, tenantId));
   await db.delete(categories).where(eq(categories.tenantId, tenantId));
@@ -298,6 +300,94 @@ runIntegration("club whisky integration database behavior", () => {
         idempotencyKey: "club-forbidden-branch-key",
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("correlates Dose Club consumption to an order without adding a charge", async () => {
+    const context = await integrationAuthService.resolveContext(
+      { "x-giromesa-integration-key": tenantA.apiKey },
+      "club_whisky",
+      "club_consumption:write",
+    );
+    const [order] = await db
+      .insert(orders)
+      .values({
+        tenantId: tenantA.tenant.id,
+        branchId: tenantA.mainBranch.id,
+        channel: "table",
+        status: "opened",
+      })
+      .returning();
+    if (!order) throw new Error("Failed to create correlation test order");
+
+    await expect(
+      clubWhiskyService.registerDoseConsumption(context, {
+        branchId: tenantA.mainBranch.id,
+        orderId: tenantA.otherBranch.id,
+        productId: tenantA.product.id,
+        externalClubId: "club-order-correlation",
+        externalConsumptionId: "consumption-order-invalid",
+        doseMl: 50,
+        idempotencyKey: "club-order-correlation-invalid",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    const first = await clubWhiskyService.registerDoseConsumption(context, {
+      branchId: tenantA.mainBranch.id,
+      orderId: order.id,
+      productId: tenantA.product.id,
+      externalClubId: "club-order-correlation",
+      externalConsumptionId: "consumption-order-valid",
+      doseMl: 50,
+      idempotencyKey: "club-order-correlation-valid",
+    });
+    const replay = await clubWhiskyService.registerDoseConsumption(context, {
+      branchId: tenantA.mainBranch.id,
+      orderId: order.id,
+      productId: tenantA.product.id,
+      externalClubId: "club-order-correlation",
+      externalConsumptionId: "consumption-order-valid",
+      doseMl: 50,
+      idempotencyKey: "club-order-correlation-valid",
+    });
+
+    expect(first).toMatchObject({ accepted: true, duplicate: false });
+    expect(replay).toMatchObject({ duplicate: true });
+    const [consumptionAudit] = await db
+      .select({ metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.tenantId, tenantA.tenant.id),
+          eq(auditLogs.action, "club_whisky.dose_consumed"),
+          sql`${auditLogs.metadata}->>'orderId' = ${order.id}`,
+        ),
+      )
+      .limit(1);
+    expect(consumptionAudit?.metadata).toMatchObject({ orderId: order.id, doseMl: 50 });
+
+    await clubWhiskyService.reverseDoseConsumption(context, {
+      branchId: tenantA.mainBranch.id,
+      productId: tenantA.product.id,
+      externalClubId: "club-order-correlation",
+      externalConsumptionId: "consumption-order-valid",
+      externalReversalId: "reversal-order-valid",
+      originalIdempotencyKey: "club-order-correlation-valid",
+      doseMl: 50,
+      reason: "correlacao de teste",
+      idempotencyKey: "club-order-correlation-reversal",
+    });
+    const [reversalAudit] = await db
+      .select({ metadata: auditLogs.metadata })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.tenantId, tenantA.tenant.id),
+          eq(auditLogs.action, "club_whisky.dose_consumption_reversed"),
+          sql`${auditLogs.metadata}->>'orderId' = ${order.id}`,
+        ),
+      )
+      .limit(1);
+    expect(reversalAudit?.metadata).toMatchObject({ orderId: order.id });
   });
 
   it("records the commercial sale without stock movement and decrements only the served dose", async () => {

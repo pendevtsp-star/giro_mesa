@@ -196,6 +196,15 @@ export type OpenOrderResponse = {
   channel: string;
   status: string;
   totalCents: number;
+  doseClubConsumption?: Array<{
+    id: string;
+    productId: string | null;
+    productName: string;
+    doseMl: number;
+    status: "consumed" | "reversed";
+    occurredAt: string;
+    remainingMl: number | null;
+  }>;
   audit?: string;
 };
 

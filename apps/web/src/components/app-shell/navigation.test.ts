@@ -80,12 +80,12 @@ describe("app shell navigation", () => {
     expect(canAccessAppPath("/app/unknown", ["tenant:manage"])).toBe(false);
   });
 
-  it("keeps delivery in the operation group and commercial links in the ecosystem group", () => {
+  it("keeps delivery in the growth group and commercial links in the ecosystem group", () => {
     const groups = groupNavigationItems(
       filterNavigationByPermissions(["delivery:manage", "tenant:manage"]),
     );
     expect(
-      groups.find((group) => group.group === "operation")?.items.map((item) => item.href),
+      groups.find((group) => group.group === "growth")?.items.map((item) => item.href),
     ).toContain("/app/delivery");
     expect(
       groups.find((group) => group.group === "ecosystem")?.items.map((item) => item.href),

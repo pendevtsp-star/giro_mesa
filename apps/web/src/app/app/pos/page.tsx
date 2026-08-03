@@ -12,6 +12,7 @@ import {
   Star,
   Tag,
   UserRound,
+  Wine,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -844,6 +845,25 @@ export default function PosPage() {
               <p className="muted-copy">Nenhum item lançado. Selecione um produto para começar.</p>
             )}
           </div>
+          {currentOrder?.doseClubConsumption?.length ? (
+            <section className="pos-doseclub-summary" aria-label="Consumo DoseClub">
+              <div className="pos-doseclub-heading">
+                <Wine size={16} />
+                <div>
+                  <strong>Consumo DoseClub</strong>
+                  <small>Informativo; não altera o total da comanda.</small>
+                </div>
+              </div>
+              {currentOrder.doseClubConsumption.map((consumption) => (
+                <div className="pos-doseclub-line" key={consumption.id}>
+                  <span>
+                    {consumption.productName} · {consumption.doseMl} ml
+                  </span>
+                  <small>{consumption.status === "reversed" ? "Estornado" : "Consumido"}</small>
+                </div>
+              ))}
+            </section>
+          ) : null}
           <div className="pos-order-notes">
             <input
               value={orderNotes}

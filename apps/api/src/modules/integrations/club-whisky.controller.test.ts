@@ -60,6 +60,19 @@ describe("Dose Club integration request security", () => {
     ).toThrow();
   });
 
+  it("accepts an optional order correlation without changing the consumption contract", () => {
+    expect(
+      doseConsumptionSchema.parse({
+        branchId: "branch-a",
+        orderId: "00000000-0000-4000-8000-000000000001",
+        productId: "product-a",
+        externalClubId: "club-a",
+        externalConsumptionId: "consumption-a",
+        idempotencyKey: "consumption-key-b",
+      }),
+    ).toMatchObject({ orderId: "00000000-0000-4000-8000-000000000001" });
+  });
+
   it("allows only approved webhook targets and secret reference names", () => {
     process.env.NODE_ENV = "production";
 

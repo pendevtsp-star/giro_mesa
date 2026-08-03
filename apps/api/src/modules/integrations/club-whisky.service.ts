@@ -5,6 +5,7 @@ import {
   customers,
   integrationAccounts,
   inventoryItems,
+  orders,
   outboxEvents,
   products,
   recipeItems,
@@ -45,6 +46,7 @@ export type ClubSaleInput = {
 
 export type ClubDoseConsumptionInput = {
   branchId: string;
+  orderId?: string | undefined;
   productId: string;
   externalClubId: string;
   externalOfferId?: string | undefined;
@@ -273,6 +275,22 @@ export class ClubWhiskyService {
 
     return this.database.db.transaction(async (tx) => {
       await this.assertExistingBranch(tx, context, input.branchId);
+      if (input.orderId) {
+        const [order] = await tx
+          .select({ id: orders.id })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.tenantId, context.tenantId),
+              eq(orders.branchId, input.branchId),
+              eq(orders.id, input.orderId),
+            ),
+          )
+          .limit(1);
+        if (!order) {
+          throw new BadRequestException("orderId is not valid for this tenant and branch");
+        }
+      }
       const idempotency = await this.reserveIdempotency(
         tx,
         context.tenantId,
@@ -351,6 +369,7 @@ export class ClubWhiskyService {
           branchId: input.branchId,
           externalClubId: input.externalClubId,
           externalConsumptionId: input.externalConsumptionId,
+          ...(input.orderId ? { orderId: input.orderId } : {}),
           doseMl: input.doseMl,
           unit: "ml",
           stockQuantityEffect: -input.doseMl,
@@ -374,6 +393,7 @@ export class ClubWhiskyService {
           externalOfferId: input.externalOfferId,
           offerType: input.offerType,
           externalConsumptionId: input.externalConsumptionId,
+          ...(input.orderId ? { orderId: input.orderId } : {}),
           doseMl: input.doseMl,
           inventoryItemId: target.inventoryItemId,
           stockQuantityEffect: -input.doseMl,
@@ -508,6 +528,7 @@ export class ClubWhiskyService {
           externalClubId: input.externalClubId,
           externalConsumptionId: input.externalConsumptionId,
           externalReversalId: input.externalReversalId,
+          ...(typeof originalInput.orderId === "string" ? { orderId: originalInput.orderId } : {}),
           doseMl: input.doseMl,
           unit: "ml",
           stockQuantityEffect: input.doseMl,
@@ -536,6 +557,7 @@ export class ClubWhiskyService {
           reason: input.reason,
           stockQuantityEffect: input.doseMl,
           remainingMl,
+          ...(typeof originalInput.orderId === "string" ? { orderId: originalInput.orderId } : {}),
         },
       });
 

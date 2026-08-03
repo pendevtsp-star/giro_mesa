@@ -1,3 +1,4 @@
+import { auditLogs, products } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { calculateOrderTotal, resolveProductionRouting, stateMachines } from "@giromesa/domain";
 import {
@@ -7,6 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 import { FiscalService } from "../fiscal/fiscal.service";
 import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/club-whisky-events";
@@ -30,6 +32,17 @@ type AddItemInput = {
 };
 
 type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
+
+function readMetadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readMetadataNumber(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 @Injectable()
 export class OrdersService {
@@ -123,11 +136,66 @@ export class OrdersService {
     }
     const order = await this.orderRepository.findActiveOrder(context, input);
     if (!order) return null;
-    const [items, payments] = await Promise.all([
+    const [items, payments, doseClubConsumption] = await Promise.all([
       this.orderRepository.findOrderItems(context, order.id),
       this.orderRepository.findPaymentsByOrder(context, order.id),
+      this.findDoseClubConsumption(context, order.id, order.branchId),
     ]);
-    return { ...order, items, payments };
+    return { ...order, items, payments, doseClubConsumption };
+  }
+
+  private async findDoseClubConsumption(context: TenantContext, orderId: string, branchId: string) {
+    const rows = await this.database.db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        entityId: auditLogs.entityId,
+        productName: products.name,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .leftJoin(
+        products,
+        and(eq(products.tenantId, auditLogs.tenantId), eq(products.id, auditLogs.entityId)),
+      )
+      .where(
+        and(
+          eq(auditLogs.tenantId, context.tenantId),
+          eq(auditLogs.branchId, branchId),
+          eq(auditLogs.entityType, "product"),
+          inArray(auditLogs.action, [
+            "club_whisky.dose_consumed",
+            "club_whisky.dose_consumption_reversed",
+          ]),
+          sql`${auditLogs.metadata}->>'orderId' = ${orderId}`,
+        ),
+      )
+      .orderBy(desc(auditLogs.createdAt));
+
+    const reversedConsumptionIds = new Set(
+      rows
+        .filter((row) => row.action === "club_whisky.dose_consumption_reversed")
+        .map((row) => readMetadataString(row.metadata, "externalConsumptionId"))
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    return rows
+      .filter((row) => row.action === "club_whisky.dose_consumed")
+      .map((row) => {
+        const consumptionId = readMetadataString(row.metadata, "externalConsumptionId") ?? row.id;
+        return {
+          id: row.id,
+          productId: row.entityId,
+          productName: row.productName ?? "Destilado do DoseClub",
+          doseMl: readMetadataNumber(row.metadata, "doseMl") ?? 0,
+          status: reversedConsumptionIds.has(consumptionId)
+            ? ("reversed" as const)
+            : ("consumed" as const),
+          occurredAt: row.createdAt.toISOString(),
+          remainingMl: readMetadataNumber(row.metadata, "remainingMl"),
+        };
+      });
   }
 
   async getProductionRoutingPreview(context: TenantContext, orderId: string) {

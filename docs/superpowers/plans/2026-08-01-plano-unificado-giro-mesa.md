@@ -77,8 +77,9 @@ fechado apenas por existir código:
   claro e do menu móvel. Auditoria autenticada permanece dependente de credenciais
   de teste fora do repositório.
 - Fase 11: shell administrativo reorganizado por fluxo (Operação, Gestão,
-  Configuração e Ecossistema), mantendo rotas e permissões; um grupo de crescimento
-  dedicado continua pendente até existir conteúdo comercial próprio.
+  Configuração, Crescimento e Ecossistema), mantendo rotas e permissões; Clientes e
+  Delivery agora ficam no grupo de crescimento. O gate visual e a validação de
+  próxima ação por perfil continuam pendentes.
 - Fase 13: a experiência QR passou a aceitar somente fontes curadas (Sistema,
   Serifada ou Display), persistidas no rascunho/publicação e aplicadas no público;
   CSS, URLs e fontes externas continuam bloqueados.
@@ -97,6 +98,10 @@ fechado apenas por existir código:
   Bar noturno, Café e DoseClub, sem reimpressão do QR.
 - Fase 14: landing do DoseClub passou a apresentar contratação independente e combo;
   o commit separado está no repositório do DoseClub e não altera o código GiroMesa.
+- Fase 14: consumo DoseClub correlacionado opcionalmente por `orderId` validado em
+  tenant/filial; auditoria, outbox, estorno idempotente e comanda/PDV informativos
+  preservam a separação comercial. O DoseClub ainda precisa enviar o campo quando
+  houver comanda GiroMesa, e a homologação externa permanece pendente.
 - Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
   como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
   externa permanece pendente.
@@ -425,7 +430,7 @@ registro, sem duplicar movimento financeiro.
 
 ### Trabalho
 
-- [ ] Reorganizar navegação por operação, gestão, crescimento, configurações e ecossistema.
+- [x] Reorganizar navegação por operação, gestão, crescimento, configurações e ecossistema.
 - [x] Criar busca global e acesso rápido às ações frequentes.
 - [x] Tornar troca de filial explícita e preservar contexto em todas as rotas.
 - [ ] Criar dashboard executivo com vendas, caixa, margem, ocupação, produção, estoque e alertas.
@@ -489,7 +494,7 @@ registro, sem duplicar movimento financeiro.
 - [ ] Implementar SSO e handoff contextual sem compartilhar sessão de banco.
 - [x] Homologar estoque compartilhado em mililitros por contrato, outbox e idempotência.
 - [x] Cobrir consumo individual, combos, produtos elegíveis, estorno e reprocessamento.
-- [ ] Exibir consumo DoseClub na comanda GiroMesa como linha informativa sem cobrança duplicada.
+- [x] Exibir consumo DoseClub na comanda GiroMesa como linha informativa sem cobrança duplicada.
 - [x] Permitir aquisição somente de GiroMesa, somente de DoseClub ou do combo.
 - [ ] Manter carteiras de fidelidade separadas, com campanhas comerciais cruzadas opcionais.
 

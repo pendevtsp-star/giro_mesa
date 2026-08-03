@@ -136,6 +136,7 @@ A resposta confirma `stockMovementCreated = false` e `stockQuantityEffect = 0`.
 ```json
 {
   "branchId": "uuid",
+  "orderId": "uuid-da-comanda-opcional",
   "productId": "uuid-do-rotulo-real-servido",
   "externalClubId": "membership-id",
   "externalOfferId": "offer-ou-combo-id",
@@ -146,6 +147,12 @@ A resposta confirma `stockMovementCreated = false` e `stockQuantityEffect = 0`.
   "idempotencyKey": "consumption:consumption-id"
 }
 ```
+
+`orderId` e opcional e so deve ser enviado quando o consumo ocorrer durante uma comanda
+GiroMesa da mesma filial. O GiroMesa valida tenant, filial e UUID antes da baixa. Quando
+presente, a correlacao fica somente na auditoria e aparece no PDV como linha informativa;
+nao cria item, pagamento ou valor adicional na comanda. O campo e retrocompativel: clientes
+que nao o enviam continuam usando o contrato anterior.
 
 Sucesso retorna o insumo, efeito negativo e saldo fisico restante. O Dose Club so finaliza
 a baixa do saldo de doses depois dessa confirmacao. Em indisponibilidade ou `409`, permanece
