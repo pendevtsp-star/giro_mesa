@@ -82,6 +82,10 @@ fechado apenas por existir código:
 - Fase 13: a experiência QR passou a aceitar somente fontes curadas (Sistema,
   Serifada ou Display), persistidas no rascunho/publicação e aplicadas no público;
   CSS, URLs e fontes externas continuam bloqueados.
+- Fase 13: o QR público agora oferece CTA acessível “Conheça a tecnologia deste
+  atendimento”, mantendo a assinatura discreta e o opt-out de marketing.
+- Fases 10/14: a landing do DoseClub recebeu navegação nomeada, controles rotulados
+  e suporte a `prefers-reduced-motion`; CI, build e testes do repositório separado passaram.
 - Fase 11: central de pendências role-scoped adicionada ao dashboard, consolidando
   onboarding, turno/caixa, pedidos QR, KDS, estoque e contas abertas com ação direta;
   comparação entre filiais agora usa resumos tenant-scoped; dashboards enxutos por
