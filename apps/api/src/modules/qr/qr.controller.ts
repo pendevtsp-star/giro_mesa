@@ -58,6 +58,7 @@ const experienceSchema = z.object({
     .optional(),
   instruction: z.string().min(4).max(180).optional(),
   showLogo: z.boolean().optional(),
+  fontPreset: z.enum(["system", "serif", "display"]).optional(),
   welcomeMessage: z.string().max(180).optional(),
   menuHeadline: z.string().max(120).optional(),
   marketingEnabled: z.boolean().optional(),

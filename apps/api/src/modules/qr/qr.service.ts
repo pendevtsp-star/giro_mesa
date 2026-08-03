@@ -23,6 +23,7 @@ import type {
   PublicOrderTimeline,
   QrBranchSettings,
   QrCapability,
+  QrFontPreset,
   QrTemplate,
   TenantContext,
 } from "@giromesa/domain";
@@ -88,6 +89,10 @@ export function resolvePublicPartnerAttribution(input: {
     label: "DoseClub, por GiroMesa",
     href: "https://doseclube.giromesa.com.br",
   };
+}
+
+export function sanitizeQrFontPreset(value: unknown): QrFontPreset | undefined {
+  return value === "system" || value === "serif" || value === "display" ? value : undefined;
 }
 
 const defaultCapabilities: QrCapability[] = [
@@ -632,6 +637,7 @@ export class QrService {
         primaryColor: settings.primaryColor,
         instruction: settings.instruction,
         showLogo: settings.showLogo,
+        fontPreset: settings.fontPreset ?? "system",
         ...(settings.welcomeMessage ? { welcomeMessage: settings.welcomeMessage } : {}),
         ...(settings.menuHeadline ? { menuHeadline: settings.menuHeadline } : {}),
         ...(settings.marketingEnabled !== undefined
@@ -1262,6 +1268,7 @@ function defaultSettings(branchId: string): QrBranchSettings {
     primaryColor: "#FFCC00",
     instruction: "Aponte a câmera para acessar o cardápio",
     showLogo: true,
+    fontPreset: "system",
   };
 }
 
@@ -1274,6 +1281,7 @@ function mergeExperienceSettings(
         defaultCapabilities.includes(value as QrCapability),
       )
     : base.capabilities;
+  const fontPreset = sanitizeQrFontPreset(config.fontPreset);
   return {
     ...base,
     ...(typeof config.reviewBeforeKds === "boolean"
@@ -1285,6 +1293,7 @@ function mergeExperienceSettings(
       : {}),
     ...(typeof config.instruction === "string" ? { instruction: config.instruction } : {}),
     ...(typeof config.showLogo === "boolean" ? { showLogo: config.showLogo } : {}),
+    ...(fontPreset ? { fontPreset } : {}),
     ...(typeof config.welcomeMessage === "string" && config.welcomeMessage.trim()
       ? { welcomeMessage: config.welcomeMessage.trim() }
       : {}),

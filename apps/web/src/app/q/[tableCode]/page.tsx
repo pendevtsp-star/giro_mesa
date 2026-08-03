@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { normalizeQrFontPreset } from "../../../features/qr/font-preset";
 import {
   buildSecurePublicOrderEventsUrl,
   createPublicQrOrder,
@@ -637,6 +638,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       data-theme={branding?.themeMode ?? "light"}
       data-accent={branding?.accentPreset ?? "emerald"}
       data-template={qr.qrSettings?.template ?? "classic"}
+      data-font={normalizeQrFontPreset(qr.qrSettings?.fontPreset)}
     >
       <header className="menu-hero table-qr-hero">
         <a

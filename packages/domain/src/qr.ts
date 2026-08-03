@@ -18,6 +18,8 @@ export type QrTemplate =
   | "cafe"
   | "doseclub";
 
+export type QrFontPreset = "system" | "serif" | "display";
+
 export type QrBranchSettings = {
   branchId: string;
   capabilities: QrCapability[];
@@ -26,6 +28,7 @@ export type QrBranchSettings = {
   primaryColor: string;
   instruction: string;
   showLogo: boolean;
+  fontPreset?: QrFontPreset;
   welcomeMessage?: string;
   menuHeadline?: string;
   marketingEnabled?: boolean;

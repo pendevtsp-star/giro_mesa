@@ -77,6 +77,9 @@ export default function QrManagementPage() {
           ...(activeExperience.config.menuHeadline
             ? { menuHeadline: activeExperience.config.menuHeadline }
             : {}),
+          ...(activeExperience.config.fontPreset
+            ? { fontPreset: activeExperience.config.fontPreset }
+            : {}),
           ...(activeExperience.config.marketingEnabled !== undefined
             ? { marketingEnabled: activeExperience.config.marketingEnabled }
             : {}),
@@ -358,6 +361,25 @@ export default function QrManagementPage() {
                   <option value="cafe">Café</option>
                   <option value="doseclub">DoseClub</option>
                 </select>
+              </label>
+              <label>
+                Fonte da experiência
+                <select
+                  value={settings.fontPreset ?? "system"}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      fontPreset: event.target.value as NonNullable<QrBranchSettings["fontPreset"]>,
+                    })
+                  }
+                >
+                  <option value="system">Sistema (Poppins)</option>
+                  <option value="serif">Serifada editorial</option>
+                  <option value="display">Display acolhedora</option>
+                </select>
+                <span className="muted-copy">
+                  A fonte é aplicada ao publicar a experiência; não aceita CSS ou fontes externas.
+                </span>
               </label>
               <label>
                 Cor principal

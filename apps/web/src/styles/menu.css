@@ -10,6 +10,16 @@
 .menu-shell {
   min-height: 100vh;
   background: #fff;
+  --qr-font: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--qr-font);
+}
+
+.menu-shell[data-font="serif"] {
+  --qr-font: Georgia, "Times New Roman", serif;
+}
+
+.menu-shell[data-font="display"] {
+  --qr-font: "Trebuchet MS", "Segoe UI", sans-serif;
 }
 
 .menu-shell[data-accent="blue"] {

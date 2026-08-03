@@ -102,6 +102,7 @@ export type QrBranchSettings = {
   primaryColor: string;
   instruction: string;
   showLogo: boolean;
+  fontPreset?: "system" | "serif" | "display";
   welcomeMessage?: string;
   menuHeadline?: string;
   marketingEnabled?: boolean;
@@ -1053,6 +1054,7 @@ export type PublicQrSettings = {
   primaryColor: string;
   instruction: string;
   showLogo: boolean;
+  fontPreset?: "system" | "serif" | "display";
   welcomeMessage?: string;
   menuHeadline?: string;
   marketingEnabled?: boolean;

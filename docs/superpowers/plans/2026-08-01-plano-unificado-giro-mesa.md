@@ -76,6 +76,12 @@ fechado apenas por existir código:
   390×844; contraste, overflow e erros de navegador passaram após o ajuste do tema
   claro e do menu móvel. Auditoria autenticada permanece dependente de credenciais
   de teste fora do repositório.
+- Fase 11: shell administrativo reorganizado por fluxo (Operação, Gestão,
+  Configuração e Ecossistema), mantendo rotas e permissões; um grupo de crescimento
+  dedicado continua pendente até existir conteúdo comercial próprio.
+- Fase 13: a experiência QR passou a aceitar somente fontes curadas (Sistema,
+  Serifada ou Display), persistidas no rascunho/publicação e aplicadas no público;
+  CSS, URLs e fontes externas continuam bloqueados.
 - Fase 11: central de pendências role-scoped adicionada ao dashboard, consolidando
   onboarding, turno/caixa, pedidos QR, KDS, estoque e contas abertas com ação direta;
   comparação entre filiais agora usa resumos tenant-scoped; dashboards enxutos por
