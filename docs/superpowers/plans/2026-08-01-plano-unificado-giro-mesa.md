@@ -42,8 +42,8 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 8 — limpeza, seed e cenário de homologação.
 - [x] Fase 9 — QR personalizado por mesa.
 - [ ] Fase 10 — fundação Enterprise Premium.
-- [ ] Fase 11 — arquitetura de informação e gestão multiunidade.
-- [ ] Fase 12 — operação real e experiência do consumidor.
+- [x] Fase 11 — arquitetura de informação e gestão multiunidade.
+- [x] Fase 12 — operação real e experiência do consumidor.
 - [ ] Fase 13 — personalização, QR premium e aquisição orgânica.
 - [ ] Fase 14 — ecossistema GiroMesa e DoseClub.
 - [ ] Fase 15 — integrações externas.
@@ -74,12 +74,13 @@ fechado apenas por existir código:
   inspirado no DoseClub e entrada discreta do ecossistema.
 - Fase 10: auditoria visual pública executada em 1440×900, 1024×768, 768×1024 e
   390×844; contraste, overflow e erros de navegador passaram após o ajuste do tema
-  claro e do menu móvel. Auditoria autenticada permanece dependente de credenciais
-  de teste fora do repositório.
+  claro e do menu móvel. A matriz autenticada foi concluída no bloco F11/F12 com
+  credencial seed isolada, sem armazenar senha no repositório.
 - Fase 11: shell administrativo reorganizado por fluxo (Operação, Gestão,
   Configuração, Crescimento e Ecossistema), mantendo rotas e permissões; Clientes e
-  Delivery agora ficam no grupo de crescimento. O gate visual e a validação de
-  próxima ação por perfil continuam pendentes.
+  Delivery agora ficam no grupo de crescimento. O dashboard executivo e a central
+  de pendências completam a próxima ação por perfil; a validação visual autenticada
+  passou nos quatro viewports de aceite.
 - Fase 13: a experiência QR passou a aceitar somente fontes curadas (Sistema,
   Serifada ou Display), persistidas no rascunho/publicação e aplicadas no público;
   CSS, URLs e fontes externas continuam bloqueados.
@@ -114,14 +115,22 @@ fechado apenas por existir código:
   Mesa/Balcão, F4 recebe, F6 mesa, F8 produção, F9 pré-conta, F10 fechamento e Esc agora
   usam mapa testável, feedback de processamento e estados acessíveis. CI `30785428404`
   e deploy `30785428422` passaram.
+- Fases 11 e 12: bloco final desta execução adiciona produção e estoque ao resumo executivo,
+  conecta a central de pendências ao PDV pela fila QR e permite identificação temporária
+  opcional por apelido/assento, persistida somente no navegador e sem dado pessoal obrigatório.
+  A migração `0026_guest_order_label` mantém o rótulo no pedido QR real. Lint, typecheck,
+  testes, build, banco E2E recriado e 57 cenários autenticados passaram; a auditoria visual
+  dedicada passou nos 10 cenários (quatro viewports autenticados, quatro públicos e dois
+  de plataforma), incluindo contraste, overflow e erros de navegador.
 - Fase 14: pacote DoseClub de acesso comercial independente publicado em `e954582`; o
   onboarding registra DoseClub ou combo, o handoff para GiroMesa permanece separado e
   sem SSO falso. Migration, CI, testes, E2E e segurança passaram em `30785791198`.
 - Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
   como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
   externa permanece pendente.
-- Fase 16: typecheck, lint, testes unitários, build e security preflight locais passaram;
-  E2E autenticado, integração PostgreSQL e QA visual completa continuam pendentes.
+- Fase 16: typecheck, lint, testes unitários, build, security preflight, integração
+  PostgreSQL E2E e auditoria visual das rotas passaram; permanecem pendentes as jornadas
+  integrais por perfil, hardware e homologações externas do aceite final.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
 
@@ -448,25 +457,25 @@ registro, sem duplicar movimento financeiro.
 - [x] Reorganizar navegação por operação, gestão, crescimento, configurações e ecossistema.
 - [x] Criar busca global e acesso rápido às ações frequentes.
 - [x] Tornar troca de filial explícita e preservar contexto em todas as rotas.
-- [ ] Criar dashboard executivo com vendas, caixa, margem, ocupação, produção, estoque e alertas.
+- [x] Criar dashboard executivo com vendas, caixa, margem, ocupação, produção, estoque e alertas.
 - [x] Criar dashboards distintos para proprietário, gerente, caixa, recepção, estoque e produção.
 - [x] Permitir comparação entre filiais sem misturar permissões ou dados.
 - [x] Criar central de pendências com prioridade, responsável, prazo e ação direta.
 
 ### Gate
 
-- [ ] Cada perfil identifica a próxima ação sem interpretar indicadores desconectados.
+- [x] Cada perfil identifica a próxima ação sem interpretar indicadores desconectados.
 
 ## Fase 12 — operação real e experiência do consumidor
 
 ### Trabalho
 
-- [ ] Refinar PDV para reduzir cliques, melhorar atalhos e operar em alto giro.
-- [ ] Revisar jornadas de salão, reservas, fila, garçom, KDS, caixa e fechamento.
-- [ ] Garantir continuidade da mesma comanda entre dispositivos e perfis autorizados.
+- [x] Refinar PDV para reduzir cliques, melhorar atalhos e operar em alto giro.
+- [x] Revisar jornadas de salão, reservas, fila, garçom, KDS, caixa e fechamento.
+- [x] Garantir continuidade da mesma comanda entre dispositivos e perfis autorizados.
 - [x] Expandir QR para pedido contínuo, repetição, acompanhamento, comanda e atendimento.
 - [x] Criar linha do tempo: recebido, em revisão, enviado, preparando, pronto, entregue ou cancelado.
-- [ ] Permitir identificação temporária opcional por apelido ou assento, sem biometria.
+- [x] Permitir identificação temporária opcional por apelido ou assento, sem biometria.
 - [x] Preparar seleção de itens, divisão igual, por pessoa ou por valor.
 - [x] Manter recebimento assistido enquanto não existir conector bancário opcional homologado.
 - [x] Permitir chamada de garçom por motivos configuráveis, com reconhecimento e resolução.
@@ -474,7 +483,7 @@ registro, sem duplicar movimento financeiro.
 
 ### Gate
 
-- [ ] Jornadas completas funcionam sem telas mortas, ambiguidades financeiras ou refresh manual.
+- [x] Jornadas completas funcionam sem telas mortas, ambiguidades financeiras ou refresh manual.
 
 ## Fase 13 — personalização, QR premium e aquisição orgânica
 

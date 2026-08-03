@@ -160,6 +160,18 @@ export function buildProfileInsights(input: ProfileDashboardInput): ProfileInsig
         value: String(input.inventoryAlerts.length + input.qrPendingOrders.length),
         detail: `${input.inventoryAlerts.length} estoque · ${input.qrPendingOrders.length} QR em revisão`,
       },
+      {
+        id: "production",
+        label: "Produção",
+        value: String(activeTickets),
+        detail: activeTickets ? "Ticket(s) em estações" : "Fila sem tickets ativos",
+      },
+      {
+        id: "inventory",
+        label: "Estoque",
+        value: String(input.inventoryAlerts.length),
+        detail: input.inventoryAlerts.length ? "Reposição necessária" : "Sem alertas de mínimo",
+      },
     ];
   }
 

@@ -939,6 +939,7 @@ export const orders = pgTable(
       .references(() => branches.id),
     tableId: uuid("table_id").references(() => diningTables.id),
     customerId: uuid("customer_id").references(() => customers.id),
+    guestLabel: varchar("guest_label", { length: 60 }),
     channel: varchar("channel", { length: 40 }).notNull(),
     status: orderStatus("status").notNull().default("draft"),
     peopleCount: integer("people_count").notNull().default(1),

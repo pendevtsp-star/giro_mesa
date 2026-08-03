@@ -2396,8 +2396,8 @@ html[data-theme="light"] body .pos-workspace.pos-v3 {
   --paper: #f7f1e6;
   --surface: #fffdf8;
   --surface-soft: #fff4df;
-  --accent: #10b981;
-  --accent-strong: #059669;
+  --accent: #047857;
+  --accent-strong: #065f46;
   --blue: #2563a8;
   --green: #059669;
   --amber: #d97706;
@@ -2454,7 +2454,7 @@ html[data-theme="light"] body .pos-workspace.pos-v3 .pos-category-row button.act
 html[data-theme="light"] body .pos-workspace.pos-v3 .pos-filter.active,
 html[data-theme="light"] body .pos-workspace.pos-v3 .button.primary {
   background: var(--accent);
-  color: #062d22;
+  color: #ffffff;
 }
 
 html[data-theme="light"] body .pos-workspace.pos-v3 .button.primary:hover,
@@ -2483,4 +2483,50 @@ html[data-theme="light"] body .pos-workspace.pos-v3 .pos-shortcuts-popover {
   border-color: #d5dfdc;
   background: #fffdf8;
   color: var(--ink);
+}
+
+html[data-theme="light"] body .salon-page {
+  --ink: #0d1b2a;
+  --ink-soft: #3c556d;
+  --muted: #5d7185;
+  --line: #d5dfdc;
+  --paper: #f7f1e6;
+  --surface: #fffdf8;
+  --surface-soft: #fff4df;
+  --accent: #047857;
+  --accent-strong: #065f46;
+  background:
+    radial-gradient(circle at 84% 0, rgba(16, 185, 129, 0.1), transparent 28rem), var(--paper);
+  color: var(--ink);
+  color-scheme: light;
+}
+
+html[data-theme="light"] body .salon-page .salon-service-requests {
+  border-color: #d5dfdc;
+  background: #fff4df;
+}
+
+html[data-theme="light"] body .salon-page .salon-service-requests article {
+  border-color: #d5dfdc;
+  background: #fffdf8;
+  color: var(--ink);
+  box-shadow: 0 8px 20px rgba(13, 27, 42, 0.08);
+}
+
+html[data-theme="light"] body .salon-page .salon-service-requests article :is(strong, span, small) {
+  color: var(--ink);
+}
+
+html[data-theme="light"] body .salon-page .salon-service-requests article span {
+  color: var(--muted);
+}
+
+/* Emerald needs a light foreground on dark/brand surfaces in light mode. */
+html[data-theme="light"][data-accent="emerald"] body .tenant-mini-mark {
+  color: #34d399;
+}
+
+html[data-theme="light"][data-accent="emerald"] body .tenant-avatar,
+html[data-theme="light"][data-accent="emerald"] body .stepper-step.active .stepper-step-circle {
+  color: #ffffff;
 }

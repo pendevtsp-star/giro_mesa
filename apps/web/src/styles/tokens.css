@@ -137,8 +137,8 @@
 
 /* Emerald */
 :root[data-accent="emerald"] {
-  --accent: #10b981;
-  --accent-strong: #047857;
+  --accent: #047857;
+  --accent-strong: #065f46;
 }
 
 :root[data-theme="dark"][data-accent="emerald"] {

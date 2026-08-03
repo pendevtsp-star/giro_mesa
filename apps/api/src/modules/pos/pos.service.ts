@@ -312,6 +312,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         tableId: orders.tableId,
         tableCode: diningTables.code,
         tableName: diningTables.name,
+        guestLabel: orders.guestLabel,
         status: orders.status,
         subtotalCents: orders.subtotalCents,
         totalCents: orders.totalCents,

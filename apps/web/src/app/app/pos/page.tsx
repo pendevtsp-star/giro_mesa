@@ -42,6 +42,7 @@ import {
   listOrderPayments,
   listProductModifiers,
   listProducts,
+  listQrPendingOrders,
   listTables,
   type ModifierGroup,
   type OpenOrderResponse,
@@ -53,6 +54,7 @@ import {
   type ProductionRoutingPreview,
   printBillPreview,
   printPaymentReceipt,
+  type QrPendingOrder,
   receiveCashHandover,
   registerManualPayment,
   requestItemCancellation,
@@ -126,6 +128,7 @@ export default function PosPage() {
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [productionPreview, setProductionPreview] = useState<ProductionRoutingPreview | null>(null);
+  const [qrQueue, setQrQueue] = useState<QrPendingOrder[]>([]);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix_manual");
   const [paymentMode, setPaymentMode] = useState<PaymentAmountMode>("remaining");
@@ -210,21 +213,30 @@ export default function PosPage() {
         const requestedTableId = route.get("tableId") ?? route.get("table");
         const requestedOrderId = route.get("orderId");
         const requestedMode = route.get("mode") === "counter" ? "counter" : "table";
+        const queueOrders =
+          route.get("queue") === "qr" && context.branchId
+            ? await listQrPendingOrders(context.branchId).catch(() => [])
+            : [];
+        const queueOrder = queueOrders[0];
+        const initialTableId = requestedTableId ?? queueOrder?.tableId ?? "";
+        const initialMode = initialTableId ? "table" : requestedMode;
+        const initialOrderId = requestedOrderId ?? (initialTableId ? "" : (queueOrder?.id ?? ""));
         setSession(context);
         setBranding(tenantBranding);
         setProducts(availableProducts);
         setTables(availableTables);
         setCategories(apiCategories);
         setCustomers(apiCustomers);
-        setServiceMode(requestedTableId ? "table" : requestedMode);
-        setSelectedTableId(requestedTableId ?? availableTables[0]?.id ?? "");
-        setCounterOrderId(requestedOrderId ?? localStorage.getItem("gm_pos_counter_order") ?? "");
+        setQrQueue(queueOrders);
+        setServiceMode(initialMode);
+        setSelectedTableId(initialTableId || availableTables[0]?.id || "");
+        setCounterOrderId(initialOrderId || localStorage.getItem("gm_pos_counter_order") || "");
         if (context.branchId) {
           await loadOrder(
             context.branchId,
-            requestedTableId ? "table" : requestedMode,
-            requestedTableId ?? availableTables[0]?.id ?? "",
-            requestedOrderId ?? localStorage.getItem("gm_pos_counter_order") ?? "",
+            initialMode,
+            initialTableId || availableTables[0]?.id || "",
+            initialOrderId || localStorage.getItem("gm_pos_counter_order") || "",
           );
         }
       } catch (error) {
@@ -402,6 +414,15 @@ export default function PosPage() {
   async function refreshCurrentOrder() {
     if (!session?.branchId) return;
     await loadOrder(session.branchId, serviceMode, selectedTableId, counterOrderId);
+  }
+
+  async function selectQrOrder(order: QrPendingOrder) {
+    if (!session?.branchId) return;
+    const nextMode: ServiceMode = order.tableId ? "table" : "counter";
+    setServiceMode(nextMode);
+    setSelectedTableId(order.tableId ?? "");
+    setCounterOrderId(order.tableId ? "" : order.id);
+    await loadOrder(session.branchId, nextMode, order.tableId ?? "", order.tableId ? "" : order.id);
   }
 
   async function syncOrderPayments(orderId: string, status?: PaymentResponse["orderStatus"]) {
@@ -666,6 +687,31 @@ export default function PosPage() {
           {message}
         </span>
       </div>
+
+      {qrQueue.length ? (
+        <section className="pos-qr-queue" aria-label="Pedidos QR aguardando revisão">
+          <div>
+            <span className="section-kicker">Fila QR</span>
+            <strong>{qrQueue.length} pedido(s) aguardando revisão</strong>
+          </div>
+          <div className="pos-qr-queue-list">
+            {qrQueue.map((order) => (
+              <button
+                className={currentOrder?.id === order.id ? "active" : ""}
+                type="button"
+                key={order.id}
+                onClick={() => void runAction(() => selectQrOrder(order))}
+              >
+                <strong>{order.tableCode ?? "Balcão"}</strong>
+                {order.guestLabel ? <span>{order.guestLabel}</span> : null}
+                <small>
+                  {order.items.length} item(ns) · {formatMoney(order.totalCents)}
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="pos-layout">
         <article className="pos-grid-section">

@@ -183,6 +183,13 @@
       "when": 1785707636031,
       "tag": "0025_military_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785758400000,
+      "tag": "0026_guest_order_label",
+      "breakpoints": true
     }
   ]
 }

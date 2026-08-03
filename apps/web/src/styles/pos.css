@@ -780,6 +780,52 @@
   padding: 16px clamp(16px, 3vw, 36px) 0;
 }
 
+.pos-qr-queue {
+  display: grid;
+  gap: 10px;
+  margin: 14px clamp(16px, 3vw, 36px) 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.pos-qr-queue > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pos-qr-queue-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.pos-qr-queue-list button {
+  display: grid;
+  min-width: 150px;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pos-qr-queue-list button.active {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.pos-qr-queue-list span,
+.pos-qr-queue-list small {
+  color: var(--muted);
+}
+
 .pos-mode-switch {
   display: inline-flex;
   gap: 2px;

@@ -262,6 +262,7 @@ export type QrPendingOrder = {
   tableId: string | null;
   tableCode: string | null;
   tableName: string | null;
+  guestLabel: string | null;
   status: string;
   subtotalCents: number;
   totalCents: number;
@@ -1123,6 +1124,7 @@ export type SecurePublicQrContext = {
 export type SecurePublicOrderSummary = {
   order: {
     id: string;
+    guestLabel?: string | null;
     status: string;
     items: Array<{
       name: string;
@@ -1910,6 +1912,7 @@ export function createSecurePublicOrder(
   token: string,
   idempotencyKey: string,
   input: {
+    guestLabel?: string;
     items: {
       productId: string;
       quantity: number;

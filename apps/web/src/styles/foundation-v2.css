@@ -126,6 +126,10 @@ html[data-theme="light"] .button.primary {
   color: #071421;
 }
 
+html[data-theme="light"][data-accent="emerald"] .button.primary {
+  color: #ffffff;
+}
+
 :root[data-theme="light"] .button.primary:hover {
   background: var(--accent);
 }

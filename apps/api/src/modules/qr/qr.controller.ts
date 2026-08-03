@@ -85,6 +85,7 @@ const artworkSchema = z.object({
 });
 
 const orderSchema = z.object({
+  guestLabel: z.string().trim().min(1).max(60).optional(),
   items: z
     .array(
       z.object({

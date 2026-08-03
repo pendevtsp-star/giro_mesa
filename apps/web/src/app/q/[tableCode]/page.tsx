@@ -60,6 +60,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const [fatalError, setFatalError] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartHydrated, setCartHydrated] = useState(false);
+  const [guestLabel, setGuestLabel] = useState("");
   const [status, setStatus] = useState("Escolha itens do cardápio ou chame o atendimento.");
   const [productQuery, setProductQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -101,12 +102,20 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           );
         }
       }
+      const storedLabel = window.localStorage.getItem(`giromesa:qr-label:${tableCode}`);
+      if (storedLabel) setGuestLabel(storedLabel.slice(0, 60));
     } catch {
       window.localStorage.removeItem(`giromesa:qr-cart:${tableCode}`);
     } finally {
       setCartHydrated(true);
     }
   }, [tableCode]);
+
+  useEffect(() => {
+    const value = guestLabel.trim();
+    if (value) window.localStorage.setItem(`giromesa:qr-label:${tableCode}`, value);
+    else window.localStorage.removeItem(`giromesa:qr-label:${tableCode}`);
+  }, [guestLabel, tableCode]);
 
   useEffect(() => {
     if (!cartHydrated) return;
@@ -447,7 +456,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         ? await createSecurePublicOrder(
             tableCode,
             idempotencyKey(tableCode, "order", orderPayload),
-            { items },
+            { items, ...(guestLabel.trim() ? { guestLabel: guestLabel.trim() } : {}) },
           )
         : await createPublicQrOrder(tableCode, {
             items,
@@ -785,6 +794,18 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               </div>
             ))}
           </div>
+          {secureMode && canOrder ? (
+            <label className="qr-guest-label">
+              Identificação do pedido (opcional)
+              <input
+                value={guestLabel}
+                maxLength={60}
+                onChange={(event) => setGuestLabel(event.target.value)}
+                placeholder="Apelido ou assento 3"
+              />
+              <small>Ajuda a equipe a encontrar seu pedido sem pedir dados pessoais.</small>
+            </label>
+          ) : null}
           {publicOrder ? (
             <section
               aria-label="Status da comanda"
@@ -800,6 +821,12 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                 <span>Status</span>
                 <strong>{orderStatusLabel(publicOrder.status)}</strong>
               </div>
+              {publicOrder.guestLabel ? (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span>Identificação</span>
+                  <strong>{publicOrder.guestLabel}</strong>
+                </div>
+              ) : null}
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                 <span>Recebido</span>
                 <strong>{formatMoney(publicOrder.receivedCents ?? 0)}</strong>

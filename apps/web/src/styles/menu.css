@@ -207,6 +207,23 @@
   margin-top: 14px;
 }
 
+.qr-guest-label {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.qr-guest-label input {
+  width: 100%;
+}
+
+.qr-guest-label small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .qr-menu-row,
 .qr-cart-row {
   display: grid;

@@ -39,6 +39,9 @@ const runtimeEnv = {
   SEED_PLATFORM_PASSWORD: platformPassword,
   E2E_TEST_PASSWORD: process.env.E2E_TEST_PASSWORD ?? testPassword,
   E2E_PLATFORM_PASSWORD: process.env.E2E_PLATFORM_PASSWORD ?? platformPassword,
+  // The legacy M03 fixture is intentionally enabled only inside the isolated E2E tenant.
+  LEGACY_QR_ENABLED: process.env.LEGACY_QR_ENABLED ?? "true",
+  LEGACY_QR_TENANT_SLUG: process.env.LEGACY_QR_TENANT_SLUG ?? "bar-aurora-demo",
 };
 
 const children = [];

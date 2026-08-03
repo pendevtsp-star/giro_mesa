@@ -109,6 +109,8 @@ describe("profile dashboard", () => {
       "margin",
       "occupancy",
       "alerts",
+      "production",
+      "inventory",
     ]);
     expect(insights[0]?.value?.replace(/\u00a0/g, " ")).toBe("R$ 125,00");
     expect(insights[1]?.value?.replace(/\u00a0/g, " ")).toBe("R$ 89,00");

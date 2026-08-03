@@ -41,6 +41,7 @@ import { DatabaseService } from "../database/database.service";
 
 type TokenPayload = { tenantId: string; branchId: string; tableId: string; version: number };
 type PublicOrderInput = {
+  guestLabel?: string | undefined;
   items: Array<{
     productId: string;
     quantity: number;
@@ -699,6 +700,7 @@ export class QrService {
     return {
       order: {
         id: order.id,
+        guestLabel: order.guestLabel,
         status: order.status,
         items: items.map((item) => ({ ...item, quantity: Number(item.quantity) })),
         subtotalCents: order.subtotalCents,
@@ -766,6 +768,7 @@ export class QrService {
             tenantId: resolved.tenant.id,
             branchId: resolved.table.branchId,
             tableId: resolved.table.id,
+            guestLabel: input.guestLabel ?? null,
             channel: "qr",
             status: "opened",
             openedAt: new Date(),
@@ -828,6 +831,7 @@ export class QrService {
       const [updatedOrder] = await tx
         .update(orders)
         .set({
+          ...(order.guestLabel || !input.guestLabel ? {} : { guestLabel: input.guestLabel }),
           subtotalCents: sql`${orders.subtotalCents} + ${addedSubtotalCents}`,
           totalCents: sql`${orders.totalCents} + ${addedSubtotalCents}`,
           version: sql`${orders.version} + 1`,

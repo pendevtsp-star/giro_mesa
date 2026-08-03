@@ -117,7 +117,7 @@ runIntegration("secure table QR", () => {
     expect(before.table.id).toBe(tableId);
     expect(before.table.active).toBe(true);
 
-    const input = { items: [{ productId, quantity: 2 }] };
+    const input = { guestLabel: "assento 3", items: [{ productId, quantity: 2 }] };
     const first = await service.createPublicOrder(oldToken, "qr-order-key-0001", input);
     const replay = await service.createPublicOrder(oldToken, "qr-order-key-0001", input);
     expect(replay).toEqual(first);
@@ -125,6 +125,9 @@ runIntegration("secure table QR", () => {
     const rows = await db.select().from(orderItems).where(eq(orderItems.tenantId, tenantId));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.totalCents).toBe(5000);
+    await expect(service.getPublicOrder(oldToken)).resolves.toMatchObject({
+      order: { guestLabel: "assento 3" },
+    });
 
     const rotated = await service.rotate(context, tableId);
     await expect(service.getPublicContext(oldToken)).rejects.toThrow(/invalid|rotated/i);
