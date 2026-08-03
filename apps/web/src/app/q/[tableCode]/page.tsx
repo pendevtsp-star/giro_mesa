@@ -903,13 +903,26 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       ) : null}
       {qr.partnerAttribution ? (
         <p className="qr-marketing-note">
-          <a href={qr.partnerAttribution.href} rel="noreferrer" target="_blank">
+          <a
+            href={qr.partnerAttribution.href}
+            rel="noreferrer"
+            target="_blank"
+            aria-label={`Conheça a tecnologia deste atendimento: ${qr.partnerAttribution.label}`}
+          >
             {qr.partnerAttribution.label}
+          </a>
+          <span aria-hidden="true"> · </span>
+          <a aria-label="Conheça a tecnologia deste atendimento" href="https://giromesa.com.br">
+            Conheça a tecnologia deste atendimento
           </a>
         </p>
       ) : qr.qrSettings?.marketingEnabled !== false ? (
         <p className="qr-marketing-note">
-          Tecnologia <a href="https://giromesa.com.br">GiroMesa</a> para uma operação mais simples.
+          Tecnologia GiroMesa para uma operação mais simples.{" "}
+          <a aria-label="Conheça a tecnologia deste atendimento" href="https://giromesa.com.br">
+            Conheça a tecnologia deste atendimento
+          </a>
+          .
         </p>
       ) : null}
 

@@ -466,7 +466,7 @@ registro, sem duplicar movimento financeiro.
 - [x] Disponibilizar placas, adesivos e A4 com personalização controlada.
 - [x] Exibir discretamente “Tecnologia GiroMesa”.
 - [x] Exibir “DoseClub, por GiroMesa” quando recurso estiver habilitado.
-- [ ] Adicionar “Conheça a tecnologia deste atendimento” sem competir com pedido ou pagamento.
+- [x] Adicionar “Conheça a tecnologia deste atendimento” sem competir com pedido ou pagamento.
 - [ ] Registrar somente origem comercial agregada, sem mesa, pedido ou dado pessoal.
 
 ### Gate
