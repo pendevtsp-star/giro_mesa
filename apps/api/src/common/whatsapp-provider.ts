@@ -274,6 +274,10 @@ export class WhatsAppCloudProvider implements WhatsAppProvider {
 }
 
 export function createWhatsAppProvider(): WhatsAppProvider {
+  // Legacy Meta transport is opt-in; QR pairing remains the product direction.
+  if (process.env.WHATSAPP_TRANSPORT !== "meta_legacy") {
+    return new MockWhatsAppProvider();
+  }
   const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
   const accessToken = process.env.META_ACCESS_TOKEN;
 
