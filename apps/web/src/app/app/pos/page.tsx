@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { resolvePosShortcut } from "../../../features/pos/pos-shortcuts";
 import {
   demoProducts,
   demoTables,
@@ -262,42 +263,38 @@ export default function PosPage() {
   }, [counterOrderId, loadOrder, selectedTableId, serviceMode, session?.branchId]);
 
   useEffect(() => {
-    function isEditable(target: EventTarget | null) {
-      return (
-        target instanceof HTMLElement &&
-        Boolean(target.closest("input, textarea, select, [contenteditable=true]"))
-      );
-    }
-
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      const shortcut = resolvePosShortcut(event.key);
+      if (!shortcut) return;
+
+      if (shortcut === "dismiss") {
+        event.preventDefault();
         setShortcutsOpen(false);
         document.querySelector<HTMLButtonElement>(".modifier-dialog .icon-button")?.click();
         return;
       }
-      if (isEditable(event.target)) return;
 
-      const shortcuts: Record<string, string> = {
-        F4: "F4",
-        F8: "F8",
-        F9: "F9",
-        F10: "F10",
-      };
-      if (event.key === "F2") {
+      if (shortcut === "search") {
         event.preventDefault();
         document.querySelector<HTMLInputElement>('input[aria-label="Buscar produto"]')?.focus();
         return;
       }
-      if (event.key === "F6") {
+
+      if (shortcut === "toggle-mode") {
+        event.preventDefault();
+        document.querySelector<HTMLButtonElement>(".pos-mode-switch button:not(.active)")?.click();
+        return;
+      }
+
+      if (shortcut === "focus-table") {
         event.preventDefault();
         document.querySelector<HTMLSelectElement>(".pos-table-select select")?.focus();
         return;
       }
-      const button = shortcuts[event.key]
-        ? document.querySelector<HTMLButtonElement>(
-            `button[aria-keyshortcuts="${shortcuts[event.key]}"]`,
-          )
-        : null;
+
+      const button = document.querySelector<HTMLButtonElement>(
+        `button[aria-keyshortcuts="${event.key}"]`,
+      );
       if (button && !button.disabled) {
         event.preventDefault();
         button.click();
@@ -352,6 +349,7 @@ export default function PosPage() {
 
   async function runAction(action: () => Promise<void>) {
     setBusy(true);
+    setMessage("Processando...");
     try {
       await action();
     } catch (error) {
@@ -573,6 +571,8 @@ export default function PosPage() {
           <button
             className={serviceMode === "table" ? "active" : ""}
             type="button"
+            aria-pressed={serviceMode === "table"}
+            title="Mesa (F3 alterna o modo de atendimento)"
             onClick={() =>
               void runAction(async () => {
                 applyOrder(null);
@@ -586,6 +586,8 @@ export default function PosPage() {
           <button
             className={serviceMode === "counter" ? "active" : ""}
             type="button"
+            aria-pressed={serviceMode === "counter"}
+            title="Balcão (F3 alterna o modo de atendimento)"
             onClick={() =>
               void runAction(async () => {
                 applyOrder(null);
@@ -637,6 +639,9 @@ export default function PosPage() {
                 <kbd>F2</kbd> buscar produto
               </span>
               <span>
+                <kbd>F3</kbd> alternar mesa/balcão
+              </span>
+              <span>
                 <kbd>F4</kbd> receber
               </span>
               <span>
@@ -657,7 +662,7 @@ export default function PosPage() {
             </div>
           ) : null}
         </div>
-        <span className="pos-feedback" role="status">
+        <span className="pos-feedback" role="status" aria-busy={busy}>
           {message}
         </span>
       </div>
