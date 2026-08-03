@@ -1334,7 +1334,17 @@ html[data-theme="light"] .landing-header {
 
 html[data-theme="light"] .landing-nav,
 html[data-theme="light"] .landing-login-link {
-  color: #64748b;
+  color: #334155;
+}
+
+html[data-theme="light"] .landing-brand strong {
+  color: #1e4f8f;
+}
+
+html[data-theme="dark"] .landing-nav,
+html[data-theme="dark"] .landing-login-link,
+html[data-theme="dark"] .landing-footer nav {
+  color: #cbd5e1;
 }
 
 html[data-theme="light"] .landing-nav a:hover,
@@ -1367,7 +1377,7 @@ html[data-theme="light"] .landing-ambient-yellow {
 }
 
 html[data-theme="light"] .landing-hero h1 span {
-  background: linear-gradient(95deg, #d78316, #f5a623 78%);
+  background: linear-gradient(95deg, #8a4f06, #b66f0b 78%);
   -webkit-background-clip: text;
   background-clip: text;
 }
@@ -1431,12 +1441,24 @@ html[data-theme="light"] .landing-icon-tile {
   color: #2563a8;
 }
 
+html[data-theme="light"] .landing-section-kicker {
+  color: #1e4f8f;
+}
+
+html[data-theme="light"] .landing-modules .landing-section-heading > span,
+html[data-theme="light"] .landing-implementation .landing-section-heading > span,
+html[data-theme="light"] .landing-implementation li > span,
+html[data-theme="light"] .is-featured .landing-price strong,
+html[data-theme="light"] .landing-plan-grid li svg {
+  color: #8a4f06;
+}
+
 html[data-theme="light"] .landing-module-grid article > svg {
   color: #2563a8;
 }
 
 html[data-theme="light"] .landing-module-grid a {
-  color: #b86c0c;
+  color: #7a4300;
 }
 
 html[data-theme="light"] .landing-security {
@@ -1463,6 +1485,10 @@ html[data-theme="light"] .landing-cta {
   background: #0d1b2a;
 }
 
+html[data-theme="light"] .landing-cta .landing-section-kicker {
+  color: #facc15;
+}
+
 html[data-theme="light"] .landing-cta h2 {
   color: #f8fafc;
 }
@@ -1474,4 +1500,13 @@ html[data-theme="light"] .landing-cta p {
 html[data-theme="light"] .landing-footer {
   border-top-color: rgba(13, 27, 42, 0.09);
   background: #fffdf8;
+}
+
+html[data-theme="light"] .landing-mobile-menu nav {
+  background: rgba(255, 252, 245, 0.98);
+}
+
+html[data-theme="light"] .landing-mobile-menu nav > a:not(.landing-button) {
+  border-bottom-color: rgba(13, 27, 42, 0.1);
+  color: #334155;
 }

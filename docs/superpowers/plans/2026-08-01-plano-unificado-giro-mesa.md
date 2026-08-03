@@ -72,6 +72,10 @@ fechado apenas por existir código:
 - Fases 3, 4 e 6: partes do PDV, salão, KDS e impressão estão em `83eae38`.
 - Fase 10: implementação parcial nesta execução; landing recebeu logo real, tema claro
   inspirado no DoseClub e entrada discreta do ecossistema.
+- Fase 10: auditoria visual pública executada em 1440×900, 1024×768, 768×1024 e
+  390×844; contraste, overflow e erros de navegador passaram após o ajuste do tema
+  claro e do menu móvel. Auditoria autenticada permanece dependente de credenciais
+  de teste fora do repositório.
 - Fase 11: central de pendências role-scoped adicionada ao dashboard, consolidando
   onboarding, turno/caixa, pedidos QR, KDS, estoque e contas abertas com ação direta;
   comparação entre filiais agora usa resumos tenant-scoped; dashboards enxutos por
@@ -455,7 +459,7 @@ registro, sem duplicar movimento financeiro.
 - [x] Preservar quiet zone, contraste, legibilidade e rotação segura do token.
 - [x] Disponibilizar placas, adesivos e A4 com personalização controlada.
 - [x] Exibir discretamente “Tecnologia GiroMesa”.
-- [ ] Exibir “DoseClub, por GiroMesa” quando recurso estiver habilitado.
+- [x] Exibir “DoseClub, por GiroMesa” quando recurso estiver habilitado.
 - [ ] Adicionar “Conheça a tecnologia deste atendimento” sem competir com pedido ou pagamento.
 - [ ] Registrar somente origem comercial agregada, sem mesa, pedido ou dado pessoal.
 
