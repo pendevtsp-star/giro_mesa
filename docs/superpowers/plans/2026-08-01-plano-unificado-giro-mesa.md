@@ -514,7 +514,7 @@ Executar somente depois de todos os gates internos.
 
 - [ ] Implementar adapter/worker isolado, outbox, QR de pareamento e sessão criptografada
   por tenant/filial.
-- [ ] Exibir claramente “integração não oficial da Meta” na documentação e na interface.
+- [x] Exibir claramente “integração não oficial da Meta” na documentação e na interface.
 - [ ] Implementar status, reconexão, revogação, cooldown, rate limit, opt-out e fila.
 - [ ] Cobrir reserva, fila, pedido, delivery, pré-conta e comprovante sem bloquear o núcleo.
 - [ ] Proibir marketing em massa, sucesso falso e retry cego quando a entrega for incerta.
