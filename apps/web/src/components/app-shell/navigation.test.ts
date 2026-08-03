@@ -29,15 +29,16 @@ describe("app shell navigation", () => {
   it("groups visible items for scannable navigation", () => {
     const groups = groupNavigationItems(filterNavigationByPermissions(["tenant:manage"]));
 
-    expect(groups.map((group) => group.group)).toEqual(["operation", "settings"]);
+    expect(groups.map((group) => group.group)).toEqual(["operation", "settings", "ecosystem"]);
     const settingsItems =
       groups.find((group) => group.group === "settings")?.items.map((item) => item.labelKey) ?? [];
     expect(settingsItems).toContain("nav.onboarding");
-    expect(settingsItems).toContain("nav.billing");
-    expect(settingsItems).toContain("nav.doseClub");
     expect(settingsItems).toContain("nav.branding");
     expect(settingsItems).toContain("nav.security");
     expect(settingsItems).toContain("nav.team");
+    const ecosystemItems =
+      groups.find((group) => group.group === "ecosystem")?.items.map((item) => item.labelKey) ?? [];
+    expect(ecosystemItems).toEqual(["nav.billing", "nav.doseClub"]);
   });
 
   it("marks dashboard, POS and nested routes without false positives", () => {
@@ -77,5 +78,17 @@ describe("app shell navigation", () => {
     expect(canAccessAppPath("/app/integrations/dose-club", ["tenant:manage"])).toBe(true);
     expect(canAccessAppPath("/app/pos", ["kds:operate"])).toBe(false);
     expect(canAccessAppPath("/app/unknown", ["tenant:manage"])).toBe(false);
+  });
+
+  it("keeps delivery in the operation group and commercial links in the ecosystem group", () => {
+    const groups = groupNavigationItems(
+      filterNavigationByPermissions(["delivery:manage", "tenant:manage"]),
+    );
+    expect(
+      groups.find((group) => group.group === "operation")?.items.map((item) => item.href),
+    ).toContain("/app/delivery");
+    expect(
+      groups.find((group) => group.group === "ecosystem")?.items.map((item) => item.href),
+    ).toEqual(["/app/billing", "/app/integrations/dose-club"]);
   });
 });

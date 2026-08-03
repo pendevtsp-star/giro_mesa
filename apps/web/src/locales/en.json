@@ -46,7 +46,7 @@
     "operation": "Operation",
     "management": "Management",
     "settings": "Settings",
-    "platform": "Platform",
+    "ecosystem": "Ecosystem",
     "modules": "Modules"
   },
   "auth": {

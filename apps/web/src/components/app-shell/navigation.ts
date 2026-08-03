@@ -21,7 +21,7 @@ import {
   Users,
 } from "lucide-react";
 
-export type AppNavigationGroup = "operation" | "management" | "settings" | "platform";
+export type AppNavigationGroup = "operation" | "management" | "settings" | "ecosystem";
 
 export type AppNavigationItem = {
   group: AppNavigationGroup;
@@ -68,6 +68,13 @@ export const appNavigationItems = [
     permissions: ["kds:operate"],
   },
   {
+    group: "operation",
+    icon: Truck,
+    labelKey: "nav.delivery",
+    href: "/app/delivery",
+    permissions: ["delivery:manage"],
+  },
+  {
     group: "management",
     icon: Users,
     labelKey: "nav.customers",
@@ -94,13 +101,6 @@ export const appNavigationItems = [
     labelKey: "nav.reports",
     href: "/app/reports",
     permissions: ["reports:read"],
-  },
-  {
-    group: "management",
-    icon: Truck,
-    labelKey: "nav.delivery",
-    href: "/app/delivery",
-    permissions: ["delivery:manage"],
   },
   {
     group: "settings",
@@ -131,14 +131,14 @@ export const appNavigationItems = [
     permissions: ["tenant:manage"],
   },
   {
-    group: "settings",
+    group: "ecosystem",
     icon: CreditCard,
     labelKey: "nav.billing",
     href: "/app/billing",
     permissions: ["tenant:manage"],
   },
   {
-    group: "settings",
+    group: "ecosystem",
     icon: Cable,
     labelKey: "nav.doseClub",
     href: "/app/integrations/dose-club",
@@ -194,7 +194,7 @@ export const appNavigationItems = [
     permissions: ["tenant:manage"],
   },
   {
-    group: "platform",
+    group: "ecosystem",
     icon: Store,
     labelKey: "nav.backoffice",
     href: "/platform",
