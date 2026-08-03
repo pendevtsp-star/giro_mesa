@@ -37,7 +37,7 @@ test.describe("Piloto guiado por perfil", () => {
   test("proprietário acessa gestão, QR e equipe", async ({ page }) => {
     await authenticateBrowserPage(page, roles.owner.email, roles.owner.password);
 
-    await expect(page.locator(".profile-action-strip strong")).toHaveText("Dono ou administrador");
+    await expect(page.locator(".user-avatar-role")).toHaveText("Dono ou administrador");
     await expect(navLink(page, "/app/qr")).toBeVisible();
     await expect(navLink(page, "/app/team")).toBeVisible();
 
@@ -56,7 +56,7 @@ test.describe("Piloto guiado por perfil", () => {
     await authenticateBrowserPage(page, roles.manager.email, roles.manager.password);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.locator(".profile-action-strip strong")).toHaveText("Gerente");
+    await expect(page.locator(".user-avatar-role")).toHaveText("Gerente");
     await expect(navLink(page, "/app/salon")).toBeVisible();
     await expect(navLink(page, "/app/reports")).toBeVisible();
     await expect(navLink(page, "/app/settings/operation")).toBeVisible();
@@ -67,7 +67,7 @@ test.describe("Piloto guiado por perfil", () => {
   test("caixa opera caixa e relatórios sem receber catálogo ou KDS", async ({ page }) => {
     await authenticateBrowserPage(page, roles.cashier.email, roles.cashier.password);
 
-    await expect(page.locator(".profile-action-strip strong")).toHaveText("Caixa");
+    await expect(page.locator(".user-avatar-role")).toHaveText("Caixa");
     await expect(navLink(page, "/app/cash")).toBeVisible();
     await expect(navLink(page, "/app/reports")).toBeVisible();
     await expect(navLink(page, "/app/catalog")).toHaveCount(0);
@@ -80,7 +80,7 @@ test.describe("Piloto guiado por perfil", () => {
   test("garçom opera salão e atendimento, com bloqueio legível para caixa", async ({ page }) => {
     await authenticateBrowserPage(page, roles.waiter.email, roles.waiter.password);
 
-    await expect(page.locator(".profile-action-strip strong")).toHaveText("Garçom");
+    await expect(page.locator(".user-avatar-role")).toHaveText("Garçom");
     await expect(navLink(page, "/app/waiter")).toBeVisible();
     await expect(navLink(page, "/app/salon")).toBeVisible();
     await expect(navLink(page, "/app/cash")).toHaveCount(0);
@@ -105,7 +105,7 @@ test.describe("Piloto guiado por perfil", () => {
   test("cozinha vê somente produção e não recebe atalho de PDV", async ({ page }) => {
     await authenticateBrowserPage(page, roles.kitchen.email, roles.kitchen.password);
 
-    await expect(page.locator(".profile-action-strip strong")).toHaveText("Cozinha ou bar");
+    await expect(page.locator(".user-avatar-role")).toHaveText("Cozinha ou bar");
     await expect(navLink(page, "/app/kds")).toBeVisible();
     await expect(navLink(page, "/app/pos")).toHaveCount(0);
     await expect(page.getByTestId("open-pos")).toHaveCount(0);
