@@ -1848,22 +1848,17 @@ export function updateProduct(
   });
 }
 
-export function getPublicMenu(tenantSlug = "bar-aurora-demo") {
+export function getPublicMenu(tenantSlug: string) {
   return apiRequest<PublicMenuResponse>(`/api/v1/catalog/public/menu/${tenantSlug}`);
 }
 
-export function getPublicQr(tableCode: string, tenantSlug = "bar-aurora-demo") {
-  return apiRequest<PublicQrResponse>(
-    `/api/v1/catalog/public/qr/${encodeURIComponent(tableCode)}?tenantSlug=${encodeURIComponent(
-      tenantSlug,
-    )}`,
-  );
+export function getPublicQr(tableCode: string) {
+  return apiRequest<PublicQrResponse>(`/api/v1/catalog/public/qr/${encodeURIComponent(tableCode)}`);
 }
 
 export function createPublicQrOrder(
   tableCode: string,
   input: {
-    tenantSlug?: string;
     items: {
       productId: string;
       quantity: number;
@@ -1876,7 +1871,7 @@ export function createPublicQrOrder(
     `/api/v1/catalog/public/qr/${encodeURIComponent(tableCode)}/orders`,
     {
       method: "POST",
-      body: { tenantSlug: "bar-aurora-demo", ...input },
+      body: input,
     },
   );
 }
@@ -1884,13 +1879,13 @@ export function createPublicQrOrder(
 export function requestPublicQrAction(
   tableCode: string,
   action: "call-waiter" | "pre-bill",
-  input: { tenantSlug?: string; message?: string } = {},
+  input: { message?: string } = {},
 ) {
   return apiRequest<{ ok: boolean; action: string }>(
     `/api/v1/catalog/public/qr/${encodeURIComponent(tableCode)}/${action}`,
     {
       method: "POST",
-      body: { tenantSlug: "bar-aurora-demo", ...input },
+      body: input,
     },
   );
 }

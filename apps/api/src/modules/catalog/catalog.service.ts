@@ -90,7 +90,6 @@ export type ModifierOptionInput = {
 };
 
 export type PublicQrOrderInput = {
-  tenantSlug: string;
   items: {
     productId: string;
     quantity: number;
@@ -100,9 +99,22 @@ export type PublicQrOrderInput = {
 };
 
 export type PublicQrActionInput = {
-  tenantSlug: string;
   message?: string | undefined;
 };
+
+export function readLegacyQrTenantSlug(env: NodeJS.ProcessEnv = process.env) {
+  if (env.LEGACY_QR_ENABLED !== "true") return null;
+  const slug = env.LEGACY_QR_TENANT_SLUG?.trim();
+  return slug || null;
+}
+
+export function isLegacyQrAllowed(
+  tenant: Pick<typeof tenants.$inferSelect, "isDemo" | "slug">,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const configuredSlug = readLegacyQrTenantSlug(env);
+  return Boolean(configuredSlug && tenant.isDemo && tenant.slug === configuredSlug);
+}
 
 type PublicBranding = {
   displayName: string;
@@ -341,9 +353,8 @@ export class CatalogService {
     };
   }
 
-  async getPublicQrContext(tenantSlug: string, tableCode: string) {
-    const tenant = await this.resolveTenant(tenantSlug);
-    this.assertLegacyQrAllowed(tenant);
+  async getPublicQrContext(tableCode: string) {
+    const tenant = await this.resolveLegacyTenant();
     const [table] = await this.database.db
       .select()
       .from(diningTables)
@@ -372,9 +383,8 @@ export class CatalogService {
   }
 
   async createPublicQrOrder(tableCode: string, input: PublicQrOrderInput) {
+    const tenant = await this.resolveLegacyTenant();
     return this.database.db.transaction(async (tx) => {
-      const tenant = await this.resolveTenant(input.tenantSlug);
-      this.assertLegacyQrAllowed(tenant);
       const [table] = await tx
         .select()
         .from(diningTables)
@@ -512,8 +522,7 @@ export class CatalogService {
   }
 
   async registerPublicQrAction(tableCode: string, action: string, input: PublicQrActionInput) {
-    const tenant = await this.resolveTenant(input.tenantSlug);
-    this.assertLegacyQrAllowed(tenant);
+    const tenant = await this.resolveLegacyTenant();
     const [table] = await this.database.db
       .select()
       .from(diningTables)
@@ -705,8 +714,18 @@ export class CatalogService {
     return tenant;
   }
 
+  private async resolveLegacyTenant() {
+    const slug = readLegacyQrTenantSlug();
+    if (!slug) {
+      throw new NotFoundException("Legacy QR links are disabled");
+    }
+    const tenant = await this.resolveTenant(slug);
+    this.assertLegacyQrAllowed(tenant);
+    return tenant;
+  }
+
   private assertLegacyQrAllowed(tenant: typeof tenants.$inferSelect) {
-    if (!tenant.isDemo) {
+    if (!isLegacyQrAllowed(tenant)) {
       throw new NotFoundException("Legacy QR links are disabled for this tenant");
     }
   }

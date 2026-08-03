@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Param, Patch, Post } from "@nestjs/common";
 import { z } from "zod";
 import { firstHeader, type HeaderRecord } from "../../common/http";
 import { Public } from "../../common/public";
@@ -58,7 +58,6 @@ const modifierOptionSchema = z.object({
 });
 
 const publicQrOrderSchema = z.object({
-  tenantSlug: z.string().min(1).default("bar-aurora-demo"),
   items: z
     .array(
       z.object({
@@ -75,7 +74,6 @@ const publicQrOrderSchema = z.object({
 });
 
 const publicQrActionSchema = z.object({
-  tenantSlug: z.string().min(1).default("bar-aurora-demo"),
   message: z.string().optional(),
 });
 
@@ -112,11 +110,8 @@ export class CatalogController {
   }
 
   @Get("public/qr/:tableCode")
-  async publicQr(
-    @Param("tableCode") tableCode: string,
-    @Query("tenantSlug") tenantSlug = "bar-aurora-demo",
-  ) {
-    return this.catalogService.getPublicQrContext(tenantSlug, tableCode);
+  async publicQr(@Param("tableCode") tableCode: string) {
+    return this.catalogService.getPublicQrContext(tableCode);
   }
 
   @Public()
@@ -192,7 +187,7 @@ export class CatalogController {
       namespace: "public_qr_order",
       limit: 20,
       windowMs: 60_000,
-      identifier: publicQrIdentifier(headers, input.tenantSlug, tableCode),
+      identifier: publicQrIdentifier(headers, tableCode),
     });
     return this.catalogService.createPublicQrOrder(tableCode, input);
   }
@@ -209,7 +204,7 @@ export class CatalogController {
       namespace: "public_qr_call_waiter",
       limit: 8,
       windowMs: 60_000,
-      identifier: publicQrIdentifier(headers, input.tenantSlug, tableCode),
+      identifier: publicQrIdentifier(headers, tableCode),
     });
     return this.catalogService.registerPublicQrAction(tableCode, "qr.waiter_requested", input);
   }
@@ -226,7 +221,7 @@ export class CatalogController {
       namespace: "public_qr_pre_bill",
       limit: 8,
       windowMs: 60_000,
-      identifier: publicQrIdentifier(headers, input.tenantSlug, tableCode),
+      identifier: publicQrIdentifier(headers, tableCode),
     });
     return this.catalogService.registerPublicQrAction(tableCode, "qr.pre_bill_requested", input);
   }
@@ -264,8 +259,8 @@ export class CatalogController {
   }
 }
 
-function publicQrIdentifier(headers: HeaderRecord, tenantSlug: string, tableCode: string) {
+function publicQrIdentifier(headers: HeaderRecord, tableCode: string) {
   const forwardedFor = firstHeader(headers["x-forwarded-for"]);
   const ip = forwardedFor?.split(",")[0]?.trim() ?? firstHeader(headers["x-real-ip"]) ?? "unknown";
-  return `${ip}:${tenantSlug}:${tableCode}`;
+  return `${ip}:${tableCode}`;
 }

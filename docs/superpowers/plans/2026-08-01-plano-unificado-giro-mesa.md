@@ -85,6 +85,10 @@ fechado apenas por existir código:
   CSS, URLs e fontes externas continuam bloqueados.
 - Fase 13: o QR público agora oferece CTA acessível “Conheça a tecnologia deste
   atendimento”, mantendo a assinatura discreta e o opt-out de marketing.
+- Fases 10/12: rotas QR legadas sem assinatura agora exigem `LEGACY_QR_ENABLED` e
+  `LEGACY_QR_TENANT_SLUG`, resolvem somente o tenant demo configurado no servidor e
+  não recebem mais `tenantSlug` nem fallback `bar-aurora-demo` do cliente; tokens
+  assinados permanecem o caminho canônico.
 - Fases 10/14: a landing do DoseClub recebeu navegação nomeada, controles rotulados
   e suporte a `prefers-reduced-motion`; CI, build e testes do repositório separado passaram.
 - Fase 11: central de pendências role-scoped adicionada ao dashboard, consolidando

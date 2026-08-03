@@ -450,7 +450,6 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             { items },
           )
         : await createPublicQrOrder(tableCode, {
-            tenantSlug: qr.tenant.slug,
             items,
           });
       if (secureMode) {
@@ -474,7 +473,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         );
         setServiceRequest(request);
       } else {
-        await requestPublicQrAction(tableCode, "call-waiter", { tenantSlug: qr.tenant.slug });
+        await requestPublicQrAction(tableCode, "call-waiter");
       }
       setStatus("Garçom chamado. A solicitação ficou registrada no painel.");
     });
@@ -491,7 +490,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         );
         setServiceRequest(request);
       } else {
-        await requestPublicQrAction(tableCode, "pre-bill", { tenantSlug: qr.tenant.slug });
+        await requestPublicQrAction(tableCode, "pre-bill");
       }
       setStatus("Pré-conta solicitada. O caixa recebeu o pedido de fechamento.");
     });

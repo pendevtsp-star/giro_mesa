@@ -265,10 +265,22 @@ runIntegration("POS QR conference behavior", () => {
   });
 
   it("adds QR items to the active table order instead of opening a parallel order", async () => {
-    const result = await catalogService.createPublicQrOrder(fixture.table.code, {
-      tenantSlug: fixture.tenant.slug,
-      items: [{ productId: fixture.burgerItem.productId, quantity: 1 }],
-    });
+    const previousEnabled = process.env.LEGACY_QR_ENABLED;
+    const previousSlug = process.env.LEGACY_QR_TENANT_SLUG;
+    process.env.LEGACY_QR_ENABLED = "true";
+    process.env.LEGACY_QR_TENANT_SLUG = fixture.tenant.slug;
+    const result = await (async () => {
+      try {
+        return await catalogService.createPublicQrOrder(fixture.table.code, {
+          items: [{ productId: fixture.burgerItem.productId, quantity: 1 }],
+        });
+      } finally {
+        if (previousEnabled === undefined) delete process.env.LEGACY_QR_ENABLED;
+        else process.env.LEGACY_QR_ENABLED = previousEnabled;
+        if (previousSlug === undefined) delete process.env.LEGACY_QR_TENANT_SLUG;
+        else process.env.LEGACY_QR_TENANT_SLUG = previousSlug;
+      }
+    })();
 
     expect(result.orderId).toBe(fixture.order.id);
     expect(result.items[0]?.sourceChannel).toBe("qr");
