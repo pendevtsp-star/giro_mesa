@@ -5,6 +5,7 @@ import {
   categories,
   diningTables,
   guestExperienceConfigs,
+  integrationAccounts,
   modifierGroups,
   modifierOptions,
   orderItems,
@@ -57,6 +58,37 @@ type GuestExperienceDraftInput = {
 } & {
   scheduledAt?: Date | null | undefined;
 };
+
+export type PublicPartnerAttribution = {
+  product: "doseclub";
+  label: "DoseClub, por GiroMesa";
+  href: "https://doseclube.giromesa.com.br";
+};
+
+/**
+ * Resolve the optional commercial signature from server-owned integration state.
+ * Public QR clients never provide any of these values.
+ */
+export function resolvePublicPartnerAttribution(input: {
+  accountStatus?: string | null;
+  configuredBranchId?: string | null;
+  branchId: string;
+  marketingEnabled?: boolean;
+}): PublicPartnerAttribution | undefined {
+  if (
+    input.marketingEnabled === false ||
+    input.accountStatus !== "active" ||
+    input.configuredBranchId !== input.branchId
+  ) {
+    return undefined;
+  }
+
+  return {
+    product: "doseclub",
+    label: "DoseClub, por GiroMesa",
+    href: "https://doseclube.giromesa.com.br",
+  };
+}
 
 const defaultCapabilities: QrCapability[] = [
   "menu",
@@ -522,7 +554,7 @@ export class QrService {
   async getPublicContext(token: string) {
     const resolved = await this.resolveToken(token);
     const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
-    const [menuCategories, menuProducts] = await Promise.all([
+    const [menuCategories, menuProducts, doseClubAccount] = await Promise.all([
       this.database.db
         .select()
         .from(categories)
@@ -556,8 +588,30 @@ export class QrService {
           ),
         )
         .orderBy(asc(products.name)),
+      this.database.db
+        .select({
+          status: integrationAccounts.status,
+          configuredBranchId: sql<string | null>`${integrationAccounts.config}->>'branchId'`,
+        })
+        .from(integrationAccounts)
+        .where(
+          and(
+            eq(integrationAccounts.tenantId, resolved.tenant.id),
+            eq(integrationAccounts.provider, "club_whisky"),
+            eq(integrationAccounts.status, "active"),
+          ),
+        )
+        .limit(1),
     ]);
     const active = isTableActive(resolved.table.status);
+    const partnerAttribution = resolvePublicPartnerAttribution({
+      accountStatus: doseClubAccount[0]?.status ?? null,
+      configuredBranchId: doseClubAccount[0]?.configuredBranchId ?? null,
+      branchId: resolved.table.branchId,
+      ...(settings.marketingEnabled !== undefined
+        ? { marketingEnabled: settings.marketingEnabled }
+        : {}),
+    });
     return {
       tenant: {
         name: resolved.tenant.name,
@@ -584,6 +638,7 @@ export class QrService {
           ? { marketingEnabled: settings.marketingEnabled }
           : {}),
       },
+      ...(partnerAttribution ? { partnerAttribution } : {}),
       categories: menuCategories,
       products: menuProducts.filter((product) => product.channels.includes("qr")),
     };

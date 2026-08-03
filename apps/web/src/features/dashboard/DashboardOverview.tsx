@@ -12,6 +12,7 @@ import type {
   CashSessionSummary,
   CurrentShiftResponse,
   DashboardSummary,
+  FinancialReport,
   InventoryAlert,
   KdsTicket,
   OnboardingStatus,
@@ -97,6 +98,7 @@ export type ProfileDashboardInput = {
   canOperatePos: boolean;
   canOperateKds: boolean;
   occupiedLabel: string;
+  financialReport: FinancialReport | null;
 };
 
 export function buildProfileInsights(input: ProfileDashboardInput): ProfileInsight[] {
@@ -104,6 +106,8 @@ export function buildProfileInsights(input: ProfileDashboardInput): ProfileInsig
     (ticket) => !["ready", "served"].includes(ticket.status),
   ).length;
   if (input.canManageTenant) {
+    const marginPercent = input.financialReport?.dre.operationalMarginPercent;
+    const marginCents = input.financialReport?.dre.operationalMarginCents ?? 0;
     return [
       {
         id: "sales",
@@ -118,6 +122,15 @@ export function buildProfileInsights(input: ProfileDashboardInput): ProfileInsig
         label: "Caixa atual",
         value: input.dashboardSummary ? formatMoney(input.dashboardSummary.cashBalance) : "R$ 0,00",
         detail: input.dashboardSummary?.cashOpen ? "Aberto e conciliando" : "Fechado",
+      },
+      {
+        id: "margin",
+        label: "Margem operacional",
+        value:
+          typeof marginPercent === "number"
+            ? `${marginPercent.toFixed(1)}%`
+            : formatMoney(marginCents),
+        detail: "Receita menos custos operacionais",
       },
       {
         id: "occupancy",

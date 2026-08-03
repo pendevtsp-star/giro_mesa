@@ -1058,6 +1058,12 @@ export type PublicQrSettings = {
   marketingEnabled?: boolean;
 };
 
+export type PublicPartnerAttribution = {
+  product: "doseclub";
+  label: "DoseClub, por GiroMesa";
+  href: "https://doseclube.giromesa.com.br";
+};
+
 export type PublicQrResponse = {
   tenant: { id: string; name: string; slug: string; branding?: TenantBranding };
   table: {
@@ -1071,6 +1077,7 @@ export type PublicQrResponse = {
   capabilities?: QrCapability[];
   reviewBeforeKds?: boolean;
   qrSettings?: PublicQrSettings;
+  partnerAttribution?: PublicPartnerAttribution;
 };
 
 export type SecurePublicQrContext = {
@@ -1089,6 +1096,7 @@ export type SecurePublicQrContext = {
   capabilities: QrCapability[];
   reviewBeforeKds: boolean;
   qrSettings?: PublicQrSettings;
+  partnerAttribution?: PublicPartnerAttribution;
   categories: Category[];
   products: Array<{
     id: string;

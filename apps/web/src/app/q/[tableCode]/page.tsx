@@ -134,6 +134,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               capabilities: context.capabilities,
               reviewBeforeKds: context.reviewBeforeKds,
               ...(context.qrSettings ? { qrSettings: context.qrSettings } : {}),
+              ...(context.partnerAttribution
+                ? { partnerAttribution: context.partnerAttribution }
+                : {}),
               table: {
                 id: context.table.id,
                 branchId: context.branchId,
@@ -896,7 +899,13 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           Atendimento: {serviceRequestStatusLabel(serviceRequest.status)}.
         </p>
       ) : null}
-      {qr.qrSettings?.marketingEnabled !== false ? (
+      {qr.partnerAttribution ? (
+        <p className="qr-marketing-note">
+          <a href={qr.partnerAttribution.href} rel="noreferrer" target="_blank">
+            {qr.partnerAttribution.label}
+          </a>
+        </p>
+      ) : qr.qrSettings?.marketingEnabled !== false ? (
         <p className="qr-marketing-note">
           Tecnologia <a href="https://giromesa.com.br">GiroMesa</a> para uma operação mais simples.
         </p>

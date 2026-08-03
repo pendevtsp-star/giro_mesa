@@ -39,10 +39,12 @@ import {
   type CurrentShiftResponse,
   type DashboardSummary,
   type DiningTable,
+  type FinancialReport,
   formatMoney,
   getCashSessionSummary,
   getCurrentShift,
   getDashboardSummary,
+  getFinancialReport,
   getOnboardingStatus,
   getSalesByPeriod,
   getSession,
@@ -108,6 +110,7 @@ export default function AppDashboardPage() {
     accentPreset: "amber",
   });
   const [salesPeriodData, setSalesPeriodData] = useState<SalesByPeriodResponse | null>(null);
+  const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null);
   const [actionStatus, setActionStatus] = useState(t("dashboard.loadingDashboard"));
   const [widgetPrefs, setWidgetPrefs] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined")
@@ -182,6 +185,7 @@ export default function AppDashboardPage() {
           kdsTickets,
           tableRows,
           branchRows,
+          financialReport,
         ] = await Promise.all([
           getTenantBranding(),
           context.branchId && can("pos:operate")
@@ -207,6 +211,9 @@ export default function AppDashboardPage() {
             ? listTables(context.branchId).catch(() => [])
             : Promise.resolve([]),
           branchSummaryPromise,
+          context.branchId && can("reports:read")
+            ? getFinancialReport({ branchId: context.branchId, period: "today" }).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         setBranding(tenantBranding);
@@ -219,6 +226,7 @@ export default function AppDashboardPage() {
         setTickets(kdsTickets);
         setTables(tableRows);
         setBranchSummaries(branchRows);
+        setFinancialReport(financialReport);
 
         if (context.branchId && can("reports:read")) {
           const endDate = new Date().toISOString();
@@ -393,6 +401,7 @@ export default function AppDashboardPage() {
           canOperatePos={canOperatePos}
           canOperateKds={canOperateKds}
           occupiedLabel={occupiedLabel}
+          financialReport={financialReport}
         />
       ) : null}
 

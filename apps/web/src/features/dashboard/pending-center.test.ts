@@ -38,6 +38,7 @@ function profileInput(overrides: Partial<ProfileDashboardInput> = {}): ProfileDa
     canOperatePos: false,
     canOperateKds: false,
     occupiedLabel: "0/0",
+    financialReport: null,
     ...overrides,
   };
 }
@@ -89,7 +90,13 @@ describe("profile dashboard", () => {
       }),
     );
 
-    expect(insights.map((insight) => insight.id)).toEqual(["sales", "cash", "occupancy", "alerts"]);
+    expect(insights.map((insight) => insight.id)).toEqual([
+      "sales",
+      "cash",
+      "margin",
+      "occupancy",
+      "alerts",
+    ]);
     expect(insights[0]?.value?.replace(/\u00a0/g, " ")).toBe("R$ 125,00");
     expect(insights[1]?.value?.replace(/\u00a0/g, " ")).toBe("R$ 89,00");
   });

@@ -246,6 +246,20 @@
   padding: 0 18px 32px;
 }
 
+.qr-marketing-note {
+  margin: 0 auto;
+  padding: 0 18px 28px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.qr-marketing-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   .menu-price {
     justify-items: start;
