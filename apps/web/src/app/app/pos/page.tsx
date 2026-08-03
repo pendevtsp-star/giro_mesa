@@ -86,6 +86,7 @@ const statusLabels: Record<string, string> = {
   reserved: "Reservada",
   blocked: "Bloqueada",
   waiting_payment: "Aguardando pagamento",
+  pending_approval: "Aguardando aprovação",
   draft: "Rascunho",
 };
 

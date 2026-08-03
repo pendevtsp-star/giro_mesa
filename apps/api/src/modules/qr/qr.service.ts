@@ -63,7 +63,7 @@ type GuestExperienceDraftInput = {
 export type PublicPartnerAttribution = {
   product: "doseclub";
   label: "DoseClub, por GiroMesa";
-  href: "https://doseclube.giromesa.com.br";
+  href: "https://doseclube.giromesa.com.br/?utm_source=giromesa_qr&utm_medium=qr&utm_campaign=organic_attribution";
 };
 
 /**
@@ -87,7 +87,7 @@ export function resolvePublicPartnerAttribution(input: {
   return {
     product: "doseclub",
     label: "DoseClub, por GiroMesa",
-    href: "https://doseclube.giromesa.com.br",
+    href: "https://doseclube.giromesa.com.br/?utm_source=giromesa_qr&utm_medium=qr&utm_campaign=organic_attribution",
   };
 }
 

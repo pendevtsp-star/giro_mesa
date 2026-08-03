@@ -37,6 +37,10 @@ env:
   SMTP_USER: ci
   SMTP_PASSWORD: ci
   EMAIL_FROM: no-reply@example.com
+  # Unsigned QR routes are enabled only for the isolated demo E2E environment.
+  # Production keeps the default disabled and uses signed QR tokens.
+  LEGACY_QR_ENABLED: "true"
+  LEGACY_QR_TENANT_SLUG: bar-aurora-demo
 
 jobs:
   validate:

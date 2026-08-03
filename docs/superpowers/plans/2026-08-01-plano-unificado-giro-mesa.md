@@ -85,6 +85,10 @@ fechado apenas por existir código:
   CSS, URLs e fontes externas continuam bloqueados.
 - Fase 13: o QR público agora oferece CTA acessível “Conheça a tecnologia deste
   atendimento”, mantendo a assinatura discreta e o opt-out de marketing.
+- Fases 12/13: o CTA de atribuição usa somente UTM agregado, o rodapé público
+  anuncia mudanças com status acessível e o PDV traduz `pending_approval` para
+  “Aguardando aprovação”; nenhum identificador de mesa, comanda, tenant ou token
+  é exposto na divulgação.
 - Fases 10/12: rotas QR legadas sem assinatura agora exigem `LEGACY_QR_ENABLED` e
   `LEGACY_QR_TENANT_SLUG`, resolvem somente o tenant demo configurado no servidor e
   não recebem mais `tenantSlug` nem fallback `bar-aurora-demo` do cliente; tokens

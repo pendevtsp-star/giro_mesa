@@ -894,7 +894,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           </div>
         </button>
       </section>
-      <footer className="qr-note">{status}</footer>
+      <footer className="qr-note" role="status" aria-live="polite">
+        {status}
+      </footer>
       {serviceRequest ? (
         <p className="qr-note" role="status">
           Atendimento: {serviceRequestStatusLabel(serviceRequest.status)}.
@@ -911,14 +913,20 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             {qr.partnerAttribution.label}
           </a>
           <span aria-hidden="true"> · </span>
-          <a aria-label="Conheça a tecnologia deste atendimento" href="https://giromesa.com.br">
+          <a
+            aria-label="Conheça a tecnologia deste atendimento"
+            href="https://giromesa.com.br/?utm_source=giromesa_qr&utm_medium=qr&utm_campaign=organic_attribution"
+          >
             Conheça a tecnologia deste atendimento
           </a>
         </p>
       ) : qr.qrSettings?.marketingEnabled !== false ? (
         <p className="qr-marketing-note">
           Tecnologia GiroMesa para uma operação mais simples.{" "}
-          <a aria-label="Conheça a tecnologia deste atendimento" href="https://giromesa.com.br">
+          <a
+            aria-label="Conheça a tecnologia deste atendimento"
+            href="https://giromesa.com.br/?utm_source=giromesa_qr&utm_medium=qr&utm_campaign=organic_attribution"
+          >
             Conheça a tecnologia deste atendimento
           </a>
           .
