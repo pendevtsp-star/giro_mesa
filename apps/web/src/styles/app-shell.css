@@ -3,6 +3,10 @@
   gap: 5px;
 }
 
+.sidebar-menu-toggle {
+  display: none;
+}
+
 .nav-group + .nav-group {
   margin-top: 16px;
   padding-top: 14px;
@@ -66,6 +70,28 @@
 }
 
 @media (max-width: 900px) {
+  .sidebar-menu-toggle {
+    display: inline-flex;
+    min-height: var(--touch-target);
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 0 0.8rem;
+    background: var(--surface);
+    color: var(--ink);
+    font-weight: 800;
+  }
+
+  .app-layout .sidebar nav {
+    display: none;
+  }
+
+  .app-layout .sidebar nav.is-open {
+    display: grid;
+  }
+
   .nav-group + .nav-group {
     margin-top: 8px;
     padding-top: 8px;

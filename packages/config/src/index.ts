@@ -27,6 +27,7 @@ const envSchema = z.object({
   META_ACCESS_TOKEN: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
+  WHATSAPP_TRANSPORT: z.enum(["disabled", "qr_unofficial", "meta_legacy"]).default("disabled"),
   IFOOD_WEBHOOK_MODE: z.enum(["disabled", "sandbox", "mock", "production"]).default("disabled"),
   IFOOD_MERCHANT_ID: z.string().optional(),
   IFOOD_API_KEY: z.string().optional(),

@@ -147,6 +147,15 @@ const handlers: Record<string, QueueHandler> = {
 
     try {
       const result = await provider.send(message);
+      if (result.status === "disabled") {
+        console.warn("whatsapp delivery disabled", {
+          jobId: job.id,
+          to,
+          tenantId,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
       console.log("whatsapp message sent", {
         jobId: job.id,
         messageId: result.messageId,

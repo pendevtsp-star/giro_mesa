@@ -313,7 +313,7 @@ body
   color: var(--ink);
   font-size: clamp(3.2rem, 6.6vw, 6.4rem);
   font-weight: 800;
-  letter-spacing: -0.065em;
+  letter-spacing: -0.04em;
   line-height: 0.94;
   text-wrap: balance;
 }
@@ -360,7 +360,7 @@ body
   color: var(--ink);
   font-size: clamp(2rem, 3vw, 2.8rem);
   font-weight: 780;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
 }
 
 .login-page-night .form p {
@@ -616,7 +616,7 @@ body
   color: var(--ink);
   font-size: clamp(2rem, 3vw, 3rem);
   font-weight: 780;
-  letter-spacing: -0.052em;
+  letter-spacing: -0.04em;
 }
 
 .app-layout-night .workspace-header p {
@@ -1102,7 +1102,7 @@ body
   color: var(--ink);
   font-size: clamp(3rem, 7vw, 5.6rem);
   font-weight: 800;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.04em;
   text-transform: none;
 }
 
@@ -1832,7 +1832,7 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
   margin: 0.7rem 0 1rem;
   font-size: clamp(2.5rem, 6vw, 5rem);
   line-height: 0.98;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.04em;
 }
 
 .support-hero p,
@@ -1962,7 +1962,7 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
     position: sticky;
     display: grid;
     height: auto;
-    grid-template-columns: auto minmax(10rem, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 0.7rem;
     border-right: 0;
     border-bottom: 1px solid var(--line);
@@ -1975,7 +1975,12 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
     justify-self: end;
   }
 
+  .app-layout-night .sidebar-menu-toggle {
+    justify-self: end;
+  }
+
   .app-layout-night .tenant-chip {
+    grid-column: 1 / -1;
     margin: 0;
   }
 
@@ -2128,7 +2133,7 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
   }
 
   .app-layout-night .sidebar {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .app-layout-night .tenant-chip {

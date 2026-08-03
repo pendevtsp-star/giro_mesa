@@ -1,23 +1,6 @@
 "use client";
 
-import {
-  Banknote,
-  Boxes,
-  ChefHat,
-  ClipboardList,
-  CreditCard,
-  FileCheck2,
-  Gauge,
-  type LayoutDashboard,
-  MapPinned,
-  Palette,
-  Printer,
-  QrCode,
-  Rocket,
-  Settings,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
+import { Settings } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app-shell/AppShell";
 import { filterNavigationByPermissions } from "../../components/app-shell/navigation";
@@ -63,30 +46,6 @@ import {
   type TenantSession,
 } from "../../lib/giromesa-api";
 import { useTranslation } from "../../lib/i18n";
-
-type QuickLink = {
-  icon: typeof LayoutDashboard;
-  labelKey: string;
-  href: string;
-  color: string;
-};
-
-const quickLinks: QuickLink[] = [
-  { icon: ClipboardList, labelKey: "nav.pos", href: "/app/pos", color: "#10b981" },
-  { icon: MapPinned, labelKey: "nav.salon", href: "/app/salon", color: "#3b82f6" },
-  { icon: ChefHat, labelKey: "nav.kds", href: "/app/kds", color: "#f59e0b" },
-  { icon: Boxes, labelKey: "nav.inventory", href: "/app/inventory", color: "#8b5cf6" },
-  { icon: Banknote, labelKey: "nav.cash", href: "/app/cash", color: "#ef4444" },
-  { icon: CreditCard, labelKey: "nav.reports", href: "/app/reports", color: "#06b6d4" },
-  { icon: QrCode, labelKey: "nav.catalog", href: "/app/catalog", color: "#ec4899" },
-  { icon: Printer, labelKey: "nav.printing", href: "/app/printing", color: "#6366f1" },
-  { icon: FileCheck2, labelKey: "nav.fiscal", href: "/app/fiscal", color: "#14b8a6" },
-  { icon: Gauge, labelKey: "nav.outbox", href: "/app/outbox", color: "#f97316" },
-  { icon: ShieldCheck, labelKey: "nav.audit", href: "/app/audit", color: "#64748b" },
-  { icon: Users, labelKey: "nav.team", href: "/app/team", color: "#84cc16" },
-  { icon: Palette, labelKey: "nav.branding", href: "/app/settings/branding", color: "#a855f7" },
-  { icon: Rocket, labelKey: "nav.onboarding", href: "/app/onboarding", color: "#0ea5e9" },
-];
 
 export default function AppDashboardPage() {
   const { locale, setLocale, t } = useTranslation();
@@ -140,11 +99,6 @@ export default function AppDashboardPage() {
   const canManageApprovals = permissions.includes("approvals:manage");
   const canReadReports = permissions.includes("reports:read");
   const canManageInventory = permissions.includes("inventory:manage");
-  const accessibleQuickLinks = useMemo(() => {
-    const accessibleHrefs = new Set(visibleNav.map((item) => item.href));
-    return quickLinks.filter((link) => accessibleHrefs.has(link.href));
-  }, [visibleNav]);
-
   useEffect(() => {
     let ignore = false;
 
@@ -397,7 +351,9 @@ export default function AppDashboardPage() {
         </section>
       ) : null}
 
-      {!billingBlocked && metrics.length > 0 ? <OperationalSummaryCards metrics={metrics} /> : null}
+      {!billingBlocked && widgetPrefs.summaryCards && metrics.length > 0 ? (
+        <OperationalSummaryCards metrics={metrics} />
+      ) : null}
 
       {!billingBlocked ? (
         <ProfileDashboardPanel
@@ -465,67 +421,47 @@ export default function AppDashboardPage() {
         </div>
       ) : null}
 
-      {widgetPrefs.shiftPriorities && !billingBlocked ? (
-        <>
-          <PendingCenter
-            onboardingStatus={onboardingStatus}
-            currentShift={currentShift}
-            cashSummary={cashSummary}
-            inventoryAlerts={inventoryAlerts}
-            qrPendingOrders={qrPendingOrders}
-            tickets={tickets}
-            canManageTenant={canManageTenant}
-            canManageCash={canManageCash}
-            canManageInventory={canManageInventory}
-            canOperatePos={canOperatePos}
-            canOperateKds={canOperateKds}
-          />
-          <hr className="dashboard-divider" />
-        </>
+      {!billingBlocked ? (
+        <div className="dashboard-secondary-grid">
+          {widgetPrefs.shiftPriorities ? (
+            <PendingCenter
+              onboardingStatus={onboardingStatus}
+              currentShift={currentShift}
+              cashSummary={cashSummary}
+              inventoryAlerts={inventoryAlerts}
+              qrPendingOrders={qrPendingOrders}
+              tickets={tickets}
+              canManageTenant={canManageTenant}
+              canManageCash={canManageCash}
+              canManageInventory={canManageInventory}
+              canOperatePos={canOperatePos}
+              canOperateKds={canOperateKds}
+            />
+          ) : null}
+          {widgetPrefs.readiness && (canManageTenant || canManageCash || canOperatePos) ? (
+            <OperationalReadinessPanel
+              onboardingStatus={onboardingStatus}
+              currentShift={currentShift}
+              cashSummary={cashSummary}
+              onOpenPos={() => {
+                window.location.href = "/app/pos";
+              }}
+              canManageOnboarding={canManageTenant}
+              canManageCash={canManageCash}
+              canOpenPos={canOperatePos}
+            />
+          ) : null}
+        </div>
       ) : null}
 
-      {widgetPrefs.readiness &&
-      !billingBlocked &&
-      (canManageTenant || canManageCash || canOperatePos) ? (
-        <OperationalReadinessPanel
-          onboardingStatus={onboardingStatus}
-          currentShift={currentShift}
-          cashSummary={cashSummary}
-          onOpenPos={() => {
-            window.location.href = "/app/pos";
-          }}
-          canManageOnboarding={canManageTenant}
-          canManageCash={canManageCash}
-          canOpenPos={canOperatePos}
-        />
+      {!billingBlocked ? (
+        <div className="dashboard-insights-grid">
+          <PeriodSalesCard salesData={salesPeriodData} />
+          <RecentAlertsSection inventoryAlerts={inventoryAlerts} cashSummary={cashSummary} />
+        </div>
       ) : null}
-
-      {!billingBlocked ? <PeriodSalesCard salesData={salesPeriodData} /> : null}
 
       {!billingBlocked ? <BranchComparisonCard rows={branchSummaries} /> : null}
-
-      {!billingBlocked ? (
-        <RecentAlertsSection inventoryAlerts={inventoryAlerts} cashSummary={cashSummary} />
-      ) : null}
-
-      {!billingBlocked ? (
-        <section className="quick-links-section">
-          <div className="panel-heading">
-            <div>
-              <span className="section-kicker">{t("dashboard.quickAccess")}</span>
-              <h2>{t("dashboard.systemModules")}</h2>
-            </div>
-          </div>
-          <div className="quick-links-grid">
-            {accessibleQuickLinks.map((link) => (
-              <a className="quick-link-card" href={link.href} key={link.href}>
-                <link.icon size={24} style={{ color: link.color }} />
-                <strong>{t(link.labelKey)}</strong>
-              </a>
-            ))}
-          </div>
-        </section>
-      ) : null}
     </AppShell>
   );
 }

@@ -62,6 +62,23 @@ const experienceSchema = z.object({
   welcomeMessage: z.string().max(180).optional(),
   menuHeadline: z.string().max(120).optional(),
   marketingEnabled: z.boolean().optional(),
+  coverUrl: z
+    .preprocess(
+      (value) => (value === "" ? null : value),
+      z
+        .string()
+        .max(500)
+        .refine(
+          (value) => value.startsWith("https://") || /^\/uploads\/[A-Za-z0-9._/-]+$/.test(value),
+          "Capa deve usar HTTPS ou um arquivo local em /uploads/",
+        )
+        .nullable(),
+    )
+    .optional(),
+  language: z.enum(["pt-BR", "en", "es"]).optional(),
+  highlights: z.array(z.string().trim().min(1).max(80)).max(6).optional(),
+  campaignMessage: z.string().trim().max(180).optional(),
+  houseInfo: z.string().trim().max(300).optional(),
   scheduledAt: z.coerce
     .date()
     .refine((value) => value.getTime() > Date.now(), "Scheduled publication must be in the future")

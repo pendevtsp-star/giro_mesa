@@ -304,6 +304,10 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const customInstruction = qr?.qrSettings?.instruction?.trim();
   const welcomeMessage = qr?.qrSettings?.welcomeMessage?.trim();
   const menuHeadline = qr?.qrSettings?.menuHeadline?.trim();
+  const coverUrl = qr?.qrSettings?.coverUrl?.trim();
+  const campaignMessage = qr?.qrSettings?.campaignMessage?.trim();
+  const houseInfo = qr?.qrSettings?.houseInfo?.trim();
+  const highlights = qr?.qrSettings?.highlights?.filter(Boolean) ?? [];
 
   function addProduct(product: Pick<Product, "id" | "name" | "priceCents">) {
     setCart((current) => {
@@ -677,6 +681,23 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             customInstruction ||
             "Monte seu pedido, chame atendimento ou solicite a pré-conta da mesa."}
         </p>
+        {coverUrl ? (
+          <div
+            className="table-qr-cover"
+            role="img"
+            aria-label="Imagem do estabelecimento"
+            style={{ backgroundImage: `url("${coverUrl}")` }}
+          />
+        ) : null}
+        {campaignMessage ? <p className="table-qr-campaign">{campaignMessage}</p> : null}
+        {highlights.length ? (
+          <ul className="table-qr-highlights" aria-label="Destaques da casa">
+            {highlights.map((highlight) => (
+              <li key={highlight}>{highlight}</li>
+            ))}
+          </ul>
+        ) : null}
+        {houseInfo ? <p className="table-qr-house-info">{houseInfo}</p> : null}
       </header>
 
       <section className="qr-order-grid">

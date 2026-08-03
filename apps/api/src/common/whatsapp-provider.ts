@@ -43,9 +43,9 @@ type MediaMessage = {
 export type WhatsAppMessage = TextMessage | TemplateMessage | MediaMessage;
 
 export type WhatsAppDelivery = {
-  provider: "whatsapp_cloud";
+  provider: "whatsapp_cloud" | "disabled";
   messageId: string;
-  status: "sent" | "queued";
+  status: "sent" | "queued" | "disabled";
   to: string;
 };
 
@@ -66,6 +66,7 @@ export interface WhatsAppProvider {
   parseIncomingPayload(payload: Record<string, unknown>): IncomingMessage[];
 }
 
+/** Test-only transport; the factory never selects it. */
 export class MockWhatsAppProvider implements WhatsAppProvider {
   async send(message: WhatsAppMessage): Promise<WhatsAppDelivery> {
     return {
@@ -76,11 +77,30 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     };
   }
 
-  verifyWebhubChallenge(mode: string, token: string, challenge: string): string | null {
+  verifyWebhubChallenge(): string | null {
     return null;
   }
 
-  parseIncomingPayload(_payload: Record<string, unknown>): IncomingMessage[] {
+  parseIncomingPayload(): IncomingMessage[] {
+    return [];
+  }
+}
+
+export class DisabledWhatsAppProvider implements WhatsAppProvider {
+  async send(message: WhatsAppMessage): Promise<WhatsAppDelivery> {
+    return {
+      provider: "disabled",
+      messageId: "",
+      status: "disabled",
+      to: message.to,
+    };
+  }
+
+  verifyWebhubChallenge(): string | null {
+    return null;
+  }
+
+  parseIncomingPayload(): IncomingMessage[] {
     return [];
   }
 }
@@ -274,9 +294,10 @@ export class WhatsAppCloudProvider implements WhatsAppProvider {
 }
 
 export function createWhatsAppProvider(): WhatsAppProvider {
-  // Legacy Meta transport is opt-in; QR pairing remains the product direction.
-  if (process.env.WHATSAPP_TRANSPORT !== "meta_legacy") {
-    return new MockWhatsAppProvider();
+  const transport = process.env.WHATSAPP_TRANSPORT ?? "disabled";
+  if (transport !== "meta_legacy") {
+    // QR pairing is intentionally explicit and stays unavailable until its connector is installed.
+    return new DisabledWhatsAppProvider();
   }
   const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
   const accessToken = process.env.META_ACCESS_TOKEN;
@@ -290,7 +311,7 @@ export function createWhatsAppProvider(): WhatsAppProvider {
     });
   }
 
-  return new MockWhatsAppProvider();
+  return new DisabledWhatsAppProvider();
 }
 
 function isPlaceholderValue(value: string | undefined) {

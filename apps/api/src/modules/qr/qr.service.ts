@@ -24,6 +24,7 @@ import type {
   QrBranchSettings,
   QrCapability,
   QrFontPreset,
+  QrLanguage,
   QrTemplate,
   TenantContext,
 } from "@giromesa/domain";
@@ -644,6 +645,11 @@ export class QrService {
         ...(settings.marketingEnabled !== undefined
           ? { marketingEnabled: settings.marketingEnabled }
           : {}),
+        ...(settings.coverUrl !== undefined ? { coverUrl: settings.coverUrl } : {}),
+        ...(settings.language ? { language: settings.language } : {}),
+        ...(settings.highlights?.length ? { highlights: settings.highlights } : {}),
+        ...(settings.campaignMessage ? { campaignMessage: settings.campaignMessage } : {}),
+        ...(settings.houseInfo ? { houseInfo: settings.houseInfo } : {}),
       },
       ...(partnerAttribution ? { partnerAttribution } : {}),
       categories: menuCategories,
@@ -1263,6 +1269,23 @@ function isQrTemplate(value: unknown): value is QrTemplate {
   ].includes(value as QrTemplate);
 }
 
+function isQrLanguage(value: unknown): value is QrLanguage {
+  return value === "pt-BR" || value === "en" || value === "es";
+}
+
+export function sanitizeQrExperienceAssetUrl(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (/^\/uploads\/[A-Za-z0-9._/-]+$/.test(trimmed)) return trimmed;
+  if (!trimmed.startsWith("https://") || /[\s<>"'`\\]/.test(trimmed)) return undefined;
+  try {
+    return new URL(trimmed).protocol === "https:" ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function defaultSettings(branchId: string): QrBranchSettings {
   return {
     branchId,
@@ -1286,6 +1309,7 @@ function mergeExperienceSettings(
       )
     : base.capabilities;
   const fontPreset = sanitizeQrFontPreset(config.fontPreset);
+  const coverUrl = sanitizeQrExperienceAssetUrl(config.coverUrl);
   return {
     ...base,
     ...(typeof config.reviewBeforeKds === "boolean"
@@ -1306,6 +1330,23 @@ function mergeExperienceSettings(
       : {}),
     ...(typeof config.marketingEnabled === "boolean"
       ? { marketingEnabled: config.marketingEnabled }
+      : {}),
+    ...(coverUrl !== undefined ? { coverUrl } : {}),
+    ...(isQrLanguage(config.language) ? { language: config.language } : {}),
+    ...(Array.isArray(config.highlights)
+      ? {
+          highlights: config.highlights
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim().slice(0, 80))
+            .filter(Boolean)
+            .slice(0, 6),
+        }
+      : {}),
+    ...(typeof config.campaignMessage === "string"
+      ? { campaignMessage: config.campaignMessage.trim().slice(0, 180) }
+      : {}),
+    ...(typeof config.houseInfo === "string"
+      ? { houseInfo: config.houseInfo.trim().slice(0, 300) }
       : {}),
     ...(capabilities.length ? { capabilities } : {}),
   };

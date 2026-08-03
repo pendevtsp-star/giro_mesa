@@ -137,4 +137,24 @@ test.describe("Auth: login flow", () => {
       /giromesa-symbol\.svg/,
     );
   });
+
+  test("keeps the mobile workspace focused until the operator opens navigation", async ({
+    page,
+  }) => {
+    await skipWhenApiUnavailable();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await authenticateBrowserPage(page);
+
+    const navigation = page.locator("#app-primary-navigation");
+    const toggle = page.getByRole("button", { name: "Abrir menu de módulos" });
+    await expect(toggle).toBeVisible();
+    await expect(navigation).toBeHidden();
+
+    await toggle.click();
+    await expect(navigation).toBeVisible();
+    await expect(page.getByRole("button", { name: "Fechar menu de módulos" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
 });

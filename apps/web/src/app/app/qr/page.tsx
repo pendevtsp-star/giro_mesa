@@ -83,6 +83,21 @@ export default function QrManagementPage() {
           ...(activeExperience.config.marketingEnabled !== undefined
             ? { marketingEnabled: activeExperience.config.marketingEnabled }
             : {}),
+          ...(activeExperience.config.coverUrl !== undefined
+            ? { coverUrl: activeExperience.config.coverUrl }
+            : {}),
+          ...(activeExperience.config.language
+            ? { language: activeExperience.config.language }
+            : {}),
+          ...(activeExperience.config.highlights
+            ? { highlights: activeExperience.config.highlights }
+            : {}),
+          ...(activeExperience.config.campaignMessage
+            ? { campaignMessage: activeExperience.config.campaignMessage }
+            : {}),
+          ...(activeExperience.config.houseInfo
+            ? { houseInfo: activeExperience.config.houseInfo }
+            : {}),
         });
       }
       setTables(nextTables);
@@ -124,6 +139,11 @@ export default function QrManagementPage() {
         ...(settings.marketingEnabled !== undefined
           ? { marketingEnabled: settings.marketingEnabled }
           : {}),
+        ...(settings.coverUrl !== undefined ? { coverUrl: settings.coverUrl } : {}),
+        ...(settings.language ? { language: settings.language } : {}),
+        ...(settings.highlights ? { highlights: settings.highlights } : {}),
+        ...(settings.campaignMessage ? { campaignMessage: settings.campaignMessage } : {}),
+        ...(settings.houseInfo ? { houseInfo: settings.houseInfo } : {}),
       });
       setMessage("Política e identidade dos QR codes salvas.");
     } catch (error) {
@@ -425,6 +445,64 @@ export default function QrManagementPage() {
                 />
               </label>
             </div>
+            <div className="form-grid two-columns">
+              <label>
+                Imagem de capa
+                <input
+                  maxLength={500}
+                  onChange={(event) =>
+                    setSettings({ ...settings, coverUrl: event.target.value || null })
+                  }
+                  placeholder="https://... ou /uploads/capa.webp"
+                  value={settings.coverUrl ?? ""}
+                />
+                <span className="muted-copy">Somente HTTPS ou arquivos em /uploads/.</span>
+              </label>
+              <div className="muted-copy">
+                Traduções da experiência pública serão liberadas com o pacote de idiomas homologado.
+              </div>
+            </div>
+            <div className="form-grid two-columns">
+              <label>
+                Destaques da casa
+                <input
+                  maxLength={500}
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      highlights: event.target.value
+                        .split(",")
+                        .map((value) => value.trim())
+                        .filter(Boolean)
+                        .slice(0, 6),
+                    })
+                  }
+                  placeholder="Happy hour, música ao vivo, varanda"
+                  value={settings.highlights?.join(", ") ?? ""}
+                />
+              </label>
+              <label>
+                Mensagem de campanha
+                <input
+                  maxLength={180}
+                  onChange={(event) =>
+                    setSettings({ ...settings, campaignMessage: event.target.value })
+                  }
+                  placeholder="Hoje: rodada dupla até 20h"
+                  value={settings.campaignMessage ?? ""}
+                />
+              </label>
+            </div>
+            <label>
+              Informações da casa
+              <textarea
+                maxLength={300}
+                onChange={(event) => setSettings({ ...settings, houseInfo: event.target.value })}
+                placeholder="Wi-Fi, acessibilidade, horários ou orientações úteis"
+                rows={3}
+                value={settings.houseInfo ?? ""}
+              />
+            </label>
             <label className="qr-switch-row">
               <input
                 checked={settings.marketingEnabled !== false}

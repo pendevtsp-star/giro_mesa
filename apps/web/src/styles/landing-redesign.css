@@ -279,17 +279,14 @@
   color: var(--landing-ink);
   font-size: clamp(3.2rem, 6vw, 5.8rem);
   font-weight: 800;
-  letter-spacing: -0.067em;
+  letter-spacing: -0.04em;
   line-height: 0.98;
   text-wrap: balance;
 }
 
 .landing-hero h1 span {
   display: block;
-  background: linear-gradient(95deg, var(--landing-yellow), #fde68a 78%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--landing-yellow);
 }
 
 .landing-hero-copy > p {
@@ -596,7 +593,7 @@
   color: var(--landing-ink);
   font-size: clamp(2.15rem, 4vw, 3.8rem);
   font-weight: 760;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.04em;
   line-height: 1.06;
   text-wrap: balance;
 }
@@ -807,8 +804,8 @@
 
 .landing-security dl div {
   padding: 1.1rem 1.25rem;
-  border-left: 3px solid var(--landing-yellow);
-  border-radius: 0 0.6rem 0.6rem 0;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  border-radius: 0.6rem;
   background: rgba(255, 255, 255, 0.045);
 }
 
@@ -889,7 +886,7 @@
   color: var(--landing-ink);
   font-variant-numeric: tabular-nums;
   font-size: 2.25rem;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
 }
 
 .is-featured .landing-price strong {
@@ -1377,9 +1374,7 @@ html[data-theme="light"] .landing-ambient-yellow {
 }
 
 html[data-theme="light"] .landing-hero h1 span {
-  background: linear-gradient(95deg, #8a4f06, #b66f0b 78%);
-  -webkit-background-clip: text;
-  background-clip: text;
+  color: #8a4f06;
 }
 
 html[data-theme="light"] .landing-dashboard {

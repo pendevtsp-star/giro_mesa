@@ -386,7 +386,8 @@
 
 .sales-security dl div {
   padding: 16px;
-  border-left: 3px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.62);
 }
 
@@ -597,7 +598,6 @@
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
-  transition: width 240ms ease;
 }
 
 .onboarding-welcome {

@@ -170,6 +170,45 @@
   min-height: 300px;
 }
 
+.table-qr-cover {
+  width: min(100%, 420px);
+  height: 180px;
+  max-height: 180px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background-position: center;
+  background-size: cover;
+  object-fit: cover;
+}
+
+.table-qr-campaign,
+.table-qr-house-info {
+  max-width: 720px;
+  margin: 0;
+}
+
+.table-qr-campaign {
+  color: #ffcc00;
+  font-weight: 800;
+}
+
+.table-qr-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.table-qr-highlights li {
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.85rem;
+}
+
 .qr-actions {
   display: grid;
   gap: 12px;

@@ -42,9 +42,9 @@ type MediaMessage = {
 export type WhatsAppMessage = TextMessage | TemplateMessage | MediaMessage;
 
 export type WhatsAppDelivery = {
-  provider: "whatsapp_cloud";
+  provider: "whatsapp_cloud" | "disabled";
   messageId: string;
-  status: "sent" | "queued";
+  status: "sent" | "queued" | "disabled";
   to: string;
 };
 
@@ -52,12 +52,24 @@ export interface WhatsAppProvider {
   send(message: WhatsAppMessage): Promise<WhatsAppDelivery>;
 }
 
+/** Test-only transport; the factory never selects it. */
 export class MockWhatsAppProvider implements WhatsAppProvider {
   async send(message: WhatsAppMessage): Promise<WhatsAppDelivery> {
     return {
       provider: "whatsapp_cloud",
       messageId: `mock-wa:${message.to}:${Date.now()}`,
       status: "queued",
+      to: message.to,
+    };
+  }
+}
+
+export class DisabledWhatsAppProvider implements WhatsAppProvider {
+  async send(message: WhatsAppMessage): Promise<WhatsAppDelivery> {
+    return {
+      provider: "disabled",
+      messageId: "",
+      status: "disabled",
       to: message.to,
     };
   }
@@ -188,9 +200,9 @@ export class WhatsAppCloudProvider implements WhatsAppProvider {
 }
 
 export function createWhatsAppProvider(): WhatsAppProvider {
-  // Legacy Meta transport is opt-in; QR pairing remains the product direction.
-  if (process.env.WHATSAPP_TRANSPORT !== "meta_legacy") {
-    return new MockWhatsAppProvider();
+  const transport = process.env.WHATSAPP_TRANSPORT ?? "disabled";
+  if (transport !== "meta_legacy") {
+    return new DisabledWhatsAppProvider();
   }
   const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
   const accessToken = process.env.META_ACCESS_TOKEN;
@@ -199,7 +211,7 @@ export function createWhatsAppProvider(): WhatsAppProvider {
     return new WhatsAppCloudProvider({ phoneNumberId, accessToken });
   }
 
-  return new MockWhatsAppProvider();
+  return new DisabledWhatsAppProvider();
 }
 
 function isPlaceholderValue(value: string | undefined) {

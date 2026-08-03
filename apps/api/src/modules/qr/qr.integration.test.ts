@@ -190,6 +190,10 @@ runIntegration("secure table QR", () => {
       template: "premium",
       primaryColor: "#123456",
       welcomeMessage: "Bem-vindo",
+      coverUrl: "/uploads/cover.webp",
+      highlights: ["Happy hour", "Música ao vivo"],
+      campaignMessage: "Rodada dupla até 20h",
+      houseInfo: "Wi-Fi disponível",
     });
     expect(draft.status).toBe("draft");
     const published = await service.publishExperience(context, draft.id);
@@ -199,6 +203,8 @@ runIntegration("secure table QR", () => {
       template: "premium",
       primaryColor: "#123456",
       welcomeMessage: "Bem-vindo",
+      coverUrl: "/uploads/cover.webp",
+      highlights: ["Happy hour", "Música ao vivo"],
     });
     const secondDraft = await service.createExperienceDraft(context, {
       template: "minimal",

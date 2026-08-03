@@ -24,7 +24,7 @@
 
 .product-row--selected {
   background: rgba(245, 166, 35, 0.08);
-  border-left: 3px solid var(--accent, #f5a623);
+  border-color: color-mix(in srgb, var(--accent, #f5a623) 55%, var(--line));
 }
 
 .product-row {

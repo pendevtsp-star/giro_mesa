@@ -20,6 +20,8 @@ export type QrTemplate =
 
 export type QrFontPreset = "system" | "serif" | "display";
 
+export type QrLanguage = "pt-BR" | "en" | "es";
+
 export type QrBranchSettings = {
   branchId: string;
   capabilities: QrCapability[];
@@ -32,6 +34,11 @@ export type QrBranchSettings = {
   welcomeMessage?: string;
   menuHeadline?: string;
   marketingEnabled?: boolean;
+  coverUrl?: string | null;
+  language?: QrLanguage;
+  highlights?: string[];
+  campaignMessage?: string;
+  houseInfo?: string;
 };
 
 export type GuestExperienceConfig = QrBranchSettings;

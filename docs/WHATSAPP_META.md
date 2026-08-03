@@ -1,4 +1,15 @@
-# WhatsApp Meta
+# WhatsApp e pareamento por QR
+
+O GiroMesa não usa a integração oficial Meta como requisito do produto. O
+transporte padrão é `WHATSAPP_TRANSPORT=disabled`: nenhuma mensagem é marcada
+como enviada enquanto um conector real não estiver instalado.
+
+`qr_unofficial` reserva o modo de pareamento por QR para o conector não oficial
+que será homologado separadamente. Ele também permanece desativado até que o
+conector exista; a interface não simula sucesso de entrega. A documentação e a
+interface devem informar explicitamente que esse canal não é Meta oficial.
+
+`meta_legacy` continua disponível apenas para migração/homologação controlada.
 
 ## Usos
 
@@ -10,7 +21,9 @@
 
 ## MVP
 
-Provider mock e estrutura de templates. Envio real depende de WABA, phone number id, token, templates aprovados e webhooks configurados.
+O núcleo mantém apenas a estrutura de templates. O transporte real por QR depende
+de um conector separado, pareamento, sessão protegida e homologação por filial;
+até lá o envio fica desabilitado, sem provider mock apresentado como entrega.
 
 ## Regras
 

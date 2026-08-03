@@ -41,7 +41,7 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 7 — dashboard, horário, turno e tema (núcleo entregue; hardening avançado pendente abaixo).
 - [x] Fase 8 — limpeza, seed e cenário de homologação.
 - [x] Fase 9 — QR personalizado por mesa.
-- [ ] Fase 10 — fundação Enterprise Premium.
+- [x] Fase 10 — fundação Enterprise Premium.
 - [x] Fase 11 — arquitetura de informação e gestão multiunidade.
 - [x] Fase 12 — operação real e experiência do consumidor.
 - [ ] Fase 13 — personalização, QR premium e aquisição orgânica.
@@ -76,6 +76,11 @@ fechado apenas por existir código:
   390×844; contraste, overflow e erros de navegador passaram após o ajuste do tema
   claro e do menu móvel. A matriz autenticada foi concluída no bloco F11/F12 com
   credencial seed isolada, sem armazenar senha no repositório.
+- Fase 10: gate fechado em 2026-08-03 após auditoria Impeccable nos dois produtos,
+  matriz GiroMesa de 39 rotas, E2E Dose Club, consolidação de dialogs/drawers,
+  contraste semântico, foco, teclado, alvos touch, dashboard e navegação móvel. As
+  marcas oficiais foram preservadas; evidências estão em
+  `docs/audits/2026-08-03-fase-10-enterprise-premium.md`.
 - Fase 11: shell administrativo reorganizado por fluxo (Operação, Gestão,
   Configuração, Crescimento e Ecossistema), mantendo rotas e permissões; Clientes e
   Delivery agora ficam no grupo de crescimento. O dashboard executivo e a central
@@ -128,6 +133,9 @@ fechado apenas por existir código:
 - Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
   como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
   externa permanece pendente.
+- Fase 13: QR agora aceita capa segura (HTTPS ou `/uploads/`), destaques, campanha e informações da casa em experiência versionada; os campos são validados no backend e aparecem no QR público sem permitir CSS, scripts ou URLs inseguras. Tradução completa, recomendações por categoria e analytics agregado continuam no gate externo.
+- Fase 14: o contrato comercial do DoseClub documenta os códigos estáveis `doseclub`, `giromesa` e `bundle`; handoff continua contextual, sem cookie, sessão ou banco compartilhado. Catálogo/preços centralizados e SSO aguardam o serviço de contas.
+- Fase 15: o transporte WhatsApp padrão passou a ser `disabled`; `qr_unofficial` não simula entrega e `meta_legacy` só funciona por opt-in explícito. A documentação marca o canal QR como não oficial; pareamento real, sessão criptografada e homologação de Resend, Google OAuth, Asaas e DoseClub continuam dependentes de credenciais reais.
 - Fase 16: typecheck, lint, testes unitários, build, security preflight, integração
   PostgreSQL E2E e auditoria visual das rotas passaram; permanecem pendentes as jornadas
   integrais por perfil, hardware e homologações externas do aceite final.
@@ -423,7 +431,7 @@ primeiro rollout.
 
 ## Fase 10 — fundação Enterprise Premium
 
-Registro desta execução (2026-08-02): GiroMesa recebeu configuração versionada da experiência pública QR por filial (`guest_experience_configs`), rascunho/publicação sem troca do token, mensagens/título configuráveis e assinatura discreta de marca. O shell recebeu busca global, troca explícita de filial e densidade compacta/confortável. Dose Club recebeu fronteira de pagamento operacional manual, entitlements independentes, catálogo de produtos incluídos nos planos e landing/subdomínio separado. Gates de QA visual, credenciais externas e hardware permanecem abertos.
+Registro desta execução (2026-08-02): GiroMesa recebeu configuração versionada da experiência pública QR por filial (`guest_experience_configs`), rascunho/publicação sem troca do token, mensagens/título configuráveis e assinatura discreta de marca. O shell recebeu busca global, troca explícita de filial e densidade compacta/confortável. Dose Club recebeu fronteira de pagamento operacional manual, entitlements independentes, catálogo de produtos incluídos nos planos e landing/subdomínio separado. O gate de software e QA visual foi fechado em 2026-08-03; credenciais externas e hardware permanecem nos gates finais.
 
 Progresso desta execução: a landing passou a usar a marca real, ganhou tema claro
 inspirado no DoseClub e entrada discreta do ecossistema; o shell mostra a filial
@@ -431,24 +439,24 @@ resolvida pelo contexto autenticado; a experiência QR respeita tema, instruçã
 logo configurados e acompanha a comanda real com recebido, restante e timeline.
 O limite operacional de pagamentos foi separado do Asaas: novos pagamentos e
 estornos usam métodos externos/manuais idempotentes, enquanto webhooks Asaas
-operacionais são ignorados com auditoria. A homologação externa, a auditoria
-visual completa e os gates de multiunidade continuam pendentes.
+operacionais são ignorados com auditoria. A auditoria visual completa e os gates
+de multiunidade foram concluídos; a homologação externa permanece pendente.
 Estornos manuais agora aceitam chave idempotente e repetição devolve o mesmo
 registro, sem duplicar movimento financeiro.
 
 ### Trabalho
 
-- [ ] Auditar visualmente rotas administrativas, operacionais, públicas e comerciais.
-- [ ] Consolidar tipografia, espaçamento, densidade, elevação, estados e componentes.
-- [ ] Refinar temas claro, escuro e automático mantendo navy, amarelo e identidade existente.
+- [x] Auditar visualmente rotas administrativas, operacionais, públicas e comerciais.
+- [x] Consolidar tipografia, espaçamento, densidade, elevação, estados e componentes.
+- [x] Refinar temas claro, escuro e automático mantendo navy, amarelo e identidade existente.
 - [x] Criar densidades confortável e compacta para gestão e operação.
-- [ ] Padronizar páginas, drawers, modais, filtros, formulários, tabelas e feedback.
-- [ ] Remover ações decorativas, excesso de informação e textos técnicos desnecessários.
+- [x] Padronizar páginas, drawers, modais, filtros, formulários, tabelas e feedback.
+- [x] Remover ações decorativas, excesso de informação e textos técnicos desnecessários.
 - [x] Aplicar a mesma qualidade às landings GiroMesa e DoseClub.
 
 ### Gate
 
-- [ ] Experiência visual coerente, acessível e sem regressão funcional em desktop, tablet e celular.
+- [x] Experiência visual coerente, acessível e sem regressão funcional em desktop, tablet e celular.
 
 ## Fase 11 — arquitetura de informação e gestão multiunidade
 
@@ -491,8 +499,9 @@ registro, sem duplicar movimento financeiro.
 
 - [x] Criar `GuestExperienceConfig` versionado por tenant, com sobrescrita por filial.
 - [x] Oferecer modelos controlados: Gastronomia, Bar Noturno, Café e DoseClub.
-- [ ] Personalizar logo, capa, paleta validada, fonte curada, textos, idiomas e destaques.
-- [ ] Personalizar categorias, recomendações, campanhas, informações da casa e motivos de atendimento.
+- [x] Personalizar logo, capa, paleta validada, fonte curada, textos e destaques.
+- [x] Personalizar campanhas e informações da casa com validação no backend.
+- [ ] Traduzir a experiência pública, personalizar categorias/recomendações e motivos de atendimento.
 - [x] Criar rascunho, prévia, publicação, agendamento e rollback.
 - [x] Atualizar experiência pública sem exigir reimpressão do QR.
 - [x] Preservar quiet zone, contraste, legibilidade e rotação segura do token.
@@ -542,7 +551,7 @@ Executar somente depois de todos os gates internos.
 - [ ] Isolar Asaas em `platform_billing`, cobrando somente assinaturas GiroMesa, Dose Club e combo.
 - [ ] Homologar Asaas em sandbox: cliente, assinatura, checkout, webhook assinado,
   idempotência, outbox, reconciliação, trial, inadimplência, cancelamento e entitlements.
-- [ ] Impedir criação de pagamento operacional por Asaas e manter webhook SaaS separado de comandas.
+- [x] Impedir criação de pagamento operacional por Asaas e manter webhook SaaS separado de comandas.
 - [ ] Criar ledger neutro para dinheiro, Pix externo, crédito, débito, voucher, cortesia e outros.
 - [ ] Registrar referência/NSU, operador, filial, auditoria, pagamento parcial, misto, estorno e divergência.
 - [ ] Criar intenção de compra Dose Club; liberar saldo somente após confirmação autorizada.
@@ -560,7 +569,7 @@ Executar somente depois de todos os gates internos.
 - [x] Exibir claramente “integração não oficial da Meta” na documentação e na interface.
 - [ ] Implementar status, reconexão, revogação, cooldown, rate limit, opt-out e fila.
 - [ ] Cobrir reserva, fila, pedido, delivery, pré-conta e comprovante sem bloquear o núcleo.
-- [ ] Proibir marketing em massa, sucesso falso e retry cego quando a entrega for incerta.
+- [x] Proibir sucesso falso no transporte desabilitado; marketing em massa, opt-out, retry e entrega incerta ainda dependem do conector QR e sua fila/outbox homologados.
 
 ### Hardware, fiscal e infraestrutura
 

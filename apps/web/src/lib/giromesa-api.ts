@@ -106,6 +106,11 @@ export type QrBranchSettings = {
   welcomeMessage?: string;
   menuHeadline?: string;
   marketingEnabled?: boolean;
+  coverUrl?: string | null;
+  language?: "pt-BR" | "en" | "es";
+  highlights?: string[];
+  campaignMessage?: string;
+  houseInfo?: string;
 };
 
 export type GuestExperienceRevision = {
@@ -117,6 +122,11 @@ export type GuestExperienceRevision = {
     welcomeMessage?: string;
     menuHeadline?: string;
     marketingEnabled?: boolean;
+    coverUrl?: string | null;
+    language?: "pt-BR" | "en" | "es";
+    highlights?: string[];
+    campaignMessage?: string;
+    houseInfo?: string;
   };
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -1068,6 +1078,11 @@ export type PublicQrSettings = {
   welcomeMessage?: string;
   menuHeadline?: string;
   marketingEnabled?: boolean;
+  coverUrl?: string | null;
+  language?: "pt-BR" | "en" | "es";
+  highlights?: string[];
+  campaignMessage?: string;
+  houseInfo?: string;
 };
 
 export type PublicPartnerAttribution = {

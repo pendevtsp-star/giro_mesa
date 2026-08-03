@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createWhatsAppProvider,
-  MockWhatsAppProvider,
+  DisabledWhatsAppProvider,
   WhatsAppCloudProvider,
 } from "./whatsapp-provider";
 
@@ -24,7 +24,17 @@ describe("WhatsApp transport policy", () => {
     process.env.META_PHONE_NUMBER_ID = "123456";
     process.env.META_ACCESS_TOKEN = "token";
 
-    expect(createWhatsAppProvider()).toBeInstanceOf(MockWhatsAppProvider);
+    expect(createWhatsAppProvider()).toBeInstanceOf(DisabledWhatsAppProvider);
+  });
+
+  it("keeps QR pairing explicit without pretending a message was delivered", async () => {
+    process.env.WHATSAPP_TRANSPORT = "qr_unofficial";
+    const result = await createWhatsAppProvider().send({
+      type: "text",
+      to: "+5511999999999",
+      text: "teste",
+    });
+    expect(result).toMatchObject({ provider: "disabled", status: "disabled", messageId: "" });
   });
 
   it("allows the legacy provider only for an explicit migration setting", () => {
