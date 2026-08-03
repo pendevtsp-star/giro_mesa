@@ -42,6 +42,15 @@
   gap: 0.65rem;
 }
 
+.qr-schedule-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.qr-schedule-field .muted-copy {
+  font-size: 0.8rem;
+}
+
 .qr-capabilities {
   border: 0;
   display: grid;

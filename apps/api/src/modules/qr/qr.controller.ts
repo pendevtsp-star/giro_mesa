@@ -61,10 +61,20 @@ const experienceSchema = z.object({
   welcomeMessage: z.string().max(180).optional(),
   menuHeadline: z.string().max(120).optional(),
   marketingEnabled: z.boolean().optional(),
+  scheduledAt: z.coerce
+    .date()
+    .refine((value) => value.getTime() > Date.now(), "Scheduled publication must be in the future")
+    .optional(),
 });
 
 const rollbackExperienceSchema = z.object({
   revisionId: z.string().uuid(),
+});
+
+const scheduleExperienceSchema = z.object({
+  scheduledAt: z.coerce
+    .date()
+    .refine((value) => value.getTime() > Date.now(), "Scheduled publication must be in the future"),
 });
 
 const artworkSchema = z.object({
@@ -129,6 +139,21 @@ export class QrController {
     return this.qrService.createExperienceDraft(
       await this.manageContext(headers),
       experienceSchema.parse(body),
+    );
+  }
+
+  @Post("experience/:revisionId/schedule")
+  async scheduleExperience(
+    @Headers() headers: HeaderRecord,
+    @Param("revisionId") revisionId: string,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const { scheduledAt } = scheduleExperienceSchema.parse(body);
+    return this.qrService.scheduleExperience(
+      await this.manageContext(headers),
+      z.string().uuid().parse(revisionId),
+      scheduledAt,
     );
   }
 

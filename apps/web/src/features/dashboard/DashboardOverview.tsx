@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import type {
   CashSessionSummary,
   CurrentShiftResponse,
+  DashboardSummary,
   InventoryAlert,
   KdsTicket,
   OnboardingStatus,
@@ -430,6 +431,54 @@ export function PendingCenter(props: PendingCenterInput) {
           Nao ha pendencias criticas para o seu perfil neste momento.
         </p>
       )}
+    </section>
+  );
+}
+
+export type BranchDashboardSummary = {
+  id: string;
+  name: string;
+  summary: DashboardSummary;
+};
+
+export function BranchComparisonCard({ rows }: { rows: BranchDashboardSummary[] }) {
+  if (rows.length < 2) return null;
+
+  return (
+    <section className="panel dashboard-branch-comparison" aria-label="Comparação entre filiais">
+      <div className="panel-title">
+        <div>
+          <span className="section-kicker">Multiunidade</span>
+          <h2>Comparação entre filiais</h2>
+        </div>
+        <BarChart3 size={20} aria-hidden="true" />
+      </div>
+      <div className="dashboard-branch-table-wrap">
+        <table className="dashboard-branch-table">
+          <thead>
+            <tr>
+              <th scope="col">Filial</th>
+              <th scope="col">Vendas hoje</th>
+              <th scope="col">Pedidos</th>
+              <th scope="col">Mesas</th>
+              <th scope="col">Caixa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...rows]
+              .sort((left, right) => right.summary.salesToday - left.summary.salesToday)
+              .map((row) => (
+                <tr key={row.id}>
+                  <th scope="row">{row.name}</th>
+                  <td>{formatMoney(row.summary.salesToday)}</td>
+                  <td>{row.summary.activeOrders}</td>
+                  <td>{row.summary.occupiedTables}</td>
+                  <td>{formatMoney(row.summary.cashBalance)}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

@@ -1535,12 +1535,24 @@ export function getQrExperience() {
 }
 
 export function createQrExperienceDraft(
-  input: Partial<Omit<GuestExperienceRevision["config"], "branchId">>,
+  input: Partial<Omit<GuestExperienceRevision["config"], "branchId">> & {
+    scheduledAt?: string | null;
+  },
 ) {
   return apiRequest<GuestExperienceRevision>("/api/v1/qr/experience/draft", {
     method: "POST",
     body: input,
   });
+}
+
+export function scheduleQrExperience(revisionId: string, scheduledAt: string) {
+  return apiRequest<GuestExperienceRevision>(
+    `/api/v1/qr/experience/${encodeURIComponent(revisionId)}/schedule`,
+    {
+      method: "POST",
+      body: { scheduledAt },
+    },
+  );
 }
 
 export function publishQrExperience(revisionId: string) {

@@ -216,6 +216,33 @@ runIntegration("secure table QR", () => {
         welcomeMessage: "Bem-vindo",
       },
     });
+    const scheduledDraft = await service.createExperienceDraft(context, {
+      template: "doseclub",
+      welcomeMessage: "Agendado",
+    });
+    const scheduledAt = new Date(Date.now() + 60_000);
+    await expect(
+      service.scheduleExperience(context, scheduledDraft.id, scheduledAt),
+    ).resolves.toMatchObject({
+      status: "draft",
+      scheduledAt: scheduledAt.toISOString(),
+    });
+    await expect(
+      service.scheduleExperience(context, scheduledDraft.id, new Date(Date.now() - 60_000)),
+    ).rejects.toThrow("future");
+    await db
+      .update(guestExperienceConfigs)
+      .set({ scheduledAt: new Date(Date.now() - 1_000) })
+      .where(eq(guestExperienceConfigs.id, scheduledDraft.id));
+    await expect(service.getPublicContext(tokenFromUrl(tokenBefore))).resolves.toMatchObject({
+      qrSettings: {
+        template: "doseclub",
+        welcomeMessage: "Agendado",
+      },
+    });
+    await expect(service.getExperience(context)).resolves.toMatchObject({
+      published: { version: scheduledDraft.version, status: "published", scheduledAt: null },
+    });
     const [tableAfter] = await service.listTables(context);
     expect(tableAfter?.publicUrl).toBe(tokenBefore);
   });

@@ -91,6 +91,44 @@
   box-shadow: var(--tight-shadow);
 }
 
+.dashboard-branch-comparison {
+  margin-top: 1.25rem;
+}
+
+.dashboard-branch-table-wrap {
+  overflow-x: auto;
+}
+
+.dashboard-branch-table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+}
+
+.dashboard-branch-table th,
+.dashboard-branch-table td {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dashboard-branch-table th:first-child,
+.dashboard-branch-table td:first-child {
+  text-align: left;
+}
+
+.dashboard-branch-table thead th {
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dashboard-branch-table tbody th {
+  color: var(--ink);
+}
+
 .dashboard-pending-heading {
   display: flex;
   align-items: flex-start;

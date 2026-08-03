@@ -25,6 +25,7 @@ import {
   type QrCapability,
   rollbackQrExperience,
   rotateQrTable,
+  scheduleQrExperience,
   updateQrSettings,
 } from "../../../lib/giromesa-api";
 
@@ -52,6 +53,7 @@ export default function QrManagementPage() {
   const [size, setSize] = useState<"plate_10x15" | "sticker_8x8" | "a4">("plate_10x15");
   const [message, setMessage] = useState("Carregando configuração de QR...");
   const [busy, setBusy] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState("");
 
   const allSelected = tables.length > 0 && selected.size === tables.length;
   async function load() {
@@ -64,6 +66,7 @@ export default function QrManagementPage() {
       ]);
       setSettings(nextSettings);
       setExperience(nextExperience);
+      setScheduledAt(toDateTimeLocal(nextExperience.draft?.scheduledAt));
       const activeExperience = nextExperience.draft ?? nextExperience.published;
       if (activeExperience) {
         setSettings({
@@ -149,17 +152,56 @@ export default function QrManagementPage() {
 
   async function saveDraft() {
     if (!settings) return;
+    const scheduledIso = toScheduledIso(scheduledAt);
+    if (scheduledAt && !scheduledIso) {
+      setMessage("Escolha uma data e hora validas para o agendamento.");
+      return;
+    }
     setBusy(true);
     try {
-      const draft = await createQrExperienceDraft(settings);
+      const revision = await createQrExperienceDraft(
+        scheduledIso ? { ...settings, scheduledAt: scheduledIso } : settings,
+      );
       setExperience((current) => ({
-        draft,
+        draft: revision,
         published: current?.published ?? null,
-        history: [draft, ...(current?.history ?? [])],
+        history: [revision, ...(current?.history ?? [])],
       }));
-      setMessage(`Rascunho v${draft.version} salvo. Publique quando estiver pronto.`);
+      setScheduledAt(toDateTimeLocal(revision.scheduledAt));
+      setMessage(
+        revision.scheduledAt
+          ? `Rascunho v${revision.version} agendado para publicação.`
+          : `Rascunho v${revision.version} salvo. Publique quando estiver pronto.`,
+      );
     } catch (error) {
       setMessage(getErrorMessage(error, "Falha ao salvar o rascunho."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function scheduleDraft() {
+    const revisionId = experience?.draft?.id;
+    const scheduledIso = toScheduledIso(scheduledAt);
+    if (!revisionId || !scheduledIso) {
+      setMessage("Escolha uma data e hora futuras para agendar o rascunho.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const scheduled = await scheduleQrExperience(revisionId, scheduledIso);
+      setExperience((current) => ({
+        draft: scheduled,
+        published: current?.published ?? null,
+        history: [
+          scheduled,
+          ...(current?.history ?? []).filter((item) => item.id !== scheduled.id),
+        ],
+      }));
+      setScheduledAt(toDateTimeLocal(scheduled.scheduledAt));
+      setMessage(`Publicação da v${scheduled.version} agendada.`);
+    } catch (error) {
+      setMessage(getErrorMessage(error, "Falha ao agendar a experiência."));
     } finally {
       setBusy(false);
     }
@@ -176,6 +218,7 @@ export default function QrManagementPage() {
         published,
         history: [published, ...(current?.history ?? [])],
       }));
+      setScheduledAt("");
       setMessage(`Experiência v${published.version} publicada sem trocar os QR codes.`);
     } catch (error) {
       setMessage(getErrorMessage(error, "Falha ao publicar a experiência."));
@@ -209,6 +252,7 @@ export default function QrManagementPage() {
             }
           : current,
       );
+      setScheduledAt("");
       setMessage(
         `Experiencia restaurada a partir da v${revision.version} como v${restored.version}.`,
       );
@@ -401,6 +445,20 @@ export default function QrManagementPage() {
               />
               <span>Equipe revisa pedidos QR antes de enviar ao KDS</span>
             </label>
+            {experience?.draft ? (
+              <label className="qr-schedule-field">
+                Publicar rascunho automaticamente em (opcional)
+                <input
+                  min={minimumDateTimeLocal()}
+                  onChange={(event) => setScheduledAt(event.target.value)}
+                  type="datetime-local"
+                  value={scheduledAt}
+                />
+                <span className="muted-copy">
+                  A publicação ocorre na primeira leitura do QR após o horário, sem trocar o token.
+                </span>
+              </label>
+            ) : null}
             <button
               className="button primary"
               disabled={busy}
@@ -419,14 +477,26 @@ export default function QrManagementPage() {
                 Salvar rascunho
               </button>
               {experience?.draft ? (
-                <button
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => void publishDraft()}
-                  type="button"
-                >
-                  Publicar v{experience.draft.version}
-                </button>
+                <>
+                  <button
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() => void publishDraft()}
+                    type="button"
+                  >
+                    Publicar v{experience.draft.version}
+                  </button>
+                  {scheduledAt ? (
+                    <button
+                      className="button secondary"
+                      disabled={busy}
+                      onClick={() => void scheduleDraft()}
+                      type="button"
+                    >
+                      Agendar publicação
+                    </button>
+                  ) : null}
+                </>
               ) : null}
             </div>
             <p className="muted-copy">
@@ -686,4 +756,22 @@ function formatExperienceDate(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function toDateTimeLocal(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+}
+
+function toScheduledIso(value: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function minimumDateTimeLocal() {
+  return toDateTimeLocal(new Date(Date.now() + 60_000).toISOString());
 }

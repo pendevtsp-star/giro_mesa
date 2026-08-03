@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app-shell/AppShell";
 import { filterNavigationByPermissions } from "../../components/app-shell/navigation";
 import {
+  BranchComparisonCard,
   OperationalReadinessPanel,
   OperationalSummaryCards,
   PendingCenter,
@@ -35,6 +36,7 @@ import {
   type ApiError,
   type CashSessionSummary,
   type CurrentShiftResponse,
+  type DashboardSummary,
   type DiningTable,
   formatMoney,
   getCashSessionSummary,
@@ -87,14 +89,10 @@ export default function AppDashboardPage() {
   const { locale, setLocale, t } = useTranslation();
   const [status, setStatus] = useState<AppStatus>("loading");
   const [session, setSession] = useState<TenantSession | null>(null);
-  const [dashboardSummary, setDashboardSummary] = useState<{
-    salesToday: number;
-    activeOrders: number;
-    occupiedTables: string;
-    cashBalance: number;
-    shiftOpen: boolean;
-    cashOpen: boolean;
-  } | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [branchSummaries, setBranchSummaries] = useState<
+    Array<{ id: string; name: string; summary: DashboardSummary }>
+  >([]);
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   const [currentShift, setCurrentShift] = useState<CurrentShiftResponse | null>(null);
   const [cashSummary, setCashSummary] = useState<CashSessionSummary | null>(null);
@@ -161,6 +159,16 @@ export default function AppDashboardPage() {
           return;
         }
 
+        const branchSummaryPromise =
+          context.permissions.includes("tenant:manage") && (context.branches?.length ?? 0) > 1
+            ? Promise.all(
+                (context.branches ?? []).slice(0, 12).map(async (branch) => {
+                  const branchSummary = await getDashboardSummary(branch.id).catch(() => null);
+                  return branchSummary ? { ...branch, summary: branchSummary } : null;
+                }),
+              ).then((rows) => rows.filter((row): row is NonNullable<typeof row> => row !== null))
+            : Promise.resolve([]);
+
         const [
           tenantBranding,
           summary,
@@ -171,6 +179,7 @@ export default function AppDashboardPage() {
           qrOrders,
           kdsTickets,
           tableRows,
+          branchRows,
         ] = await Promise.all([
           getTenantBranding(),
           context.branchId && can("pos:operate")
@@ -195,6 +204,7 @@ export default function AppDashboardPage() {
           context.branchId && can("pos:operate")
             ? listTables(context.branchId).catch(() => [])
             : Promise.resolve([]),
+          branchSummaryPromise,
         ]);
 
         setBranding(tenantBranding);
@@ -206,6 +216,7 @@ export default function AppDashboardPage() {
         setQrPendingOrders(qrOrders);
         setTickets(kdsTickets);
         setTables(tableRows);
+        setBranchSummaries(branchRows);
 
         if (context.branchId && can("reports:read")) {
           const endDate = new Date().toISOString();
@@ -448,6 +459,8 @@ export default function AppDashboardPage() {
       ) : null}
 
       {!billingBlocked ? <PeriodSalesCard salesData={salesPeriodData} /> : null}
+
+      {!billingBlocked ? <BranchComparisonCard rows={branchSummaries} /> : null}
 
       {!billingBlocked ? (
         <RecentAlertsSection inventoryAlerts={inventoryAlerts} cashSummary={cashSummary} />

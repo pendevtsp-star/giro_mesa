@@ -33,7 +33,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import QRCode from "qrcode";
 import { DatabaseService } from "../database/database.service";
 
@@ -54,6 +54,8 @@ type GuestExperienceDraftInput = {
   [key in Exclude<keyof GuestExperienceConfig, "branchId">]?:
     | GuestExperienceConfig[key]
     | undefined;
+} & {
+  scheduledAt?: Date | null | undefined;
 };
 
 const defaultCapabilities: QrCapability[] = [
@@ -125,6 +127,7 @@ export class QrService {
 
   async getExperience(context: TenantContext) {
     const branchId = requireBranch(context);
+    await this.activateScheduledExperience(context.tenantId, branchId);
     const rows = await this.database.db
       .select()
       .from(guestExperienceConfigs)
@@ -149,6 +152,10 @@ export class QrService {
     input: GuestExperienceDraftInput,
   ): Promise<GuestExperienceRevision> {
     const branchId = requireBranch(context);
+    const { scheduledAt, ...configInput } = input;
+    if (scheduledAt && scheduledAt.getTime() <= Date.now()) {
+      throw new BadRequestException("Scheduled publication must be in the future");
+    }
     const current = await this.settingsForBranch(context.tenantId, branchId);
     const latest = await this.database.db
       .select({ version: guestExperienceConfigs.version })
@@ -168,7 +175,8 @@ export class QrService {
         branchId,
         version: (latest[0]?.version ?? 0) + 1,
         status: "draft",
-        config: { ...current, ...input, branchId },
+        config: { ...current, ...configInput, branchId },
+        scheduledAt: scheduledAt ?? null,
         createdByUserId: context.userId ?? null,
       })
       .returning();
@@ -178,6 +186,47 @@ export class QrService {
       version: draft.version,
     });
     return mapExperienceRevision(draft);
+  }
+
+  async scheduleExperience(context: TenantContext, revisionId: string, scheduledAt: Date) {
+    const branchId = requireBranch(context);
+    if (scheduledAt.getTime() <= Date.now()) {
+      throw new BadRequestException("Scheduled publication must be in the future");
+    }
+    const [target] = await this.database.db
+      .select({ status: guestExperienceConfigs.status })
+      .from(guestExperienceConfigs)
+      .where(
+        and(
+          eq(guestExperienceConfigs.id, revisionId),
+          eq(guestExperienceConfigs.tenantId, context.tenantId),
+          eq(guestExperienceConfigs.branchId, branchId),
+        ),
+      )
+      .limit(1);
+    if (!target) throw new NotFoundException("QR experience revision not found");
+    if (target.status !== "draft") {
+      throw new BadRequestException("Only a draft can be scheduled");
+    }
+    const [scheduled] = await this.database.db
+      .update(guestExperienceConfigs)
+      .set({ scheduledAt, updatedAt: new Date() })
+      .where(
+        and(
+          eq(guestExperienceConfigs.id, revisionId),
+          eq(guestExperienceConfigs.tenantId, context.tenantId),
+          eq(guestExperienceConfigs.branchId, branchId),
+          eq(guestExperienceConfigs.status, "draft"),
+        ),
+      )
+      .returning();
+    if (!scheduled) throw new NotFoundException("QR experience draft not found");
+    await this.audit(context, "qr.experience_scheduled", "branch", branchId, {
+      revisionId: scheduled.id,
+      version: scheduled.version,
+      scheduledAt: scheduled.scheduledAt?.toISOString() ?? null,
+    });
+    return mapExperienceRevision(scheduled);
   }
 
   async publishExperience(context: TenantContext, revisionId: string) {
@@ -207,7 +256,12 @@ export class QrService {
         );
       const [published] = await tx
         .update(guestExperienceConfigs)
-        .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: "published",
+          scheduledAt: null,
+          publishedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(guestExperienceConfigs.id, target.id))
         .returning();
       return published ?? target;
@@ -997,6 +1051,7 @@ export class QrService {
   }
 
   private async settingsForBranch(tenantId: string, branchId: string) {
+    await this.activateScheduledExperience(tenantId, branchId);
     const [settings] = await this.database.db
       .select()
       .from(qrBranchSettings)
@@ -1016,6 +1071,76 @@ export class QrService {
       .orderBy(desc(guestExperienceConfigs.version))
       .limit(1);
     return published ? mergeExperienceSettings(base, published.config) : base;
+  }
+
+  private async activateScheduledExperience(tenantId: string, branchId: string) {
+    const now = new Date();
+    const activated = await this.database.db.transaction(async (tx) => {
+      const [candidate] = await tx
+        .select()
+        .from(guestExperienceConfigs)
+        .where(
+          and(
+            eq(guestExperienceConfigs.tenantId, tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+            eq(guestExperienceConfigs.status, "draft"),
+            lte(guestExperienceConfigs.scheduledAt, now),
+          ),
+        )
+        .orderBy(desc(guestExperienceConfigs.version))
+        .limit(1);
+      if (!candidate) return null;
+      await tx
+        .update(guestExperienceConfigs)
+        .set({ status: "archived", updatedAt: now })
+        .where(
+          and(
+            eq(guestExperienceConfigs.tenantId, tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+            eq(guestExperienceConfigs.status, "published"),
+          ),
+        );
+      await tx
+        .update(guestExperienceConfigs)
+        .set({ status: "archived", updatedAt: now })
+        .where(
+          and(
+            eq(guestExperienceConfigs.tenantId, tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+            eq(guestExperienceConfigs.status, "draft"),
+            lte(guestExperienceConfigs.scheduledAt, now),
+            ne(guestExperienceConfigs.id, candidate.id),
+          ),
+        );
+      const [published] = await tx
+        .update(guestExperienceConfigs)
+        .set({ status: "published", scheduledAt: null, publishedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(guestExperienceConfigs.id, candidate.id),
+            eq(guestExperienceConfigs.tenantId, tenantId),
+            eq(guestExperienceConfigs.branchId, branchId),
+            eq(guestExperienceConfigs.status, "draft"),
+            lte(guestExperienceConfigs.scheduledAt, now),
+          ),
+        )
+        .returning();
+      return published ?? null;
+    });
+    if (activated) {
+      await this.audit(
+        {
+          tenantId,
+          branchId,
+          requestId: "qr-scheduled-activation",
+          permissions: [],
+        },
+        "qr.experience_schedule_activated",
+        "branch",
+        branchId,
+        { revisionId: activated.id, version: activated.version },
+      );
+    }
   }
 
   private assertCapability(settings: QrBranchSettings, capability: QrCapability) {
