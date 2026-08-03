@@ -19,6 +19,7 @@ import {
   billingStatusForTenant,
   createTrialWindow,
   type DocumentBranding,
+  giromesaPlanCatalog,
   renderBrandedEmail,
   type TenantContext,
   TRIAL_DAYS,
@@ -64,23 +65,6 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const MFA_ISSUER = process.env.MFA_ISSUER ?? "GiroMesa";
 const PASSWORD_POLICY_MESSAGE =
   "Password must have at least 8 characters, uppercase, lowercase, number and symbol";
-const planCatalog: Record<
-  StartTrialInput["planCode"],
-  { name: string; priceCents: number; limits: Record<string, number> }
-> = {
-  starter: { name: "Starter", priceCents: 14900, limits: { branches: 1, users: 5, products: 150 } },
-  professional: {
-    name: "Professional",
-    priceCents: 29900,
-    limits: { branches: 2, users: 15, products: 600 },
-  },
-  premium: {
-    name: "Premium",
-    priceCents: 49900,
-    limits: { branches: 5, users: 40, products: 2000 },
-  },
-};
-
 export type LoginInput = {
   email: string;
   password: string;
@@ -606,7 +590,7 @@ export class AuthService {
         throw new BadRequestException("Este e-mail já possui acesso ao GiroMesa");
       }
 
-      const planDefinition = planCatalog[input.planCode];
+      const planDefinition = giromesaPlanCatalog[input.planCode];
       const [plan] = await tx
         .insert(plans)
         .values({
@@ -811,7 +795,7 @@ export class AuthService {
     input: SubscriptionActivationInput,
     headers: HeaderRecord,
   ) {
-    const plan = planCatalog[input.planCode];
+    const plan = giromesaPlanCatalog[input.planCode];
     if (!plan) {
       throw new BadRequestException("Invalid plan");
     }

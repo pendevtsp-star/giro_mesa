@@ -11,13 +11,17 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+  type Category,
   createQrArtwork,
   createQrExperienceDraft,
   type GuestExperienceRevision,
   getErrorMessage,
   getQrExperience,
   getQrSettings,
+  listCategories,
+  listProducts,
   listQrTables,
+  type Product,
   publishQrExperience,
   type QrAdminTable,
   type QrArtwork,
@@ -54,16 +58,21 @@ export default function QrManagementPage() {
   const [message, setMessage] = useState("Carregando configuração de QR...");
   const [busy, setBusy] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
 
   const allSelected = tables.length > 0 && selected.size === tables.length;
   async function load() {
     setBusy(true);
     try {
-      const [nextSettings, nextTables, nextExperience] = await Promise.all([
-        getQrSettings(),
-        listQrTables(),
-        getQrExperience(),
-      ]);
+      const [nextSettings, nextTables, nextExperience, nextCategories, nextProducts] =
+        await Promise.all([
+          getQrSettings(),
+          listQrTables(),
+          getQrExperience(),
+          listCategories(),
+          listProducts(),
+        ]);
       setSettings(nextSettings);
       setExperience(nextExperience);
       setScheduledAt(toDateTimeLocal(nextExperience.draft?.scheduledAt));
@@ -98,8 +107,30 @@ export default function QrManagementPage() {
           ...(activeExperience.config.houseInfo
             ? { houseInfo: activeExperience.config.houseInfo }
             : {}),
+          ...(activeExperience.config.categoryLabels
+            ? { categoryLabels: activeExperience.config.categoryLabels }
+            : {}),
+          ...(activeExperience.config.recommendedProductIds
+            ? { recommendedProductIds: activeExperience.config.recommendedProductIds }
+            : {}),
+          ...(activeExperience.config.serviceRequestReasons
+            ? { serviceRequestReasons: activeExperience.config.serviceRequestReasons }
+            : {}),
         });
       }
+      setCategories(
+        nextCategories.filter(
+          (category) =>
+            category.isActive &&
+            (category.branchId === null || category.branchId === nextSettings.branchId),
+        ),
+      );
+      setProducts(
+        nextProducts.filter(
+          (product) =>
+            product.isActive !== false && product.isAvailable && product.channels.includes("qr"),
+        ),
+      );
       setTables(nextTables);
       setSelected((current) => {
         const valid = new Set(
@@ -144,6 +175,13 @@ export default function QrManagementPage() {
         ...(settings.highlights ? { highlights: settings.highlights } : {}),
         ...(settings.campaignMessage ? { campaignMessage: settings.campaignMessage } : {}),
         ...(settings.houseInfo ? { houseInfo: settings.houseInfo } : {}),
+        ...(settings.categoryLabels ? { categoryLabels: settings.categoryLabels } : {}),
+        ...(settings.recommendedProductIds
+          ? { recommendedProductIds: settings.recommendedProductIds }
+          : {}),
+        ...(settings.serviceRequestReasons
+          ? { serviceRequestReasons: settings.serviceRequestReasons }
+          : {}),
       });
       setMessage("Política e identidade dos QR codes salvas.");
     } catch (error) {
@@ -317,6 +355,25 @@ export default function QrManagementPage() {
     setSettings({ ...settings, capabilities });
   }
 
+  function setCategoryLabel(categoryId: string, label: string) {
+    if (!settings) return;
+    const categoryLabels = { ...(settings.categoryLabels ?? {}) };
+    if (label.trim()) categoryLabels[categoryId] = label;
+    else delete categoryLabels[categoryId];
+    setSettings({ ...settings, categoryLabels });
+  }
+
+  function toggleRecommendation(productId: string) {
+    if (!settings) return;
+    const current = settings.recommendedProductIds ?? [];
+    const recommendedProductIds = current.includes(productId)
+      ? current.filter((id) => id !== productId)
+      : current.length < 12
+        ? [...current, productId]
+        : current;
+    setSettings({ ...settings, recommendedProductIds });
+  }
+
   return (
     <main className="workspace-page qr-admin-page">
       <header className="workspace-topbar">
@@ -423,7 +480,7 @@ export default function QrManagementPage() {
             </label>
             <div className="form-grid two-columns">
               <label>
-                TÃ­tulo do cardÃ¡pio
+                Título do cardápio
                 <input
                   maxLength={120}
                   onChange={(event) =>
@@ -458,9 +515,22 @@ export default function QrManagementPage() {
                 />
                 <span className="muted-copy">Somente HTTPS ou arquivos em /uploads/.</span>
               </label>
-              <div className="muted-copy">
-                Traduções da experiência pública serão liberadas com o pacote de idiomas homologado.
-              </div>
+              <label>
+                Idioma da experiência pública
+                <select
+                  onChange={(event) =>
+                    setSettings({
+                      ...settings,
+                      language: event.target.value as NonNullable<QrBranchSettings["language"]>,
+                    })
+                  }
+                  value={settings.language ?? "pt-BR"}
+                >
+                  <option value="pt-BR">Português (Brasil)</option>
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                </select>
+              </label>
             </div>
             <div className="form-grid two-columns">
               <label>
@@ -503,6 +573,56 @@ export default function QrManagementPage() {
                 value={settings.houseInfo ?? ""}
               />
             </label>
+            <label>
+              Motivos rápidos para chamar atendimento
+              <input
+                maxLength={640}
+                onChange={(event) =>
+                  setSettings({
+                    ...settings,
+                    serviceRequestReasons: event.target.value
+                      .split(",")
+                      .map((value) => value.trim())
+                      .filter(Boolean)
+                      .slice(0, 8),
+                  })
+                }
+                placeholder="Mais guardanapos, Repor bebida, Dúvida no cardápio"
+                value={settings.serviceRequestReasons?.join(", ") ?? ""}
+              />
+              <span className="muted-copy">Até 8 motivos; nenhum dado pessoal é solicitado.</span>
+            </label>
+            {categories.length ? (
+              <fieldset className="qr-category-labels">
+                <legend>Nomes das categorias na experiência pública</legend>
+                {categories.map((category) => (
+                  <label key={category.id}>
+                    <span>{category.name}</span>
+                    <input
+                      maxLength={80}
+                      onChange={(event) => setCategoryLabel(category.id, event.target.value)}
+                      placeholder={category.name}
+                      value={settings.categoryLabels?.[category.id] ?? ""}
+                    />
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
+            {products.length ? (
+              <fieldset className="qr-capabilities">
+                <legend>Recomendações em destaque (até 12)</legend>
+                {products.map((product) => (
+                  <label key={product.id}>
+                    <input
+                      checked={settings.recommendedProductIds?.includes(product.id) ?? false}
+                      onChange={() => toggleRecommendation(product.id)}
+                      type="checkbox"
+                    />
+                    <span>{product.name}</span>
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
             <label className="qr-switch-row">
               <input
                 checked={settings.marketingEnabled !== false}
@@ -511,7 +631,7 @@ export default function QrManagementPage() {
                 }
                 type="checkbox"
               />
-              <span>Exibir a assinatura discreta Tecnologia GiroMesa na experiÃªncia pÃºblica</span>
+              <span>Exibir a assinatura discreta Tecnologia GiroMesa na experiência pública</span>
             </label>
             <label className="qr-switch-row">
               <input

@@ -203,6 +203,27 @@ export const subscriptions = pgTable(
   (table) => [index("subscriptions_tenant_idx").on(table.tenantId)],
 );
 
+export const tenantEntitlements = pgTable(
+  "tenant_entitlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    subscriptionId: uuid("subscription_id").references(() => subscriptions.id),
+    code: varchar("code", { length: 120 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull().default("active"),
+    source: varchar("source", { length: 40 }).notNull().default("platform"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("tenant_entitlements_tenant_code_idx").on(table.tenantId, table.code),
+    index("tenant_entitlements_tenant_status_idx").on(table.tenantId, table.status),
+  ],
+);
+
 export const purchaseIntents = pgTable(
   "purchase_intents",
   {
@@ -243,6 +264,31 @@ export const branches = pgTable(
     ...timestamps,
   },
   (table) => [index("branches_tenant_idx").on(table.tenantId)],
+);
+
+export const ecosystemCampaigns = pgTable(
+  "ecosystem_campaigns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id").references(() => branches.id),
+    sourceProduct: varchar("source_product", { length: 40 }).notNull(),
+    targetProduct: varchar("target_product", { length: 40 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull().default("draft"),
+    name: varchar("name", { length: 160 }).notNull(),
+    message: varchar("message", { length: 500 }).notNull(),
+    targetUrl: text("target_url").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    index("ecosystem_campaigns_tenant_status_idx").on(table.tenantId, table.status),
+    index("ecosystem_campaigns_branch_status_idx").on(table.branchId, table.status),
+  ],
 );
 
 export const branchOperationalSettings = pgTable(
@@ -509,6 +555,29 @@ export const sessions = pgTable(
   ],
 );
 
+export const federationHandoffs = pgTable(
+  "federation_handoffs",
+  {
+    id: uuid("id").primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    targetProduct: varchar("target_product", { length: 40 }).notNull(),
+    audience: varchar("audience", { length: 80 }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    index("federation_handoffs_tenant_user_idx").on(table.tenantId, table.userId),
+    index("federation_handoffs_expiry_idx").on(table.expiresAt),
+  ],
+);
+
 export const oauthAccounts = pgTable(
   "oauth_accounts",
   {
@@ -717,6 +786,37 @@ export const guestExperienceConfigs = pgTable(
       table.branchId,
       table.status,
     ),
+  ],
+);
+
+export const commercialAttributionDaily = pgTable(
+  "commercial_attribution_daily",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    day: date("day").notNull(),
+    source: varchar("source", { length: 40 }).notNull().default("qr_organic"),
+    destination: varchar("destination", { length: 40 }).notNull(),
+    campaign: varchar("campaign", { length: 80 }).notNull().default("organic_attribution"),
+    visits: integer("visits").notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("commercial_attribution_daily_rollup_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.day,
+      table.source,
+      table.destination,
+      table.campaign,
+    ),
+    index("commercial_attribution_daily_tenant_day_idx").on(table.tenantId, table.day),
+    check("commercial_attribution_daily_visits_check", sql`${table.visits} >= 0`),
   ],
 );
 

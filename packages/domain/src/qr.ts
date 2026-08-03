@@ -22,6 +22,8 @@ export type QrFontPreset = "system" | "serif" | "display";
 
 export type QrLanguage = "pt-BR" | "en" | "es";
 
+export type QrCategoryLabels = Record<string, string>;
+
 export type QrBranchSettings = {
   branchId: string;
   capabilities: QrCapability[];
@@ -39,6 +41,9 @@ export type QrBranchSettings = {
   highlights?: string[];
   campaignMessage?: string;
   houseInfo?: string;
+  categoryLabels?: QrCategoryLabels;
+  recommendedProductIds?: string[];
+  serviceRequestReasons?: string[];
 };
 
 export type GuestExperienceConfig = QrBranchSettings;

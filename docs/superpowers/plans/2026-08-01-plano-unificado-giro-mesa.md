@@ -1,15 +1,33 @@
-# GiroMesa — plano único de estabilização, redesign e conclusão
+# GiroMesa e DoseClub — plano único de estabilização, produção e piloto
+
+> **Para agentes executores:** usar `superpowers:subagent-driven-development` ou
+> `superpowers:executing-plans`, respeitando os checkboxes e os gates deste documento.
+
+**Objetivo:** entregar um piloto real, fechado, assistido e reversível dos dois produtos
+sem refazer as fases já aceitas nem ativar integração não homologada.
+
+**Arquitetura:** GiroMesa e DoseClub mantêm códigos, bancos, sessões e deploys separados.
+Contratos assinados, outbox, idempotência e entitlements conectam somente os recursos
+aprovados; integrações externas ficam atrás de flags por tenant/filial.
+
+**Stack:** pnpm/Turborepo, Next.js/React, NestJS/Fastify, PostgreSQL, Drizzle no GiroMesa,
+Prisma no DoseClub, Redis/BullMQ, Docker, GitHub Actions, Cloudflare e VPS.
 
 **Data de consolidação:** 2026-08-01  
-**Substitui:** `2026-07-31-redesign-operacional-plan.md` e `2026-07-28-estabilizacao-mestra-plan.md`  
+**Revisão de prontidão:** 2026-08-03  
+**Meta do piloto assistido:** 2026-08-06, horário de Brasília  
+**Substitui:** `2026-07-31-redesign-operacional-plan.md`, `2026-07-28-estabilizacao-mestra-plan.md`
+e `docs/PLANO_MESTRE_PRODUÇÃO _GIROMESA+DOSECLUB.md`  
 **Documento de referência visual/técnica:** `docs/superpowers/specs/2026-07-31-redesign-operacional-design.md`
 
-Este é o único plano válido para a implementação do GiroMesa. O plano de
+Este é o único plano válido para a implementação e o piloto dos dois produtos. O plano de
 31/07 foi usado como base quando havia duplicidade; itens exclusivos do plano
-de 28/07 foram incorporados nas fases correspondentes. Os dois documentos
-anteriores devem permanecer excluídos para evitar execução paralela.
+de 28/07 e o delta de prontidão de 03/08 foram incorporados nas fases
+correspondentes. Os documentos substituídos devem permanecer excluídos para evitar
+execução paralela. O objetivo imediato é um piloto fechado, assistido, observável e
+reversível; disponibilidade geral depende de um gate posterior.
 
-## Regras de execução
+## Global Constraints
 
 1. Preservar URLs públicas e operacionais, QR Code e funcionalidades existentes.
 2. Manter dois shells: administrativo e operacional.
@@ -22,10 +40,21 @@ anteriores devem permanecer excluídos para evitar execução paralela.
 7. Não criar UI decorativa: toda ação precisa de endpoint, transição e estado de erro.
 8. Não publicar integração produtiva antes dos gates internos.
 9. Nenhum segredo, senha de homologação ou token real entra no repositório.
-10. O WhatsApp, quando implementado, será via QR Code e conexão não oficial; isso
-    deve ficar explícito na interface e na documentação.
+10. A marca e as logos GiroMesa e DoseClub são preservadas; a UI pode ser refinada,
+    mas deve mostrar apenas ações úteis ao perfil e módulos realmente habilitados.
 11. Fases entram por flags quando necessário, mas a aplicação final será uma única
     substituição funcional, sem UI legada ou fallback antigo após o aceite.
+12. Integração existente, mock ou scaffold não equivale a homologação; cada conector
+    precisa de credencial real, teste de indisponibilidade, reconciliação e desligamento
+    por filial antes de aparecer na operação.
+13. WhatsApp Web/QR não oficial permanece laboratório isolado e não pode sustentar
+    fluxo crítico ou marketing. No piloto, a contingência padrão é contato manual por
+    `wa.me`, telefone ou e-mail; automação só entra após decisão jurídica e de risco.
+14. Fiscal, TEF, iFood, hardware e parametrização tributária dependem de fornecedor,
+    credenciais e/ou homologação externa. Até o gate, a UI informa indisponibilidade ao
+    administrador e esconde a ação dos perfis operacionais.
+15. Redação jurídica e parametrização fiscal exigem validação humana de advogado e
+    contador. Este documento organiza o trabalho e não substitui parecer profissional.
 
 ## Checklist mestre de conclusão
 
@@ -44,10 +73,10 @@ As caixas só são marcadas depois do gate da fase e da evidência registrada.
 - [x] Fase 10 — fundação Enterprise Premium.
 - [x] Fase 11 — arquitetura de informação e gestão multiunidade.
 - [x] Fase 12 — operação real e experiência do consumidor.
-- [ ] Fase 13 — personalização, QR premium e aquisição orgânica.
-- [ ] Fase 14 — ecossistema GiroMesa e DoseClub.
-- [ ] Fase 15 — integrações externas.
-- [ ] Fase 16 — aceite integral técnico, visual e operacional.
+- [x] Fase 13 — personalização, QR premium e aquisição orgânica.
+- [x] Fase 14 — ecossistema GiroMesa e DoseClub.
+- [ ] Fase 15 — hardening de produção, jurídico e integrações externas.
+- [ ] Fase 16 — aceite integral técnico, visual, operacional e jurídico.
 - [ ] Fase 17 — handoff, backup, piloto e corte único.
 
 ### Registro de progresso já existente
@@ -133,14 +162,83 @@ fechado apenas por existir código:
 - Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
   como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
   externa permanece pendente.
-- Fase 13: QR agora aceita capa segura (HTTPS ou `/uploads/`), destaques, campanha e informações da casa em experiência versionada; os campos são validados no backend e aparecem no QR público sem permitir CSS, scripts ou URLs inseguras. Tradução completa, recomendações por categoria e analytics agregado continuam no gate externo.
-- Fase 14: o contrato comercial do DoseClub documenta os códigos estáveis `doseclub`, `giromesa` e `bundle`; handoff continua contextual, sem cookie, sessão ou banco compartilhado. Catálogo/preços centralizados e SSO aguardam o serviço de contas.
+- Fase 13: concluída em 2026-08-03 com experiência pública em português, inglês e
+  espanhol, categorias e recomendações configuráveis, motivos rápidos de atendimento,
+  identidade controlada e atribuição comercial exclusivamente agregada por dia.
+- Fase 14: concluída em 2026-08-03 com catálogo e entitlements canônicos no GiroMesa,
+  campanhas cruzadas opcionais, handoff HMAC de uso único e sessão própria no DoseClub.
+  A landing DoseClub consome o catálogo central com fallback resiliente; DNS, proxy e
+  segredos de produção permanecem na Fase 15.
+- Fases 13 e 14: evidências consolidadas em
+  `docs/audits/2026-08-03-fases-13-14-qr-ecossistema.md`; lint, typecheck, testes,
+  builds, migrations, segurança e 58 cenários E2E passaram sem commit ou publicação.
 - Fase 15: o transporte WhatsApp padrão passou a ser `disabled`; `qr_unofficial` não simula entrega e `meta_legacy` só funciona por opt-in explícito. A documentação marca o canal QR como não oficial; pareamento real, sessão criptografada e homologação de Resend, Google OAuth, Asaas e DoseClub continuam dependentes de credenciais reais.
 - Fase 16: typecheck, lint, testes unitários, build, security preflight, integração
   PostgreSQL E2E e auditoria visual das rotas passaram; permanecem pendentes as jornadas
   integrais por perfil, hardware e homologações externas do aceite final.
 - O checklist continua aberto até os testes, QA e evidências de cada gate serem
   concluídos e revisados.
+
+## Corte de escopo para o piloto de 06/08/2026
+
+### Estratégia aprovada pelo plano
+
+Entre as três alternativas avaliadas, este documento adota a primeira:
+
+1. **Piloto fechado e assistido, recomendado:** núcleo operacional completo, pagamentos
+   manuais auditados e somente integrações que passarem homologação real.
+2. **Ativar todos os conectores até quinta-feira:** rejeitado porque iFood, TEF, fiscal e
+   WhatsApp automatizado dependem de terceiros, hardware ou aceitação de risco.
+3. **Adiar todo o piloto:** contingência obrigatória se qualquer gate P0 continuar aberto.
+
+O parceiro pode operar GiroMesa com PDV, salão, garçom, KDS, QR, estoque, pagamentos
+manuais, caixa e relatórios. O DoseClub pode operar clubes, combos, saldo em mililitros,
+consumo, estorno e auditoria. Integração de estoque entre produtos só é ativada após o
+ensaio ponta a ponta com IDs e segredos do tenant piloto.
+
+### Estado verificado em 03/08/2026
+
+- [x] Repositórios canônicos GiroMesa e DoseClub localizados e auditados.
+- [x] Fases 0–14 preservadas; não serão refeitas sem regressão comprovada.
+- [x] `lint`, `typecheck`, testes unitários, `build`, segurança e migration safety locais
+  aprovados nos escopos aplicáveis; testes PostgreSQL/E2E completos continuam no gate F16.
+- [x] Repositório DoseClub acessível; o bloqueio do plano de produção anterior ficou obsoleto.
+- [x] QR legado protegido por flag e limitado ao tenant demo.
+- [ ] Consolidar os worktrees atuais de F13/F14 em SHAs reproduzíveis, um por repositório.
+- [ ] Validar migrations `0027`, `0028` e a migration federada DoseClub em banco vazio e upgrade.
+
+### Bloqueadores P0 ativos
+
+- [ ] GiroMesa: substituir senha previsível do provisionamento de tenant por convite
+  temporário, uso único e auditado.
+- [ ] GiroMesa: privatizar `/health/detailed`, `/health/metrics` e `/health/alerts`;
+  manter públicos apenas liveness/readiness sanitizados.
+- [ ] GiroMesa: bloquear restore destrutivo pelo backoffice até existir cliente PostgreSQL,
+  volume, autorização, backup externo e restore ensaiado fora do banco vivo.
+- [ ] GiroMesa: remover fallback `Bar Aurora` do cardápio de tenant real em falha de API.
+- [ ] GiroMesa: publicar documentos legais reais e aceite versionado; templates não contam.
+- [ ] GiroMesa: preservar o plano escolhido em todos os CTAs e revalidá-lo no backend.
+- [ ] GiroMesa: remover `EMAIL_FROM` duplicado e todo `example.com` de configuração de release.
+- [ ] DoseClub: corrigir conversão `priceCents` para valor decimal do Asaas e nunca ativar
+  assinatura/entitlement antes de webhook de pagamento confirmado.
+- [ ] DoseClub: implementar ingresso autenticado, assinado e idempotente do webhook Asaas
+  ou manter cobrança SaaS integralmente desligada.
+- [ ] DoseClub: alinhar catálogo, preços e entitlements entre landing, backend e GiroMesa.
+- [ ] DoseClub: corrigir Google OAuth público; sem `client_id` vazio, callback localhost ou
+  resposta Fastify não finalizada.
+- [ ] DoseClub: publicar o catálogo/SSO federado já implementado e homologar o exchange.
+- [ ] Ambos: definir razão social, CNPJ, contatos, suporte, privacidade e responsáveis reais.
+- [ ] Ambos: comprovar backup externo e restauração em ambiente isolado.
+
+### Achados P1 incorporados
+
+- [ ] Corrigir status público do GiroMesa e mover monitor/status para domínio externo à VPS.
+- [ ] Remover criação demo pública e deixar onboarding do piloto somente por convite.
+- [ ] Expor backoffice apenas após usuário interno, MFA, recuperação e auditoria reais.
+- [ ] Tornar dependency audit e Trivy bloqueantes para vulnerabilidades críticas.
+- [ ] Proteger ambiente GitHub `production`, pin de host SSH e aprovação manual.
+- [ ] Remover dados demo em fallbacks de frontend e falsos positivos dos validadores de prontidão.
+- [ ] Reduzir RPO do DoseClub de 24 horas para no máximo uma hora durante o piloto.
 
 ## Fase 0 — baseline e prevenção de regressões
 
@@ -501,7 +599,7 @@ registro, sem duplicar movimento financeiro.
 - [x] Oferecer modelos controlados: Gastronomia, Bar Noturno, Café e DoseClub.
 - [x] Personalizar logo, capa, paleta validada, fonte curada, textos e destaques.
 - [x] Personalizar campanhas e informações da casa com validação no backend.
-- [ ] Traduzir a experiência pública, personalizar categorias/recomendações e motivos de atendimento.
+- [x] Traduzir a experiência pública, personalizar categorias/recomendações e motivos de atendimento.
 - [x] Criar rascunho, prévia, publicação, agendamento e rollback.
 - [x] Atualizar experiência pública sem exigir reimpressão do QR.
 - [x] Preservar quiet zone, contraste, legibilidade e rotação segura do token.
@@ -509,11 +607,11 @@ registro, sem duplicar movimento financeiro.
 - [x] Exibir discretamente “Tecnologia GiroMesa”.
 - [x] Exibir “DoseClub, por GiroMesa” quando recurso estiver habilitado.
 - [x] Adicionar “Conheça a tecnologia deste atendimento” sem competir com pedido ou pagamento.
-- [ ] Registrar somente origem comercial agregada, sem mesa, pedido ou dado pessoal.
+- [x] Registrar somente origem comercial agregada, sem mesa, pedido ou dado pessoal.
 
 ### Gate
 
-- [ ] Estabelecimento obtém identidade própria sem white-label total, código livre ou risco à leitura do QR.
+- [x] Estabelecimento obtém identidade própria sem white-label total, código livre ou risco à leitura do QR.
 
 ## Fase 14 — ecossistema GiroMesa e DoseClub
 
@@ -521,71 +619,332 @@ registro, sem duplicar movimento financeiro.
 
 - [x] Criar landing em `doseclube.giromesa.com.br` com apresentação, contratação e acesso.
 - [x] Manter GiroMesa, DoseClub e combo como produtos comerciais independentes.
-- [ ] Centralizar catálogo comercial, assinaturas e entitlements no GiroMesa.
-- [ ] Federar identidade por `accounts.giromesa.com.br`.
+- [x] Centralizar catálogo comercial, assinaturas e entitlements no GiroMesa.
+- [x] Implementar federação de identidade destinada a `accounts.giromesa.com.br`.
 - [x] Manter códigos, bancos, deploys e operação dos produtos separados.
-- [ ] Implementar SSO e handoff contextual sem compartilhar sessão de banco.
-- [x] Homologar estoque compartilhado em mililitros por contrato, outbox e idempotência.
+- [x] Implementar SSO e handoff contextual sem compartilhar sessão de banco.
+- [x] Implementar e validar localmente estoque compartilhado em mililitros por contrato,
+  outbox e idempotência.
 - [x] Cobrir consumo individual, combos, produtos elegíveis, estorno e reprocessamento.
 - [x] Exibir consumo DoseClub na comanda GiroMesa como linha informativa sem cobrança duplicada.
 - [x] Permitir aquisição somente de GiroMesa, somente de DoseClub ou do combo.
-- [ ] Manter carteiras de fidelidade separadas, com campanhas comerciais cruzadas opcionais.
+- [x] Manter carteiras de fidelidade separadas, com campanhas comerciais cruzadas opcionais.
 
 ### Gate
 
-- [ ] Indisponibilidade de um produto não corrompe nem bloqueia operação independente do outro.
+- [x] Indisponibilidade de um produto não corrompe nem bloqueia operação independente do outro.
 
-## Fase 15 — integrações externas
+## Fase 15 — hardening de produção, jurídico e integrações externas
 
 Executar somente depois de todos os gates internos.
+
+### 15.0 Congelamento e release reproduzível
+
+**Arquivos de autoridade:** `.github/workflows/`, `docker-compose.prod.yml`,
+`docker-compose.ghcr.yml`, `packages/db/drizzle/`, `apps/api/prisma/migrations/`,
+`docs/BACKUP_RESTORE.md` e os manifests de cada repositório.
+
+- [ ] Revisar e consolidar separadamente o diff GiroMesa e o diff DoseClub; nenhuma
+  alteração de um produto entra no repositório do outro.
+- [ ] Registrar SHA, imagens, lockfile, migrations e configuração não secreta da release.
+- [ ] Validar instalação congelada, migration em banco vazio, upgrade do baseline e
+  compatibilidade expand-migrate-contract antes do primeiro deploy.
+- [ ] Criar ambiente staging/pilot com aprovação manual; o mesmo digest aprovado é
+  promovido sem rebuild para produção.
+- [ ] Fixar fingerprint SSH em `known_hosts`; remover `accept-new` e falhar em mismatch.
+- [ ] Tornar audit de dependências e Trivy bloqueantes para `CRITICAL`; `HIGH` exige
+  exceção registrada com owner, justificativa e validade.
+- [ ] Definir baseline de cobertura e impedir regressão em auth, tenant, RBAC, pedido,
+  pagamento, caixa, QR, estoque, webhooks, ledger DoseClub e billing.
+- [ ] Confirmar o repositório oficial, arquivar a cópia legada `pendevtsp-star/giromesa`,
+  remover credencial demo publicada, rotacioná-la onde tenha sido reutilizada e executar
+  secrets scan no histórico dos dois produtos.
+
+### 15.1 Segurança P0 e isolamento
+
+**GiroMesa:** `apps/api/src/modules/platform/platform.service.ts`,
+`apps/api/src/modules/health/health.controller.ts`, `apps/api/src/main.ts`,
+`apps/api/src/modules/platform/backup.service.ts`, `apps/api/Dockerfile`,
+`docker-compose.prod.yml`, `apps/web/src/app/m/[tenantSlug]/page.tsx`.
+
+**DoseClub:** `scripts/pilot-readiness.mjs`, `apps/web/app/components/LoginScreen.tsx`,
+`apps/api/src/health/health.controller.ts`, `apps/api/src/health/health.service.ts`.
+
+- [ ] Substituir senha previsível de novo tenant por convite de uso único, expiração,
+  hash persistido, rate limit, auditoria e definição de senha pelo próprio usuário.
+- [ ] Manter públicos somente `/health` e `/health/ready` sanitizados; métricas, alertas,
+  memória, topologia, nomes de estoque e dependências exigem autenticação de plataforma
+  ou rede privada.
+- [ ] Desabilitar restore pelo backoffice até que execute em banco isolado, com backup
+  verificável, dupla confirmação, permissão de plataforma e trilha append-only.
+- [ ] Remover qualquer fallback demo de tenant real; falha de API produz erro explícito,
+  retry e contato de suporte, nunca conteúdo Bar Aurora ou dados sintéticos.
+- [ ] Tornar onboarding do piloto `invite-only`; `ENABLE_TESTING_ENDPOINTS`, simuladores
+  e criação demo ficam `false` em produção.
+- [ ] Corrigir o validador DoseClub para rejeitar placeholder, segredo ausente, worker
+  parado e integração marcada pronta sem health real.
+- [ ] Revisar logs de webhooks e autenticação para não registrar telefone, token, segredo,
+  PAN, CVV, PIN ou PII desnecessária.
+- [ ] Verificar headers na resposta real de Nginx/Cloudflare antes de alterar Next/API;
+  aplicar CSP primeiro em report-only e somente depois bloquear sem quebrar QR, OAuth ou assets.
+
+### 15.2 Comercial, landing, jurídico e consentimento
+
+**GiroMesa:** `apps/web/src/app/page.tsx`, `apps/web/src/app/teste-gratis/page.tsx`,
+`apps/web/src/app/status/page.tsx`, novas rotas públicas em `apps/web/src/app/termos/`,
+`apps/web/src/app/privacidade/`, `apps/web/src/app/cookies/`,
+`apps/web/src/app/cancelamento/`, `apps/web/src/app/contato/`,
+`apps/web/src/app/seguranca/` e `apps/web/src/app/suboperadores/`,
+além de `packages/db/src/schema.ts` e `apps/api/src/modules/auth/`.
+
+**DoseClub:** `apps/web/app/components/LandingPage.tsx`, `apps/web/app/terms/page.tsx`,
+`apps/web/app/privacy/page.tsx`, `apps/web/app/cookies/page.tsx`,
+`apps/web/app/cancellation/page.tsx`, `apps/web/app/contact/page.tsx`,
+`apps/api/src/tenants/tenants.service.ts` e `apps/api/prisma/schema.prisma`.
+
+- [ ] Definir razão social, nome fantasia, CNPJ, endereço, contato de suporte, canal
+  LGPD, responsável por incidentes e horário de atendimento reais.
+- [ ] Publicar Termos de Uso, contrato SaaS B2B, Privacidade, Cookies, Cancelamento,
+  DPA, suboperadores, segurança/incidentes, termos do QR e aviso de bebidas alcoólicas.
+- [ ] Submeter redação a advogado e regras fiscais/retentivas a contador; templates
+  internos e este checklist não equivalem a aprovação profissional.
+- [ ] Persistir aceite append-only com documento, versão, hash, usuário/contexto,
+  timestamp e origem; consentimentos opcionais permanecem separados e revogáveis.
+- [ ] Corrigir landing GiroMesa para preservar `?plan=starter|professional|premium`,
+  renderizar a escolha inicial e revalidar preço/plano no backend.
+- [ ] Remover do DoseClub “dezenas de estabelecimentos”, SLA sem medição, white-label
+  completo, isolamento absoluto, gerente dedicado e automação não homologada.
+- [ ] Unificar preços e produtos da landing DoseClub com o catálogo central; fallback
+  nunca publica preço diferente do backend.
+- [ ] Identificar ambos como programa piloto/acesso antecipado, sem depoimento, número,
+  disponibilidade ou resultado não comprovado.
+- [ ] Implementar política de cookies com rejeição/revogação para analytics e marketing;
+  cookies estritamente essenciais permanecem documentados.
+- [ ] Aplicar age gate 18+ no DoseClub e em jornada QR com álcool, sem substituir a
+  conferência humana pelo estabelecimento.
+- [ ] Comprovante operacional deve mostrar estabelecimento, CNPJ, filial, endereço,
+  pedido/mesa, data/hora, itens, taxa opcional, descontos, pagamentos parciais/mistos,
+  operador e a indicação `COMPROVANTE NÃO FISCAL` enquanto fiscal estiver desligado.
+
+#### Landing pages baseadas em evidência
+
+- [ ] Preservar as logos oficiais e evoluir as duas landings incrementalmente; GiroMesa
+  permanece claro e refinado nas superfícies comerciais, com produto operacional
+  `dark-first`, enquanto DoseClub preserva a identidade navy premium.
+- [ ] Substituir prova social inexistente por evidência verificável do produto: capturas
+  reais, tour funcional GiroMesa `mesa → pedido → produção → pagamento → estoque` e tour
+  DoseClub `oferta → venda → consumo → saldo → estorno`.
+- [ ] Remover logos de clientes, avaliações, contadores, urgência artificial, badge
+  “Popular”, “mais escolhido”, SLA, resultado financeiro e qualquer estatística sem
+  origem, período, metodologia e autorização comprováveis.
+- [ ] Apresentar a empresa como sediada em Maceió, Alagoas; razão social, CNPJ, endereço,
+  contatos e horário somente entram na interface após validação documental.
+- [ ] Manter navegação pública rasa e previsível: Produto, Operação, Planos, DoseClub,
+  Segurança, Ajuda, Entrar e CTA principal; o menu móvel deve oferecer os mesmos destinos.
+- [ ] Fazer “Demonstração” abrir uma demonstração real e “Agendar apresentação” abrir um
+  fluxo real de contato/agendamento; nenhum CTA pode terminar silenciosamente no login.
+- [ ] Preservar `produto`, `plano` e `origem` até o backend, que revalida catálogo,
+  entitlement, preço e disponibilidade antes de criar trial ou cobrança.
+- [ ] Integrar a landing DoseClub ao catálogo canônico; em indisponibilidade, ocultar o
+  preço ou mostrar “Consulte condições”, nunca publicar outro valor fixo.
+- [ ] Classificar integrações como `disponível`, `em piloto` ou `planejada` a partir de
+  configuração real; conectores desativados não aparecem como benefício contratado.
+- [ ] Migrar imagens externas frágeis para ativos próprios ou licenciados, com dimensões,
+  `alt`, otimização e origem documentadas; capturas do produto têm prioridade sobre
+  imagens genéricas.
+- [ ] Explicar sem ambiguidade GiroMesa independente, DoseClub independente, combo,
+  estoque compartilhado opcional e acesso federado condicionado a entitlement.
+
+### 15.3 Acabamento do produto para proprietário, equipe e consumidor
+
+**Superfícies:** GiroMesa `apps/web/src/app/app/`, `apps/web/src/app/q/[tableCode]/`,
+`apps/web/src/app/platform/`; DoseClub `apps/web/app/components/` e
+`apps/web/app/backoffice/`.
+
+- [ ] Preservar logos e direção visual; corrigir apenas regressões comprovadas de
+  hierarquia, densidade, contraste, responsividade, foco, teclado e touch.
+- [ ] Proprietário/gerente recebe próxima ação, saúde do turno, alertas acionáveis e
+  comparação de filial; logs, filas, JSON, IDs e diagnósticos ficam no backoffice.
+- [ ] Caixa, garçom, cozinha/bar, recepção e estoque veem somente módulos e ações do
+  perfil, filial, entitlement e feature flag atuais.
+- [ ] Integração desativada não gera botão decorativo; o administrador recebe estado
+  `não configurada`, `em homologação`, `ativa`, `degradada` ou `revogada` e a contingência.
+- [ ] Onboarding do parceiro é retomável e termina somente com filial, horário, usuários,
+  catálogo, estoque, mesas/QR, estações, impressão, caixa e suporte configurados.
+- [ ] Consumidor QR vê estabelecimento/mesa corretos, preço/taxa, comanda, preparo,
+  chamado, pré-conta, erro e indisponibilidade sem dados pessoais ou fallback demo.
+- [ ] DoseClub explica e executa clube individual, combo, saldo em ml, consumo, estorno,
+  idade e integração opcional, sem misturar pagamento do consumidor com assinatura SaaS.
+- [ ] Rodar QA visual em `390×844`, `768×1024`, `1024×768`, `1440×900` e KDS
+  `1920×1080`, incluindo vazio, erro, offline, conflito, permissão e integração desligada.
+
+#### Operação de pico e economia de interação
+
+- [ ] Criar perfil por dispositivo com filial, modo inicial (`mesa`, `balcão`, `bar`,
+  `caixa`, `KDS` ou `expedição`), estação, impressora e permissão para trocar de modo.
+- [ ] No garçom, manter mesa, total, estado e itens não enviados sempre visíveis; oferecer
+  busca, categorias, favoritos, recentes e repetição de item em um toque.
+- [ ] Permitir que um item comum, sem modificadores, seja adicionado e enviado em até três
+  ações depois da seleção da mesa; modificadores só interrompem o fluxo quando existirem.
+- [ ] Manter ação principal na zona inferior do celular, feedback imediato, sincronização
+  explícita e recuperação sem perda de rascunho em erro ou reconexão.
+- [ ] Unificar divisão/recebimento em um fluxo com modos por item, pessoa/assento, valor e
+  partes iguais, mantendo total, recebido e restante visíveis em todas as etapas.
+- [ ] Preservar os atalhos atuais do PDV, testar conflitos em campos/dialogs e exibir ajuda
+  acessível; atalhos configuráveis ficam fora do gate do piloto.
+- [ ] Exigir rota válida `produto/categoria → estação KDS → impressora de contingência`
+  antes de ativar uma estação; bebida, comida e expedição não podem depender de escolha
+  manual a cada pedido.
+- [ ] Adicionar ou comprovar KDS de expedição, recall do último ticket e confirmação de
+  entrega; permitir seleção, avanço, retorno e recall por teclado/bump bar sem touchscreen.
+- [ ] Bloquear fechamento do turno enquanto existirem comandas, dinheiro de garçom,
+  divergências, impressões, fiscal ou integrações pendentes, indicando a ação corretiva.
+- [ ] Em perda de internet, mostrar capacidade reduzida sem sucesso falso, bloquear
+  mutações inseguras e orientar contingência por impressora, 4G ou procedimento manual;
+  offline transacional completo permanece fora do piloto.
+
+#### Personalização controlada e marca do ecossistema
+
+- [ ] Permitir logo da casa, capa, mensagem, cores dentro de faixas acessíveis, destaques,
+  instruções, QR e modelos controlados; continuar proibindo CSS, script e fonte externa.
+- [ ] Manter “Tecnologia GiroMesa” discreto, acessível e imutável no QR; mostrar
+  “DoseClub conectado” apenas quando integração e entitlement estiverem ativos.
+- [ ] Não permitir que personalização esconda preço, termos, estado, indisponibilidade,
+  consentimento, marca mínima ou ação de suporte.
 
 ### E-mail e autenticação
 
 - [ ] Homologar Resend para convites, recuperação, confirmação e alertas, mantendo SMTP como alternativa,
   bounce e rastreio.
+- [ ] Manter uma única `EMAIL_FROM`, remetente e `reply-to` reais; eliminar `example.com`
+  dos workflows e exemplos de release.
+- [ ] Validar SPF, DKIM e DMARC; tratar webhook Resend assinado e deduplicado para
+  delivered, bounced, complained e suppressed, sem revelar existência de conta.
+- [ ] Exercitar convite, reenvio, reset de uso único, expiração, bounce e indisponibilidade
+  em endereços externos reais; falha de e-mail não derruba sessões operacionais existentes.
 - [ ] Homologar Google OAuth com origens, callback HTTPS, `state`, vínculo, revogação
   e encaminhamento público `/api/v1` sem duplicação `/api`.
+- [ ] Validar nos dois produtos `openid email profile`, login, vínculo, desvínculo,
+  MFA opcional e fallback por e-mail/senha; nenhum callback localhost entra em produção.
+- [ ] Configurar no console Google homepage, domínio, termos, privacidade e callbacks
+  exatos; segredos permanecem somente no ambiente protegido.
 
 ### Cobrança SaaS, pagamentos operacionais e Dose Club
 
 - [ ] Isolar Asaas em `platform_billing`, cobrando somente assinaturas GiroMesa, Dose Club e combo.
 - [ ] Homologar Asaas em sandbox: cliente, assinatura, checkout, webhook assinado,
   idempotência, outbox, reconciliação, trial, inadimplência, cancelamento e entitlements.
+- [ ] No DoseClub, converter `priceCents` para decimal antes de enviar `value`; testar
+  explicitamente R$ 99,00 e R$ 299,00 e impedir ativação ao apenas criar a assinatura.
+- [ ] Implementar `POST /v1/webhooks/asaas/platform` com autenticação, persistência
+  anterior ao processamento, idempotência, fila, reconciliação e ativação somente após
+  evento financeiro confirmado.
 - [x] Impedir criação de pagamento operacional por Asaas e manter webhook SaaS separado de comandas.
 - [ ] Criar ledger neutro para dinheiro, Pix externo, crédito, débito, voucher, cortesia e outros.
 - [ ] Registrar referência/NSU, operador, filial, auditoria, pagamento parcial, misto, estorno e divergência.
-- [ ] Criar intenção de compra Dose Club; liberar saldo somente após confirmação autorizada.
+- [x] Criar e persistir intenção de compra Dose Club.
+- [ ] Completar a máquina de estados da intenção individual/combo; liberar saldo e
+  entitlement somente após confirmação autorizada, idempotente e reconciliada.
 - [ ] Manter arquitetura para conectores bancários opcionais por filial, sem exigir conta Asaas.
-- [ ] Manter GiroMesa, Dose Club e combo como produtos independentes, com acesso por
+- [x] Manter GiroMesa, Dose Club e combo como produtos independentes, com acesso por
   entitlement e interfaces independentes.
 - [ ] Homologar contrato Dose Club 2026-07-30 com IDs reais de teste, filial/produto,
   consumo individual, combos, estoque compartilhado em ml, concorrência, timeout,
   retry, 409, estorno, webhook e `integration.shared_inventory`.
+- [ ] Publicar migrations, catálogo central e handoff federado já implementados; testar
+  tenant/funcionário pré-provisionado, token de uso único e indisponibilidade de um produto.
+
+### TEF e conciliação de adquirentes
+
+**Autoridade GiroMesa:** `apps/api/src/modules/payments/`, `apps/api/src/modules/pos/`,
+`packages/domain/src/`, `packages/db/src/schema.ts` e `apps/web/src/app/app/cash/`.
+
+- [ ] Criar contrato mínimo `PaymentConnector` somente após escolher adquirente/provider,
+  sistema operacional, PIN pad e processo de homologação do parceiro.
+- [ ] Preservar o fluxo atual de terminal externo: método, valor, bandeira, NSU/código de
+  autorização, operador, filial, divergência, estorno e conciliação manual auditada.
+- [ ] Implementar timeout, consulta, cancelamento e repetição idempotente sem armazenar
+  ou registrar PAN completo, CVV ou PIN.
+- [ ] Ativar TEF por filial/provider somente após ensaio no hardware; até lá, esconder a
+  ação e usar maquininha externa.
+- [ ] Documentar escopo PCI DSS aplicável com o fornecedor e o estabelecimento.
 
 ### WhatsApp não oficial
 
-- [ ] Implementar adapter/worker isolado, outbox, QR de pareamento e sessão criptografada
-  por tenant/filial.
+- [ ] Manter laboratório Web/QR em processo separado, sessão criptografada por
+  tenant/filial, outbox, QR de pareamento, revogação e sem acesso aos bancos dos produtos.
 - [x] Exibir claramente “integração não oficial da Meta” na documentação e na interface.
 - [ ] Implementar status, reconexão, revogação, cooldown, rate limit, opt-out e fila.
 - [ ] Cobrir reserva, fila, pedido, delivery, pré-conta e comprovante sem bloquear o núcleo.
 - [x] Proibir sucesso falso no transporte desabilitado; marketing em massa, opt-out, retry e entrega incerta ainda dependem do conector QR e sua fila/outbox homologados.
+- [ ] No piloto, usar `WHATSAPP_TRANSPORT=disabled` e CTA manual `wa.me`; automação Web/QR
+  não é gate e só pode ser ativada após decisão jurídica documentada e aceite explícito do risco.
+- [ ] Nenhuma confirmação de pedido, pagamento, reserva, consumo ou segurança depende de
+  WhatsApp; e-mail, interface e procedimento humano são contingências obrigatórias.
 
 ### Hardware, fiscal e infraestrutura
 
 - [ ] Homologar impressoras físicas 58/80, rede/USB, conector e reimpressão.
-- [ ] Homologar Focus NFe quando contratado, com contador, certificado, contingência e cancelamento.
-- [ ] Homologar iFood quando contratado, incluindo pedidos, KDS, impressão e conciliação.
+- [ ] Homologar Focus NFe por filial em ambiente de homologação e depois produção, com
+  CNPJ/IE, credenciamento SEFAZ, certificado A1, CSC quando exigido, token externo,
+  NCM, CFOP, CST/CSOSN, IBS/CBS e regras aprovadas pelo contador.
+- [ ] Corrigir cancelamento Focus para respeitar o ambiente configurado; nunca cair
+  silenciosamente de produção para homologação.
+- [ ] Cobrir emissão, consulta, rejeição, cancelamento, contingência, retransmissão,
+  guarda do XML, DANFE/NFC-e, reconciliação e alerta antes de `fiscal.enabled=true`.
+- [ ] Homologar iFood somente após app, CNPJ, loja de teste e credenciais aprovadas;
+  persistir evento antes do ACK, deduplicar, processar pedidos/cancelamentos/pagamentos,
+  atualizar status, imprimir e conciliar.
+- [ ] Enquanto iFood estiver desativado, usar o Gestor de Pedidos e lançamento manual
+  com origem externa, chave de correlação e proteção contra duplicidade.
 - [ ] Configurar Cloudflare, HTTPS, observabilidade, backup externo e restauração comprovada.
 - [ ] Exigir sandbox, segredo externo, healthcheck, idempotência, reconciliação, alertas,
   teste de indisponibilidade e desligamento por filial para cada integração.
+
+### Backoffice, observabilidade e suporte
+
+**GiroMesa:** `apps/web/src/app/platform/`, `apps/api/src/modules/platform/`,
+`apps/web/src/app/status/`, `apps/api/src/modules/integrations/outbox.*`.
+
+**DoseClub:** `apps/web/app/backoffice/`, `apps/api/src/backoffice/`,
+`apps/api/src/operations/` e `apps/worker/src/`.
+
+- [ ] Habilitar backoffice somente para usuários internos nomeados, MFA obrigatório,
+  sessão curta, recuperação testada, menor privilégio e auditoria do próprio acesso.
+- [ ] Mostrar por tenant/filial: release, migrations, web/API/worker, filas, outbox,
+  dead-letter, e-mail, integrações, backup, última reconciliação e incidentes.
+- [ ] Não implementar impersonação silenciosa; suporte começa read-only e qualquer ação
+  excepcional exige motivo, elevação temporária e auditoria visível.
+- [ ] Criar monitor e página de status fora da VPS, sem expor memória, topologia, nomes
+  de dados, versões internas ou segredos.
+- [ ] Definir alertas: SEV-1 para perda/vazamento/cobrança/acesso cruzado; SEV-2 para
+  PDV, caixa, KDS ou consumo indisponível; SEV-3 para função com contingência.
+- [ ] Definir canal único de suporte, escala do turno piloto, dono do incidente,
+  checkpoints e procedimento de rollback.
 
 ### Gate
 
 - [ ] Nenhuma integração externa é considerada pronta sem cenário real de homologação
   e rollback/desligamento por filial.
+- [ ] A UI operacional não exibe conector desativado como opção funcional; o
+  administrador vê estado, dependência, contingência e responsável pela ativação.
 
-## Fase 16 — aceite integral
+### Matriz de ativação do piloto
+
+| Recurso | Estado inicial | Ativação | Contingência |
+|---|---|---|---|
+| Resend | condicionado | convite e reset entregues, bounce observado | SMTP ou provisionamento assistido |
+| Google OAuth | condicionado | callback HTTPS, vínculo, MFA e logout reais | e-mail e senha |
+| Asaas SaaS | desligado | valor correto, webhook e reconciliação | ativação manual do parceiro |
+| Estoque GiroMesa–DoseClub | desligado | homologação conjunta e entitlement | produtos independentes |
+| Focus NFC-e | desligado | contador, SEFAZ, certificado e emissão real | emissor fiscal atual + comprovante não fiscal |
+| TEF | desligado | provider e hardware homologados | terminal externo + NSU manual |
+| iFood | desligado | homologação oficial aprovada | Gestor iFood + lançamento manual |
+| WhatsApp Web/QR | laboratório desligado | decisão jurídica e risco aceito | `wa.me`, telefone e e-mail |
+| Impressão térmica | por dispositivo | teste 58/80, falha e reimpressão | PDF/visualização e procedimento manual |
+| Pagamento online QR | desligado | conector opcional futuro homologado | caixa/terminal externo |
+
+## Fase 16 — aceite integral técnico, visual, operacional e jurídico
 
 ### Suítes obrigatórias
 
@@ -599,6 +958,56 @@ Executar somente depois de todos os gates internos.
 - [ ] Pagamentos: Asaas rejeitado no fluxo operacional; cobrança SaaS não altera comanda.
 - [ ] Dose Club: compra individual, combo, confirmação, concorrência, retry, estorno e isolamento.
 - [ ] `git diff --check`, segurança, secrets scan e migrações.
+- [ ] Testar rotas públicas legais, versão/hash de aceite, cookies, age gate, contato e
+  ausência de claims/preços inconsistentes.
+- [ ] Testar senha de provisionamento, convite, reset, MFA, sessões, rate limit, IDOR,
+  CSRF, XSS, SSRF, HMAC/replay, QR rotacionado e webhook duplicado.
+- [ ] Testar health público sanitizado e acesso negado a métricas, alertas, backup e
+  backoffice sem permissão/MFA.
+- [ ] Testar carga piloto sem meta inventada: erro abaixo de 1%, nenhuma duplicação,
+  nenhum saldo negativo ou acesso cruzado e p95 das rotas comuns abaixo de 500 ms.
+- [ ] Medir a jornada do garçom em celular físico: selecionar mesa, adicionar item comum,
+  enviar, repetir item, abrir comanda, solicitar pré-conta e registrar pagamento parcial.
+- [ ] Medir rotas e cliques sem publicar ganho não comprovado: item comum em até três ações
+  após a mesa, ação primária visível sem scroll e feedback local em até 200 ms.
+- [ ] Homologar KDS por toque e teclado/bump bar, incluindo estação errada, atraso, recall,
+  expedição, impressora de contingência e reconexão.
+- [ ] Verificar todas as rotas e CTAs públicos sem autenticação, menu móvel equivalente,
+  plano/produto/origem preservados, preço canônico e ausência de claims não comprovados.
+
+### Comandos mínimos reproduzíveis
+
+GiroMesa:
+
+```powershell
+rtk pnpm lint
+rtk proxy pnpm typecheck
+rtk pnpm test
+rtk pnpm test:integration
+rtk pnpm db:check-safety
+rtk pnpm security:preflight
+rtk pnpm build
+rtk pnpm test:e2e
+rtk pnpm test:visual-audit
+rtk git diff --check
+```
+
+DoseClub:
+
+```powershell
+rtk pnpm db:validate
+rtk pnpm lint
+rtk proxy pnpm typecheck
+rtk pnpm test
+rtk pnpm build
+rtk pnpm e2e
+rtk pnpm test:ops
+rtk pnpm pilot:check:staging
+rtk git diff --check
+```
+
+Os comandos de integração usam banco descartável ou staging. Nenhuma migration de
+produção, rotação de segredo, deploy ou restore ocorre sem autorização específica.
 
 ### Jornada crítica
 
@@ -617,11 +1026,19 @@ Executar somente depois de todos os gates internos.
 - [ ] Conferir dashboard e relatórios.
 - [ ] Repetir jornada por QR público.
 - [ ] Simular indisponibilidade das integrações.
+- [ ] Repetir a jornada com Google/Resend indisponíveis e login tradicional ativo.
+- [ ] Validar comprovante não fiscal e registro manual de NSU no terminal externo.
+- [ ] Executar DoseClub standalone e integrado: individual, combo, consumo, 409, retry,
+  dead-letter, estorno único e reconciliação em mililitros.
 
 ### Gate
 
 - [ ] Nenhuma falha bloqueante, ação decorativa, credencial exposta, divergência
   financeira ou acesso cruzado entre tenants.
+- [ ] Advogado e contador registram aprovação ou exceção explícita; Codex não marca
+  jurídico/fiscal como aprovado por conta própria.
+- [ ] Hardware, rede e contingências são aceitos no estabelecimento piloto, não apenas
+  em navegador ou mock local.
 
 ## Fase 17 — handoff, backup, piloto e corte único
 
@@ -634,10 +1051,22 @@ Executar somente depois de todos os gates internos.
 - [ ] Resultado dos testes, riscos, itens opcionais desativados e plano de suporte.
 - [ ] Selecionar estabelecimento piloto e configurar filial, catálogo, mesas, QR, KDS e impressão.
 - [ ] Executar turno real assistido antes da autorização de produção.
+- [ ] Criar seed/roteiro específico do parceiro, sem credencial previsível ou dado demo,
+  com proprietário, gerente, caixa, garçom, cozinha/bar e estoque.
+- [ ] Treinar abertura/fechamento de turno, caixa, contingência, reimpressão, QR, KDS,
+  estorno DoseClub e canal de suporte.
+- [ ] Entregar matriz simples de permissões, quick start e procedimentos de queda de
+  internet, impressora, integração e energia.
 
 ### Corte e rollback
 
 - [ ] Criar backup verificável e validar restauração.
+- [ ] Alcançar RPO máximo de uma hora e RTO máximo de quatro horas; preferir WAL/PITR,
+  backup completo diário e cópia criptografada fora da VPS.
+- [ ] Manter no mínimo sete backups diários, quatro semanais e seis mensais, com alerta,
+  checksum e restore periódico em ambiente isolado.
+- [ ] Incluir PostgreSQL, uploads, configurações, materiais QR e documentação de segredos;
+  segredos são protegidos e restaurados separadamente.
 - [ ] Registrar versões de app, migrations, imagens e configuração.
 - [ ] Remover frontend operacional antigo e flags de compatibilidade aceitas.
 - [ ] Publicar uma única versão somente após autorização explícita.
@@ -645,6 +1074,46 @@ Executar somente depois de todos os gates internos.
 - [ ] Manter rollback conjunto de aplicação, schema e configuração.
 - [ ] Registrar compensações de mensagens/webhooks; elas não são “desprocessadas”.
 - [ ] Revogar sessões WhatsApp e segredos independentemente quando necessário.
+
+### Go/no-go do piloto
+
+O piloto é **GO** somente quando todos os itens abaixo estiverem marcados:
+
+- [ ] Documentos legais públicos, identidade empresarial, contrato piloto e DPA possuem
+  revisão humana registrada.
+- [ ] Backup externo e restore em ambiente isolado possuem evidência.
+- [ ] Isolamento multitenant, integridade financeira, saldo e idempotência passaram.
+- [ ] Não existe senha previsível, segredo exposto ou monitoramento interno público.
+- [ ] PDV, caixa, KDS, QR, impressão crítica e consumo DoseClub possuem contingência.
+- [ ] Toda integração ativa possui homologação, flag de desligamento e reconciliação.
+- [ ] Suporte, responsável operacional e rollback estarão disponíveis durante o turno.
+
+### Calendário crítico até quinta-feira
+
+#### 03/08 — congelamento e P0
+
+- [ ] Consolidar F13/F14 em SHAs revisados e abrir branch/release de hardening.
+- [ ] Corrigir segurança P0, claims, preços, plano selecionado, e-mail e health público.
+- [ ] Receber dados empresariais e textos revisados por advogado/contador.
+
+#### 04/08 — integrações viáveis e infraestrutura
+
+- [ ] Publicar páginas legais e aceite versionado.
+- [ ] Homologar Resend e Google OAuth nos domínios reais.
+- [ ] Corrigir Asaas SaaS, mas manter desligado até webhook/reconciliação passarem.
+- [ ] Configurar monitor externo, backup, restore, tenant e dados do parceiro.
+
+#### 05/08 — F16 e ensaio físico
+
+- [ ] Rodar todas as suítes, segurança, migrations, E2E, visual e carga piloto.
+- [ ] Ensaiar impressora, KDS, celulares/tablets, rede, QR impresso, caixa e DoseClub.
+- [ ] Corrigir somente P0/P1; não abrir novo redesign nem feature sem relação com o piloto.
+
+#### 06/08 — go/no-go e piloto assistido
+
+- [ ] Fazer backup pré-turno, registrar release/digest e revisar flags.
+- [ ] Executar jornada completa acompanhada, com war room, checkpoints e log de eventos.
+- [ ] Reverter imediatamente em caso de corrupção, acesso cruzado ou divergência financeira.
 
 ## APIs, dados e tipos novos
 
@@ -657,6 +1126,15 @@ Executar somente depois de todos os gates internos.
 - [x] Usar SSE pelo token público seguro, com polling como fallback.
 - [ ] Validar upload, tamanho, formato e contraste; bloquear código, CSS e scripts personalizados.
 
+### Jurídico e comunicação
+
+- [ ] Criar `LegalDocumentVersion` e `LegalAcceptance` append-only no GiroMesa,
+  equivalentes ao histórico já existente no DoseClub, sem guardar conteúdo livre do cliente.
+- [ ] Criar eventos de entrega Resend para mensagem, provider id, estado, tentativa,
+  timestamp e erro sanitizado; bounce/complaint alimenta supressão, não reenvio infinito.
+- [ ] Manter versão e hash dos documentos em código/configuração revisada; publicação
+  jurídica é separada de alteração arbitrária pelo tenant.
+
 ### Cobrança e pagamentos
 
 - [ ] Separar `PlatformBilling` de `RestaurantPayments` em módulos, permissões e webhooks.
@@ -667,7 +1145,7 @@ Executar somente depois de todos os gates internos.
 ### Dose Club
 
 - [x] Preservar contrato 2026-07-30, HMAC, outbox, retry e idempotência.
-- [ ] Resolver tenant por vínculo seguro do cliente de integração; nenhum banco será compartilhado diretamente.
+- [x] Resolver tenant por vínculo seguro do cliente de integração; nenhum banco será compartilhado diretamente.
 - [x] Manter entitlements independentes de nomes fixos de plano.
 
 ## Definição final de pronto
@@ -678,11 +1156,36 @@ homologadas, os bancos estiverem povoados e as credenciais de teste forem
 entregues. Isso não autoriza automaticamente produção: o corte exige autorização
 explícita, backup verificável e rollback preparado.
 
+## Referências oficiais usadas na revisão de produção
+
+- [LGPD — Lei nº 13.709/2018](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709compilado.htm)
+- [ANPD — comunicação de incidentes](https://www.gov.br/anpd/pt-br/assuntos/noticias/anpd-aprova-o-regulamento-de-comunicacao-de-incidente-de-seguranca)
+- [ANPD — transferência internacional](https://www.gov.br/anpd/pt-br/acesso-a-informacao/institucional/atos-normativos/regulamentacoes_anpd/resolucao-cd-anpd-no-19-de-23-de-agosto-de-2024)
+- [ANPD — guia de cookies](https://www.gov.br/anpd/pt-br/centrais-de-conteudo/materiais-educativos-e-publicacoes/guia-orientativo-cookies-e-protecao-de-dados-pessoais.pdf)
+- [Código de Defesa do Consumidor](https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm)
+- [Marco Civil da Internet](https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l12965.htm)
+- [Lei nº 13.106/2015 — bebida alcoólica e menores](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13106.htm)
+- [Lei Brasileira de Inclusão](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13146.htm)
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
+- [Resend — domains](https://resend.com/docs/dashboard/domains/introduction)
+- [Google OAuth — políticas](https://developers.google.com/identity/protocols/oauth2/policies)
+- [Asaas — criar assinatura](https://docs.asaas.com/reference/create-new-subscription)
+- [Focus NFe — ambientes](https://doc.focusnfe.com.br/reference/ambiente)
+- [PCI DSS](https://www.pcisecuritystandards.org/standards/pci-dss/)
+- [iFood — homologação Order API](https://developer.ifood.com.br/pt-BR/docs/guides/modules/order/homologation/)
+- [iFood — polling de eventos](https://developer.ifood.com.br/pt-BR/docs/guides/modules/events/polling-overview)
+- [WhatsApp Business — termos](https://www.whatsapp.com/legal/business-terms)
+
 ## Fora de escopo ou condicionado
 
-- Offline completo, app nativo, TEF e editor visual livre permanecem fora deste ciclo.
-- Fiscal sem homologação, iFood e WhatsApp oficial ficam condicionados à contratação
-  e às credenciais/ambientes fornecidos.
+- Offline completo, app nativo e editor visual livre permanecem fora deste ciclo.
+- TEF entra como arquitetura neutra e registro por terminal externo; automação fica
+  condicionada à escolha e homologação de adquirente, provider, sistema e hardware.
+- Fiscal Focus NFe e iFood entram no plano, mas não podem ser ativados sem credenciais,
+  homologação oficial, contador e ambiente aplicável.
+- WhatsApp Web/QR não oficial pode continuar em laboratório isolado, mas não integra o
+  piloto como automação de produção; a contingência é contato manual e a API oficial Meta
+  permanece fora enquanto essa decisão comercial for mantida.
 - Pagamento online por QR permanece desativado até conector opcional homologado; Asaas fica restrito a assinaturas SaaS.
 - Integração Dose Club preserva produtos e APIs separados; estoque compartilhado só
   é ativado por entitlement e contrato homologado.

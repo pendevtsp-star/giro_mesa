@@ -14,6 +14,8 @@ import {
 import {
   billingStatusForTenant,
   type DocumentBranding,
+  type GiromesaPlanCode,
+  giromesaPlanCatalog,
   renderBrandedEmail,
   type TenantContext,
   TRIAL_DAYS,
@@ -26,7 +28,7 @@ import { createSessionToken } from "../../common/http";
 import { hashPassword } from "../../common/password";
 import { DatabaseService } from "../database/database.service";
 
-type PlanCode = "starter" | "professional" | "premium";
+type PlanCode = GiromesaPlanCode;
 type TenantStatus = "trial" | "active" | "past_due" | "suspended" | "canceled";
 type SupportPriority = "normal" | "high";
 
@@ -54,23 +56,6 @@ type ListPlatformCommunicationsInput = {
   tenantId?: string;
   type?: "trial_ending" | "past_due" | "support_follow_up";
   limit?: number;
-};
-
-const planCatalog: Record<
-  PlanCode,
-  { name: string; priceCents: number; limits: Record<string, number> }
-> = {
-  starter: { name: "Starter", priceCents: 14900, limits: { branches: 1, users: 5, products: 150 } },
-  professional: {
-    name: "Professional",
-    priceCents: 29900,
-    limits: { branches: 2, users: 15, products: 600 },
-  },
-  premium: {
-    name: "Premium",
-    priceCents: 49900,
-    limits: { branches: 5, users: 40, products: 2000 },
-  },
 };
 
 @Injectable()
@@ -335,7 +320,7 @@ export class PlatformService {
         throw new BadRequestException("Tenant slug already exists");
       }
 
-      const planDefinition = planCatalog[input.planCode];
+      const planDefinition = giromesaPlanCatalog[input.planCode];
       const [plan] = await tx
         .insert(plans)
         .values({
@@ -823,7 +808,7 @@ export class PlatformService {
           planCode: tenant.planCode ?? "starter",
           status: "pending",
           paymentMethod: "asaas",
-          amountCents: tenant.priceCents ?? planCatalog.starter.priceCents,
+          amountCents: tenant.priceCents ?? giromesaPlanCatalog.starter.priceCents,
           idempotencyKey,
           provider: "asaas",
           metadata: { source: "platform_checkout", requestId: context.requestId },
@@ -876,7 +861,7 @@ export class PlatformService {
         tenantId: tenant.id,
         tenantName: tenant.name,
         planCode: tenant.planCode ?? "starter",
-        priceCents: tenant.priceCents ?? planCatalog.starter.priceCents,
+        priceCents: tenant.priceCents ?? giromesaPlanCatalog.starter.priceCents,
         reference,
         idempotencyKey,
       });

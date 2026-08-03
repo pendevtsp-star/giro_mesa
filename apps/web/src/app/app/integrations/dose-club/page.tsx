@@ -1,12 +1,22 @@
 "use client";
 
-import { ArrowLeft, Cable, CheckCircle2, Copy, KeyRound, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  Cable,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  KeyRound,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   ApiError,
   type ClubWhiskyIntegrationConfig,
   configureClubWhiskyIntegration,
+  createDoseClubHandoff,
   getClubWhiskyConfig,
+  getEcosystemEntitlements,
   getSession,
 } from "../../../../lib/giromesa-api";
 
@@ -28,16 +38,20 @@ export default function DoseClubIntegrationPage() {
   const [issuedApiKey, setIssuedApiKey] = useState<string | null>(null);
   const [status, setStatus] = useState("Carregando configuração.");
   const [isBusy, setIsBusy] = useState(false);
+  const [canAccessDoseClub, setCanAccessDoseClub] = useState(false);
 
   useEffect(() => {
     let ignore = false;
 
-    Promise.all([getClubWhiskyConfig(), getSession()])
-      .then(([integration, session]) => {
+    Promise.all([getClubWhiskyConfig(), getSession(), getEcosystemEntitlements()])
+      .then(([integration, session, entitlements]) => {
         if (ignore) {
           return;
         }
         setConfig(integration);
+        setCanAccessDoseClub(
+          entitlements.includes("doseclub.subscription") || entitlements.includes("bundle"),
+        );
         setForm({
           branchId: integration.branchId ?? session.branchId ?? "",
           remoteClientId: integration.remoteClientId ?? "",
@@ -106,6 +120,17 @@ export default function DoseClubIntegrationPage() {
       setStatus("Chave copiada. Guarde-a no secret manager do Dose Club.");
     } catch {
       setStatus("Não foi possível copiar automaticamente. Selecione a chave e copie manualmente.");
+    }
+  }
+
+  async function openDoseClub() {
+    setIsBusy(true);
+    try {
+      const handoff = await createDoseClubHandoff("/");
+      window.location.assign(handoff.targetUrl);
+    } catch (error) {
+      setStatus(readError(error, "Não foi possível iniciar o acesso ao Dose Club."));
+      setIsBusy(false);
     }
   }
 
@@ -225,6 +250,24 @@ export default function DoseClubIntegrationPage() {
               </span>
             </div>
           </div>
+
+          {canAccessDoseClub ? (
+            <button
+              className="button primary"
+              type="button"
+              disabled={isBusy}
+              onClick={() => void openDoseClub()}
+            >
+              <ExternalLink size={17} /> Acessar Dose Club
+            </button>
+          ) : (
+            <a
+              className="button secondary"
+              href="https://doseclube.giromesa.com.br/?utm_source=giromesa_app&utm_medium=ecosystem"
+            >
+              <ExternalLink size={17} /> Conhecer Dose Club
+            </a>
+          )}
 
           {issuedApiKey ? (
             <div className="panel">

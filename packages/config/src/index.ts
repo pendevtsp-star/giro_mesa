@@ -10,6 +10,16 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1).default("postgres://giromesa:giromesa@localhost:55432/giromesa"),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
   SESSION_SECRET: z.string().min(1).default("local-development-session-secret"),
+  FEDERATION_ISSUER_URL: z.url().default("https://accounts.giromesa.com.br"),
+  FEDERATION_HANDOFF_SECRET: z
+    .string()
+    .min(1)
+    .default("local-development-federation-handoff-secret"),
+  DOSECLUB_PUBLIC_URL: z.url().default("https://doseclube.giromesa.com.br"),
+  DOSECLUB_SSO_EXCHANGE_KEY: z
+    .string()
+    .min(1)
+    .default("local-development-doseclub-sso-exchange-key"),
   QR_SIGNING_SECRET: z.string().min(1).default("local-development-qr-signing-secret"),
   PASSWORD_PEPPER: z.string().min(1).default("local-development-password-pepper"),
   MFA_ISSUER: z.string().default("GiroMesa"),
@@ -92,6 +102,8 @@ const secretProductionKeys = [
 
 const weakProductionValues = new Set([
   "local-development-session-secret",
+  "local-development-federation-handoff-secret",
+  "local-development-doseclub-sso-exchange-key",
   "local-development-qr-signing-secret",
   "local-development-password-pepper",
   "local-development-mfa-secret-key",

@@ -2,6 +2,8 @@ import * as schema from "@giromesa/db";
 import {
   auditLogs,
   branches,
+  categories,
+  commercialAttributionDaily,
   diningTables,
   guestExperienceConfigs,
   operationalEvents,
@@ -37,6 +39,7 @@ runIntegration("secure table QR", () => {
   let userId = "";
   let tableId = "";
   let productId = "";
+  let categoryId = "";
 
   beforeAll(async () => {
     const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -67,10 +70,17 @@ runIntegration("secure table QR", () => {
       .returning();
     if (!table) throw new Error("table fixture failed");
     tableId = table.id;
+    const [category] = await db
+      .insert(categories)
+      .values({ tenantId, branchId, name: "Destaques", isActive: true })
+      .returning();
+    if (!category) throw new Error("category fixture failed");
+    categoryId = category.id;
     const [product] = await db
       .insert(products)
       .values({
         tenantId,
+        categoryId,
         name: "Produto QR",
         priceCents: 2500,
         channels: ["pos", "qr"],
@@ -84,6 +94,9 @@ runIntegration("secure table QR", () => {
     if (tenantId) {
       await db.delete(serviceRequests).where(eq(serviceRequests.tenantId, tenantId));
       await db
+        .delete(commercialAttributionDaily)
+        .where(eq(commercialAttributionDaily.tenantId, tenantId));
+      await db
         .delete(publicRequestIdempotency)
         .where(eq(publicRequestIdempotency.tenantId, tenantId));
       await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
@@ -91,6 +104,7 @@ runIntegration("secure table QR", () => {
       await db.delete(orderItems).where(eq(orderItems.tenantId, tenantId));
       await db.delete(orders).where(eq(orders.tenantId, tenantId));
       await db.delete(products).where(eq(products.tenantId, tenantId));
+      await db.delete(categories).where(eq(categories.tenantId, tenantId));
       await db.delete(qrBranchSettings).where(eq(qrBranchSettings.tenantId, tenantId));
       await db.delete(guestExperienceConfigs).where(eq(guestExperienceConfigs.tenantId, tenantId));
       await db.delete(diningTables).where(eq(diningTables.tenantId, tenantId));
@@ -194,6 +208,10 @@ runIntegration("secure table QR", () => {
       highlights: ["Happy hour", "Música ao vivo"],
       campaignMessage: "Rodada dupla até 20h",
       houseInfo: "Wi-Fi disponível",
+      language: "en",
+      categoryLabels: { [categoryId]: "House picks" },
+      recommendedProductIds: [productId],
+      serviceRequestReasons: ["More napkins", "Help with the menu"],
     });
     expect(draft.status).toBe("draft");
     const published = await service.publishExperience(context, draft.id);
@@ -205,7 +223,21 @@ runIntegration("secure table QR", () => {
       welcomeMessage: "Bem-vindo",
       coverUrl: "/uploads/cover.webp",
       highlights: ["Happy hour", "Música ao vivo"],
+      language: "en",
+      serviceRequestReasons: ["More napkins", "Help with the menu"],
     });
+    expect(publicContext.categories).toContainEqual(
+      expect.objectContaining({
+        id: categoryId,
+        name: "House picks",
+      }),
+    );
+    expect(publicContext.products).toContainEqual(
+      expect.objectContaining({
+        id: productId,
+        recommended: true,
+      }),
+    );
     const secondDraft = await service.createExperienceDraft(context, {
       template: "minimal",
       primaryColor: "#654321",
@@ -254,6 +286,40 @@ runIntegration("secure table QR", () => {
     });
     const [tableAfter] = await service.listTables(context);
     expect(tableAfter?.publicUrl).toBe(tokenBefore);
+  });
+
+  it("stores commercial origin as a daily aggregate without table, order, or personal data", async () => {
+    const context = {
+      tenantId,
+      branchId,
+      userId,
+      requestId: "qr-attribution-integration",
+      permissions: ["tenant:manage", "pos:operate"],
+      isDemo: false,
+    };
+    const [table] = await service.listTables(context);
+    if (!table) throw new Error("QR table not listed");
+    const token = tokenFromUrl(table.publicUrl);
+
+    await service.recordCommercialAttribution(token, "giromesa");
+    await service.recordCommercialAttribution(token, "giromesa");
+
+    const rows = await db
+      .select()
+      .from(commercialAttributionDaily)
+      .where(eq(commercialAttributionDaily.tenantId, tenantId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      tenantId,
+      branchId,
+      source: "qr_organic",
+      destination: "giromesa",
+      campaign: "organic_attribution",
+      visits: 2,
+    });
+    expect(rows[0]).not.toHaveProperty("tableId");
+    expect(rows[0]).not.toHaveProperty("orderId");
+    expect(rows[0]).not.toHaveProperty("userId");
   });
 });
 

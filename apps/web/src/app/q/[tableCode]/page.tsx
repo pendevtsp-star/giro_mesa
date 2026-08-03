@@ -18,11 +18,18 @@ import {
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { normalizeQrFontPreset } from "../../../features/qr/font-preset";
 import {
+  formatPublicQrMoney,
+  getPublicQrCopy,
+  normalizePublicQrLanguage,
+  publicOrderStatusLabel,
+  publicServiceStatusLabel,
+  publicTimelineLabel,
+} from "../../../features/qr/public-copy";
+import {
   buildSecurePublicOrderEventsUrl,
   createPublicQrOrder,
   createSecurePublicOrder,
   createSecureServiceRequest,
-  formatMoney,
   getPublicMenu,
   getPublicProductModifiers,
   getPublicQr,
@@ -33,6 +40,7 @@ import {
   type PublicMenuResponse,
   type PublicModifierGroup,
   type PublicQrResponse,
+  recordSecureQrAttribution,
   requestPublicQrAction,
   type SecurePublicOrderSummary,
 } from "../../../lib/giromesa-api";
@@ -61,7 +69,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartHydrated, setCartHydrated] = useState(false);
   const [guestLabel, setGuestLabel] = useState("");
-  const [status, setStatus] = useState("Escolha itens do cardápio ou chame o atendimento.");
+  const [status, setStatus] = useState("");
   const [productQuery, setProductQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [isBusy, setIsBusy] = useState(false);
@@ -278,12 +286,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   }, [secureMode, serviceRequest, tableCode]);
 
   const totalCents = cart.reduce((sum, line) => sum + line.quantity * line.priceCents, 0);
+  const language = normalizePublicQrLanguage(qr?.qrSettings?.language);
+  const text = getPublicQrCopy(language);
   const categoryOptions = useMemo(
     () => [
-      ["all", "Todos"],
+      ["all", text.all],
       ...(menu?.categories ?? []).map((category) => [category.id, category.name] as const),
     ],
-    [menu?.categories],
+    [menu?.categories, text.all],
   );
   const visibleProducts = useMemo(() => {
     const normalizedQuery = productQuery.trim().toLowerCase();
@@ -292,7 +302,8 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       .filter((product) => categoryFilter === "all" || product.categoryId === categoryFilter)
       .filter((product) =>
         `${product.name} ${product.description ?? ""}`.toLowerCase().includes(normalizedQuery),
-      );
+      )
+      .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)));
   }, [categoryFilter, menu?.products, productQuery]);
   const branding = qr?.tenant.branding ?? menu?.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
@@ -422,9 +433,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       (g) => !selections.some((s) => g.options.some((o) => o.id === s.optionId)),
     );
     if (missingRequired.length > 0) {
-      setStatus(
-        `Selecione pelo menos uma opção em: ${missingRequired.map((g) => g.name).join(", ")}`,
-      );
+      setStatus(text.chooseRequired(missingRequired.map((group) => group.name).join(", ")));
       return;
     }
     addProductWithModifiers(modifierModalProduct, selections);
@@ -436,19 +445,25 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     try {
       await action();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Falha ao executar ação.");
+      setStatus(error instanceof Error ? error.message : text.genericFailure);
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  function recordAttribution(destination: "giromesa" | "doseclub") {
+    if (secureMode) {
+      void recordSecureQrAttribution(tableCode, destination).catch(() => undefined);
     }
   }
 
   function submitOrder() {
     void run(async () => {
       if (!qr || cart.length === 0) {
-        throw new Error("Adicione pelo menos um item ao pedido.");
+        throw new Error(text.addAtLeastOne);
       }
       if (secureMode && qr.table.active === false) {
-        throw new Error("O atendimento desta mesa ainda não foi ativado pela equipe.");
+        throw new Error(text.inactiveTable);
       }
       const items = cart.map((line) => ({
         productId: line.productId,
@@ -471,24 +486,28 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         window.sessionStorage.removeItem(`giromesa:qr:${tableCode}:order:${orderPayload}`);
       }
       setCart([]);
-      setStatus(`Pedido ${response.orderId.slice(0, 8)} enviado para o salão.`);
+      setStatus(text.orderSent(response.orderId.slice(0, 8)));
     });
   }
 
-  function callWaiter() {
+  function callWaiter(reason?: string) {
     void run(async () => {
       if (!qr) return;
       if (secureMode) {
         const request = await createSecureServiceRequest(
           tableCode,
-          idempotencyKey(tableCode, "call-waiter"),
-          { type: "call_waiter" },
+          idempotencyKey(tableCode, "call-waiter", reason ?? "general"),
+          { type: "call_waiter", ...(reason ? { message: reason } : {}) },
         );
         setServiceRequest(request);
       } else {
-        await requestPublicQrAction(tableCode, "call-waiter");
+        await requestPublicQrAction(
+          tableCode,
+          "call-waiter",
+          reason ? { message: reason } : undefined,
+        );
       }
-      setStatus("Garçom chamado. A solicitação ficou registrada no painel.");
+      setStatus(text.waiterCalled);
     });
   }
 
@@ -505,7 +524,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       } else {
         await requestPublicQrAction(tableCode, "pre-bill");
       }
-      setStatus("Pré-conta solicitada. O caixa recebeu o pedido de fechamento.");
+      setStatus(text.preBillRequested);
     });
   }
 
@@ -519,13 +538,12 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         totalCents: line.priceCents * line.quantity,
       }));
       let printTotalCents = totalCents;
-      let documentSubtitle =
-        "Conferência visual do pedido montado pelo cliente antes do envio ou da solicitação de pré-conta.";
+      let documentSubtitle: string = text.summaryDraftSubtitle;
 
       if (secureMode) {
         const response = await getSecurePublicOrder(tableCode);
         if (!response.order) {
-          throw new Error("A comanda desta mesa ainda não possui consumo registrado.");
+          throw new Error(text.noConsumption);
         }
         printLines = response.order.items.map((item) => ({
           name: item.name,
@@ -535,15 +553,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         }));
         printTotalCents = response.order.totalCents;
         setPublicOrder(response.order);
-        documentSubtitle =
-          "Resumo da comanda atual, carregado diretamente do atendimento registrado pelo estabelecimento.";
+        documentSubtitle = text.summaryOrderSubtitle;
       } else if (printLines.length === 0) {
-        throw new Error("Adicione itens para visualizar o resumo da mesa.");
+        throw new Error(text.addForSummary);
       }
 
       const popup = window.open("", "_blank", "width=1080,height=820");
       if (!popup) {
-        throw new Error("Não foi possível abrir a janela de resumo.");
+        throw new Error(text.popupBlocked);
       }
 
       const html = renderBrandedPrintDocument({
@@ -552,35 +569,35 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           logoUrl: branding?.logoUrl ?? null,
           accentPreset: branding?.accentPreset ?? "emerald",
         },
-        documentLabel: "Resumo da mesa",
-        title: `Mesa ${qr.table.code}`,
+        documentLabel: text.summaryDocument,
+        title: `${text.table} ${qr.table.code}`,
         subtitle: documentSubtitle,
         metadata: [
-          { label: "Mesa", value: qr.table.code },
-          { label: "Cliente", value: "Atendimento via QR" },
-          { label: "Gerado em", value: new Date().toLocaleString("pt-BR") },
+          { label: text.table, value: qr.table.code },
+          { label: text.customer, value: text.qrService },
+          { label: text.generatedAt, value: new Date().toLocaleString(language) },
         ],
         metrics: [
           {
-            label: "Itens",
+            label: text.items,
             value: String(printLines.reduce((sum, line) => sum + line.quantity, 0)),
           },
-          { label: "Linhas", value: String(printLines.length) },
+          { label: text.lines, value: String(printLines.length) },
           {
-            label: secureMode ? "Total da comanda" : "Total estimado",
-            value: formatMoney(printTotalCents),
+            label: secureMode ? text.tabTotal : text.estimatedTotal,
+            value: formatPublicQrMoney(printTotalCents, language),
           },
         ],
         bodyHtml: `
           <section class="section">
-            <h2>Itens selecionados</h2>
+            <h2>${escapeHtml(text.selectedItems)}</h2>
             <table>
               <thead>
                 <tr>
-                  <th>Qtd</th>
-                  <th>Item</th>
-                  <th>Unitario</th>
-                  <th>Total</th>
+                  <th>${escapeHtml(text.quantity)}</th>
+                  <th>${escapeHtml(text.item)}</th>
+                  <th>${escapeHtml(text.unitPrice)}</th>
+                  <th>${escapeHtml(text.total)}</th>
                 </tr>
               </thead>
               <tbody>${printLines
@@ -589,23 +606,22 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                     <tr>
                       <td>${escapeHtml(String(line.quantity))}</td>
                       <td>${escapeHtml(line.name)}</td>
-                      <td>${escapeHtml(formatMoney(line.unitPriceCents))}</td>
-                      <td>${escapeHtml(formatMoney(line.totalCents))}</td>
+                      <td>${escapeHtml(formatPublicQrMoney(line.unitPriceCents, language))}</td>
+                      <td>${escapeHtml(formatPublicQrMoney(line.totalCents, language))}</td>
                     </tr>`,
                 )
                 .join("")}</tbody>
             </table>
           </section>
         `,
-        footerNote:
-          "Resumo sem valor fiscal, sem dados pessoais e carregado apenas para a mesa identificada pelo QR.",
+        footerNote: text.nonFiscalSummary,
       });
 
       popup.document.write(html);
       popup.document.close();
       popup.focus();
       popup.print();
-      setStatus("Resumo visual da mesa aberto para impressão.");
+      setStatus(text.summaryOpened);
     });
   }
 
@@ -614,11 +630,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       <main className="menu-shell menu-shell-night table-qr-shell">
         <section className="qr-card" role="alert">
           <span className="section-kicker">
-            <QrCode size={18} /> QR indisponível
+            <QrCode size={18} /> {text.unavailable}
           </span>
-          <h1>Não foi possível abrir esta mesa</h1>
+          <h1>{text.unavailableTitle}</h1>
           <p>{fatalError}</p>
-          <p>Peça à equipe do estabelecimento um material atualizado.</p>
+          <p>{text.askTeam}</p>
         </section>
       </main>
     );
@@ -629,9 +645,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       <main className="menu-shell menu-shell-night table-qr-shell">
         <section className="qr-card" role="status">
           <span className="section-kicker">
-            <QrCode size={18} /> Carregando QR
+            <QrCode size={18} /> {text.loading}
           </span>
-          <p>Consultando o atendimento desta mesa...</p>
+          <p>{text.checking}</p>
         </section>
       </main>
     );
@@ -673,25 +689,21 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           <span>{branding?.displayName ?? qr.tenant.name}</span>
         </a>
         <span className="eyebrow">
-          <QrCode size={18} /> Mesa {qr.table.code}
+          <QrCode size={18} /> {text.table} {qr.table.code}
         </span>
         <h1>{branding?.displayName ?? qr.tenant.name}</h1>
-        <p>
-          {welcomeMessage ||
-            customInstruction ||
-            "Monte seu pedido, chame atendimento ou solicite a pré-conta da mesa."}
-        </p>
+        <p>{welcomeMessage || customInstruction || text.heroDefault}</p>
         {coverUrl ? (
           <div
             className="table-qr-cover"
             role="img"
-            aria-label="Imagem do estabelecimento"
+            aria-label={text.coverAlt}
             style={{ backgroundImage: `url("${coverUrl}")` }}
           />
         ) : null}
         {campaignMessage ? <p className="table-qr-campaign">{campaignMessage}</p> : null}
         {highlights.length ? (
-          <ul className="table-qr-highlights" aria-label="Destaques da casa">
+          <ul className="table-qr-highlights" aria-label={text.highlights}>
             {highlights.map((highlight) => (
               <li key={highlight}>{highlight}</li>
             ))}
@@ -704,12 +716,12 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         <article className="qr-card">
           <div className="panel-title">
             <div>
-              <span className="section-kicker">Cardápio</span>
-              <h2>{menuHeadline || "Pedido da mesa"}</h2>
+              <span className="section-kicker">{text.menu}</span>
+              <h2>{menuHeadline || text.orderTitle}</h2>
             </div>
             {!secureMode ? (
               <a className="button secondary" href={`/m/${qr.tenant.slug}`}>
-                <ClipboardList size={17} /> Cardápio completo
+                <ClipboardList size={17} /> {text.fullMenu}
               </a>
             ) : null}
           </div>
@@ -719,7 +731,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               <input
                 value={productQuery}
                 onChange={(event) => setProductQuery(event.target.value)}
-                placeholder="Buscar prato, bebida ou sobremesa"
+                placeholder={text.searchPlaceholder}
               />
             </label>
             <div className="filter-row">
@@ -766,13 +778,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                   <div>
                     <strong>{product.name}</strong>
                     <span>{product.description}</span>
+                    {product.recommended ? <span>{text.recommended}</span> : null}
                   </div>
-                  <small>{formatMoney(product.priceCents)}</small>
+                  <small>{formatPublicQrMoney(product.priceCents, language)}</small>
                   <Plus size={18} />
                 </button>
               ))
             ) : (
-              <p className="muted-copy">Nenhum item encontrado para esse filtro.</p>
+              <p className="muted-copy">{text.noItems}</p>
             )}
           </div>
         </article>
@@ -780,13 +793,13 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         <article className="qr-card">
           <div className="panel-title">
             <div>
-              <span className="section-kicker">Comanda</span>
-              <h2>{publicOrder ? "Comanda atual" : `${cart.length} item(ns)`}</h2>
+              <span className="section-kicker">{text.tab}</span>
+              <h2>{publicOrder ? text.currentTab : text.itemCount(cart.length)}</h2>
             </div>
-            <strong>{formatMoney(activeOrderTotal)}</strong>
+            <strong>{formatPublicQrMoney(activeOrderTotal, language)}</strong>
           </div>
           <div className="qr-cart">
-            {cart.length === 0 ? <p>Nenhum item selecionado ainda.</p> : null}
+            {cart.length === 0 ? <p>{text.emptyCart}</p> : null}
             {cart.map((line) => (
               <div
                 className="qr-cart-row"
@@ -800,7 +813,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                     </span>
                   )}
                   <span>
-                    {line.quantity} x {formatMoney(line.priceCents)}
+                    {line.quantity} x {formatPublicQrMoney(line.priceCents, language)}
                   </span>
                 </div>
                 <button
@@ -817,14 +830,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           </div>
           {secureMode && canOrder ? (
             <label className="qr-guest-label">
-              Identificação do pedido (opcional)
+              {text.guestLabel}
               <input
                 value={guestLabel}
                 maxLength={60}
                 onChange={(event) => setGuestLabel(event.target.value)}
-                placeholder="Apelido ou assento 3"
+                placeholder={text.guestPlaceholder}
               />
-              <small>Ajuda a equipe a encontrar seu pedido sem pedir dados pessoais.</small>
+              <small>{text.guestHelp}</small>
             </label>
           ) : null}
           {publicOrder ? (
@@ -839,26 +852,26 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <span>Status</span>
-                <strong>{orderStatusLabel(publicOrder.status)}</strong>
+                <span>{text.status}</span>
+                <strong>{publicOrderStatusLabel(publicOrder.status, language)}</strong>
               </div>
               {publicOrder.guestLabel ? (
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span>Identificação</span>
+                  <span>{text.identification}</span>
                   <strong>{publicOrder.guestLabel}</strong>
                 </div>
               ) : null}
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <span>Recebido</span>
-                <strong>{formatMoney(publicOrder.receivedCents ?? 0)}</strong>
+                <span>{text.received}</span>
+                <strong>{formatPublicQrMoney(publicOrder.receivedCents ?? 0, language)}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <span>Restante</span>
-                <strong>{formatMoney(activeOrderRemaining)}</strong>
+                <span>{text.remaining}</span>
+                <strong>{formatPublicQrMoney(activeOrderRemaining, language)}</strong>
               </div>
               {publicOrder.timeline?.length ? (
                 <ol
-                  aria-label="Acompanhamento do pedido"
+                  aria-label={text.orderTracking}
                   style={{
                     display: "grid",
                     gap: 6,
@@ -888,7 +901,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                       ) : (
                         <CircleCheck size={14} aria-hidden="true" />
                       )}
-                      <span>{step.label}</span>
+                      <span>{publicTimelineLabel(step.key, step.label, language)}</span>
                     </li>
                   ))}
                 </ol>
@@ -901,18 +914,23 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
             onClick={submitOrder}
             disabled={isBusy || !canOrder}
           >
-            <Send size={17} /> Enviar pedido
+            <Send size={17} /> {text.sendOrder}
           </button>
         </article>
       </section>
 
       <section className="qr-actions">
         {canCallWaiter ? (
-          <button className="qr-action" type="button" onClick={callWaiter} disabled={isBusy}>
+          <button
+            className="qr-action"
+            type="button"
+            onClick={() => callWaiter()}
+            disabled={isBusy}
+          >
             <BellRing size={26} />
             <div>
-              <h2>Chamar garçom</h2>
-              <p>Solicitação registrada para o painel do salão.</p>
+              <h2>{text.callWaiter}</h2>
+              <p>{text.callWaiterHelp}</p>
             </div>
           </button>
         ) : null}
@@ -925,57 +943,74 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           >
             <ReceiptText size={26} />
             <div>
-              <h2>Pedir pré-conta</h2>
-              <p>
-                {hasActiveOrder
-                  ? "O caixa recebe o pedido de fechamento da mesa."
-                  : "A comanda ainda não possui consumo registrado."}
-              </p>
+              <h2>{text.preBill}</h2>
+              <p>{hasActiveOrder ? text.preBillReady : text.preBillEmpty}</p>
             </div>
           </button>
         ) : null}
         <button className="qr-action" type="button" onClick={openTableSummary} disabled={isBusy}>
           <FileText size={26} />
           <div>
-            <h2>Resumo da mesa</h2>
-            <p>Abra um documento visual com os itens montados e total estimado.</p>
+            <h2>{text.tableSummary}</h2>
+            <p>{text.tableSummaryHelp}</p>
           </div>
         </button>
       </section>
+      {canCallWaiter && qr.qrSettings?.serviceRequestReasons?.length ? (
+        <section className="qr-card" aria-labelledby="quick-service-reasons">
+          <h2 id="quick-service-reasons">{text.quickReasons}</h2>
+          <div className="filter-row">
+            {qr.qrSettings.serviceRequestReasons.map((reason) => (
+              <button
+                className="filter"
+                disabled={isBusy}
+                key={reason}
+                onClick={() => callWaiter(reason)}
+                type="button"
+              >
+                {reason}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <footer className="qr-note" role="status" aria-live="polite">
-        {status}
+        {status || text.initialStatus}
       </footer>
       {serviceRequest ? (
         <p className="qr-note" role="status">
-          Atendimento: {serviceRequestStatusLabel(serviceRequest.status)}.
+          {text.service}: {publicServiceStatusLabel(serviceRequest.status, language)}.
         </p>
       ) : null}
       {qr.partnerAttribution ? (
         <p className="qr-marketing-note">
           <a
             href={qr.partnerAttribution.href}
+            onClick={() => recordAttribution("doseclub")}
             rel="noreferrer"
             target="_blank"
-            aria-label={`Conheça a tecnologia deste atendimento: ${qr.partnerAttribution.label}`}
+            aria-label={`${text.technology}: ${qr.partnerAttribution.label}`}
           >
             {qr.partnerAttribution.label}
           </a>
           <span aria-hidden="true"> · </span>
           <a
-            aria-label="Conheça a tecnologia deste atendimento"
+            aria-label={text.technology}
             href="https://giromesa.com.br/?utm_source=giromesa_qr&utm_medium=qr&utm_campaign=organic_attribution"
+            onClick={() => recordAttribution("giromesa")}
           >
-            Conheça a tecnologia deste atendimento
+            {text.technology}
           </a>
         </p>
       ) : qr.qrSettings?.marketingEnabled !== false ? (
         <p className="qr-marketing-note">
-          Tecnologia GiroMesa para uma operação mais simples.{" "}
+          {text.technologySentence}{" "}
           <a
-            aria-label="Conheça a tecnologia deste atendimento"
+            aria-label={text.technology}
             href="https://giromesa.com.br/?utm_source=giromesa_qr&utm_medium=qr&utm_campaign=organic_attribution"
+            onClick={() => recordAttribution("giromesa")}
           >
-            Conheça a tecnologia deste atendimento
+            {text.technology}
           </a>
           .
         </p>
@@ -985,7 +1020,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         <dialog
           open
           className="modifier-modal-overlay"
-          aria-label="Fechar opções do produto"
+          aria-label={text.close}
           style={{
             position: "fixed",
             inset: 0,
@@ -1038,14 +1073,14 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                   </p>
                 )}
                 <p style={{ margin: "8px 0 0", fontWeight: 600 }}>
-                  {formatMoney(modifierModalProduct.priceCents)}
+                  {formatPublicQrMoney(modifierModalProduct.priceCents, language)}
                 </p>
               </div>
               <button
                 className="icon-button"
                 type="button"
                 onClick={closeModifierModal}
-                aria-label="Fechar"
+                aria-label={text.close}
                 style={{ flexShrink: 0 }}
               >
                 <X size={20} />
@@ -1054,11 +1089,11 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
 
             {modifierLoading ? (
               <p className="muted-copy" style={{ textAlign: "center", padding: 24 }}>
-                Carregando opções...
+                {text.loadingOptions}
               </p>
             ) : modifierGroups.length === 0 ? (
               <p className="muted-copy" style={{ textAlign: "center", padding: 24 }}>
-                Nenhuma opção de personalização disponível.
+                {text.noOptions}
               </p>
             ) : (
               modifierGroups.map((group) => (
@@ -1073,8 +1108,8 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                   >
                     <strong>{group.name}</strong>
                     <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-                      {group.isRequired ? "Obrigatório" : "Opcional"}
-                      {group.maxChoices > 1 ? ` (até ${group.maxChoices})` : ""}
+                      {group.isRequired ? text.required : text.optional}
+                      {group.maxChoices > 1 ? ` ${text.upTo(group.maxChoices)}` : ""}
                     </span>
                   </div>
                   <div style={{ display: "grid", gap: 6 }}>
@@ -1103,7 +1138,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                           {option.priceDeltaCents !== 0 && (
                             <small style={{ color: "var(--muted)" }}>
                               {option.priceDeltaCents > 0 ? "+" : ""}
-                              {formatMoney(option.priceDeltaCents)}
+                              {formatPublicQrMoney(option.priceDeltaCents, language)}
                             </small>
                           )}
                         </button>
@@ -1121,7 +1156,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
               disabled={modifierLoading}
               style={{ marginTop: 8 }}
             >
-              <Plus size={17} /> Adicionar ao pedido
+              <Plus size={17} /> {text.addToOrder}
             </button>
           </div>
         </dialog>
@@ -1139,32 +1174,4 @@ function idempotencyKey(token: string, action: string, payload = "") {
   const value = window.crypto.randomUUID();
   window.sessionStorage.setItem(storageKey, value);
   return value;
-}
-
-function orderStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    draft: "Rascunho",
-    opened: "Recebido",
-    sent_to_kitchen: "Enviado para produÃ§Ã£o",
-    preparing: "Em preparo",
-    ready: "Pronto para servir",
-    served: "Entregue Ã  mesa",
-    waiting_payment: "Aguardando pagamento",
-    partially_paid: "Pagamento parcial",
-    paid: "Pago",
-    canceled: "Cancelado",
-    refunded: "Estornado",
-  };
-  return labels[status] ?? status;
-}
-
-function serviceRequestStatusLabel(status: string) {
-  return (
-    {
-      pending: "aguardando a equipe",
-      acknowledged: "equipe a caminho",
-      resolved: "resolvido",
-      canceled: "cancelado",
-    }[status] ?? "em acompanhamento"
-  );
 }

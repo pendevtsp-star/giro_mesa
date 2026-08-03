@@ -8,6 +8,7 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   headers?: Record<string, string>;
+  keepalive?: boolean;
 };
 
 let csrfTokenCache: string | null = null;
@@ -111,6 +112,9 @@ export type QrBranchSettings = {
   highlights?: string[];
   campaignMessage?: string;
   houseInfo?: string;
+  categoryLabels?: Record<string, string>;
+  recommendedProductIds?: string[];
+  serviceRequestReasons?: string[];
 };
 
 export type GuestExperienceRevision = {
@@ -127,6 +131,9 @@ export type GuestExperienceRevision = {
     highlights?: string[];
     campaignMessage?: string;
     houseInfo?: string;
+    categoryLabels?: Record<string, string>;
+    recommendedProductIds?: string[];
+    serviceRequestReasons?: string[];
   };
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -1051,6 +1058,7 @@ export type PublicMenuResponse = {
       | "spiritType"
     > & {
       modifierGroupCount?: number;
+      recommended?: boolean;
     }
   >;
 };
@@ -1083,6 +1091,7 @@ export type PublicQrSettings = {
   highlights?: string[];
   campaignMessage?: string;
   houseInfo?: string;
+  serviceRequestReasons?: string[];
 };
 
 export type PublicPartnerAttribution = {
@@ -1133,6 +1142,7 @@ export type SecurePublicQrContext = {
     priceCents: number;
     imageUrl: string | null;
     channels: string[];
+    recommended?: boolean;
   }>;
 };
 
@@ -1283,6 +1293,18 @@ export type ClubWhiskyConfigureResponse = ClubWhiskyIntegrationConfig & {
   apiKeyReturnedOnce: boolean;
 };
 
+export type EcosystemEntitlement =
+  | "giromesa.subscription"
+  | "doseclub.subscription"
+  | "bundle"
+  | "integration.shared_inventory";
+
+export type FederationHandoff = {
+  token: string;
+  expiresAt: string;
+  targetUrl: string;
+};
+
 export class ApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
@@ -1347,6 +1369,7 @@ async function buildRequestInit(path: string, method: string, options: RequestOp
   const requestInit: RequestInit = {
     method,
     credentials: "include",
+    ...(options.keepalive !== undefined ? { keepalive: options.keepalive } : {}),
   };
   const activeBranchId =
     typeof window !== "undefined" ? window.localStorage.getItem("gm_active_branch_id") : null;
@@ -1963,6 +1986,13 @@ export function createSecureServiceRequest(
       headers: { "x-idempotency-key": idempotencyKey },
       body: input,
     },
+  );
+}
+
+export function recordSecureQrAttribution(token: string, destination: "giromesa" | "doseclub") {
+  return apiRequest<{ recorded: true }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/attribution`,
+    { method: "POST", body: { destination }, keepalive: true },
   );
 }
 
@@ -3031,6 +3061,20 @@ export function configureClubWhiskyIntegration(input?: {
       ...input,
       rotateKey: input?.rotateKey ?? false,
     },
+  });
+}
+
+export async function getEcosystemEntitlements() {
+  const result = await apiRequest<{ data: EcosystemEntitlement[] }>(
+    "/api/v1/ecosystem/entitlements",
+  );
+  return result.data;
+}
+
+export function createDoseClubHandoff(returnTo = "/") {
+  return apiRequest<FederationHandoff>("/api/v1/auth/federation/handoff", {
+    method: "POST",
+    body: { targetProduct: "doseclub", returnTo },
   });
 }
 

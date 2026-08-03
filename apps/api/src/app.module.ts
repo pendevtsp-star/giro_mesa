@@ -6,6 +6,7 @@ import { CatalogModule } from "./modules/catalog/catalog.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DatabaseModule } from "./modules/database/database.module";
 import { DeliveryModule } from "./modules/delivery/delivery.module";
+import { EcosystemModule } from "./modules/ecosystem/ecosystem.module";
 import { FiscalModule } from "./modules/fiscal/fiscal.module";
 import { FloorModule } from "./modules/floor/floor.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -30,6 +31,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     CatalogModule,
     CustomersModule,
     DeliveryModule,
+    EcosystemModule,
     PosModule,
     FiscalModule,
     FloorModule,

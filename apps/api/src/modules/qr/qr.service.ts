@@ -3,6 +3,7 @@ import { loadEnv } from "@giromesa/config";
 import {
   auditLogs,
   categories,
+  commercialAttributionDaily,
   diningTables,
   guestExperienceConfigs,
   integrationAccounts,
@@ -95,6 +96,53 @@ export function resolvePublicPartnerAttribution(input: {
 
 export function sanitizeQrFontPreset(value: unknown): QrFontPreset | undefined {
   return value === "system" || value === "serif" || value === "display" ? value : undefined;
+}
+
+export function sanitizeQrPersonalization(
+  config: Record<string, unknown>,
+): Pick<
+  GuestExperienceConfig,
+  "categoryLabels" | "recommendedProductIds" | "serviceRequestReasons"
+> {
+  const categoryLabels =
+    config.categoryLabels &&
+    typeof config.categoryLabels === "object" &&
+    !Array.isArray(config.categoryLabels)
+      ? Object.fromEntries(
+          Object.entries(config.categoryLabels)
+            .filter(
+              ([id, label]) =>
+                /^[0-9a-f-]{36}$/i.test(id) && typeof label === "string" && label.trim(),
+            )
+            .slice(0, 30)
+            .map(([id, label]) => [id, (label as string).trim().slice(0, 80)]),
+        )
+      : undefined;
+  const recommendedProductIds = Array.isArray(config.recommendedProductIds)
+    ? [
+        ...new Set(
+          config.recommendedProductIds.filter(
+            (value): value is string => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value),
+          ),
+        ),
+      ].slice(0, 12)
+    : undefined;
+  const serviceRequestReasons = Array.isArray(config.serviceRequestReasons)
+    ? [
+        ...new Set(
+          config.serviceRequestReasons
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim().slice(0, 80))
+            .filter(Boolean),
+        ),
+      ].slice(0, 8)
+    : undefined;
+
+  return {
+    ...(categoryLabels ? { categoryLabels } : {}),
+    ...(recommendedProductIds ? { recommendedProductIds } : {}),
+    ...(serviceRequestReasons ? { serviceRequestReasons } : {}),
+  };
 }
 
 const defaultCapabilities: QrCapability[] = [
@@ -196,6 +244,13 @@ export class QrService {
       throw new BadRequestException("Scheduled publication must be in the future");
     }
     const current = await this.settingsForBranch(context.tenantId, branchId);
+    const rawConfig = configInput as Record<string, unknown>;
+    await this.assertPersonalizationScope(
+      context.tenantId,
+      branchId,
+      sanitizeQrPersonalization(rawConfig),
+    );
+    const nextConfig = mergeExperienceSettings(current, rawConfig);
     const latest = await this.database.db
       .select({ version: guestExperienceConfigs.version })
       .from(guestExperienceConfigs)
@@ -214,7 +269,7 @@ export class QrService {
         branchId,
         version: (latest[0]?.version ?? 0) + 1,
         status: "draft",
-        config: { ...current, ...configInput, branchId },
+        config: nextConfig,
         scheduledAt: scheduledAt ?? null,
         createdByUserId: context.userId ?? null,
       })
@@ -611,6 +666,8 @@ export class QrService {
         .limit(1),
     ]);
     const active = isTableActive(resolved.table.status);
+    const categoryLabels = settings.categoryLabels ?? {};
+    const recommendedProductIds = new Set(settings.recommendedProductIds ?? []);
     const partnerAttribution = resolvePublicPartnerAttribution({
       accountStatus: doseClubAccount[0]?.status ?? null,
       configuredBranchId: doseClubAccount[0]?.configuredBranchId ?? null,
@@ -650,11 +707,84 @@ export class QrService {
         ...(settings.highlights?.length ? { highlights: settings.highlights } : {}),
         ...(settings.campaignMessage ? { campaignMessage: settings.campaignMessage } : {}),
         ...(settings.houseInfo ? { houseInfo: settings.houseInfo } : {}),
+        ...(settings.serviceRequestReasons?.length
+          ? { serviceRequestReasons: settings.serviceRequestReasons }
+          : {}),
       },
       ...(partnerAttribution ? { partnerAttribution } : {}),
-      categories: menuCategories,
-      products: menuProducts.filter((product) => product.channels.includes("qr")),
+      categories: menuCategories.map((category) => ({
+        ...category,
+        name: categoryLabels[category.id] ?? category.name,
+      })),
+      products: menuProducts
+        .filter((product) => product.channels.includes("qr"))
+        .map((product) => ({
+          ...product,
+          recommended: recommendedProductIds.has(product.id),
+        })),
     };
+  }
+
+  async recordCommercialAttribution(token: string, destination: "giromesa" | "doseclub") {
+    const resolved = await this.resolveToken(token);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
+    if (settings.marketingEnabled === false) {
+      throw new ForbiddenException("Commercial attribution is disabled for this branch");
+    }
+    if (destination === "doseclub") {
+      const [account] = await this.database.db
+        .select({
+          status: integrationAccounts.status,
+          configuredBranchId: sql<string | null>`${integrationAccounts.config}->>'branchId'`,
+        })
+        .from(integrationAccounts)
+        .where(
+          and(
+            eq(integrationAccounts.tenantId, resolved.tenant.id),
+            eq(integrationAccounts.provider, "club_whisky"),
+            eq(integrationAccounts.status, "active"),
+          ),
+        )
+        .limit(1);
+      if (
+        !resolvePublicPartnerAttribution({
+          accountStatus: account?.status ?? null,
+          configuredBranchId: account?.configuredBranchId ?? null,
+          branchId: resolved.table.branchId,
+          ...(settings.marketingEnabled !== undefined
+            ? { marketingEnabled: settings.marketingEnabled }
+            : {}),
+        })
+      ) {
+        throw new ForbiddenException("DoseClub attribution is unavailable for this branch");
+      }
+    }
+
+    const day = new Date().toISOString().slice(0, 10);
+    await this.database.db
+      .insert(commercialAttributionDaily)
+      .values({
+        tenantId: resolved.tenant.id,
+        branchId: resolved.table.branchId,
+        day,
+        destination,
+        visits: 1,
+      })
+      .onConflictDoUpdate({
+        target: [
+          commercialAttributionDaily.tenantId,
+          commercialAttributionDaily.branchId,
+          commercialAttributionDaily.day,
+          commercialAttributionDaily.source,
+          commercialAttributionDaily.destination,
+          commercialAttributionDaily.campaign,
+        ],
+        set: {
+          visits: sql`${commercialAttributionDaily.visits} + 1`,
+          updatedAt: new Date(),
+        },
+      });
+    return { recorded: true, day, source: "qr_organic", destination };
   }
 
   async getPublicOrder(token: string) {
@@ -1144,6 +1274,53 @@ export class QrService {
     return published ? mergeExperienceSettings(base, published.config) : base;
   }
 
+  private async assertPersonalizationScope(
+    tenantId: string,
+    branchId: string,
+    config: Partial<GuestExperienceConfig>,
+  ) {
+    const categoryIds = Object.keys(config.categoryLabels ?? {});
+    if (categoryIds.length) {
+      const rows = await this.database.db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          and(
+            eq(categories.tenantId, tenantId),
+            inArray(categories.id, categoryIds),
+            or(eq(categories.branchId, branchId), sql`${categories.branchId} is null`),
+          ),
+        );
+      if (rows.length !== new Set(categoryIds).size) {
+        throw new BadRequestException("Category customization contains an invalid category");
+      }
+    }
+
+    const productIds = [...new Set(config.recommendedProductIds ?? [])];
+    if (productIds.length) {
+      const rows = await this.database.db
+        .select({
+          id: products.id,
+          channels: products.channels,
+          isActive: products.isActive,
+          isAvailable: products.isAvailable,
+        })
+        .from(products)
+        .where(and(eq(products.tenantId, tenantId), inArray(products.id, productIds)));
+      if (
+        rows.length !== productIds.length ||
+        rows.some(
+          (product) =>
+            !product.isActive || !product.isAvailable || !product.channels.includes("qr"),
+        )
+      ) {
+        throw new BadRequestException(
+          "Recommendations must reference QR products from this tenant",
+        );
+      }
+    }
+  }
+
   private async activateScheduledExperience(tenantId: string, branchId: string) {
     const now = new Date();
     const activated = await this.database.db.transaction(async (tx) => {
@@ -1310,6 +1487,7 @@ function mergeExperienceSettings(
     : base.capabilities;
   const fontPreset = sanitizeQrFontPreset(config.fontPreset);
   const coverUrl = sanitizeQrExperienceAssetUrl(config.coverUrl);
+  const personalization = sanitizeQrPersonalization(config);
   return {
     ...base,
     ...(typeof config.reviewBeforeKds === "boolean"
@@ -1348,6 +1526,7 @@ function mergeExperienceSettings(
     ...(typeof config.houseInfo === "string"
       ? { houseInfo: config.houseInfo.trim().slice(0, 300) }
       : {}),
+    ...personalization,
     ...(capabilities.length ? { capabilities } : {}),
   };
 }
