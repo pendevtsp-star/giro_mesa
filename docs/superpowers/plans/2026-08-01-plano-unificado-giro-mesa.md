@@ -110,6 +110,13 @@ fechado apenas por existir código:
   tenant/filial; auditoria, outbox, estorno idempotente e comanda/PDV informativos
   preservam a separação comercial. O DoseClub ainda precisa enviar o campo quando
   houver comanda GiroMesa, e a homologação externa permanece pendente.
+- Fase 12: pacote de produtividade do PDV publicado em `da66fe1`; F2 busca, F3 alterna
+  Mesa/Balcão, F4 recebe, F6 mesa, F8 produção, F9 pré-conta, F10 fechamento e Esc agora
+  usam mapa testável, feedback de processamento e estados acessíveis. CI `30785428404`
+  e deploy `30785428422` passaram.
+- Fase 14: pacote DoseClub de acesso comercial independente publicado em `e954582`; o
+  onboarding registra DoseClub ou combo, o handoff para GiroMesa permanece separado e
+  sem SSO falso. Migration, CI, testes, E2E e segurança passaram em `30785791198`.
 - Fase 15: pagamentos operacionais não usam mais Asaas; métodos externos são registrados
   como manuais, boleto é rejeitado e webhook Asaas operacional é ignorado. Homologação SaaS
   externa permanece pendente.

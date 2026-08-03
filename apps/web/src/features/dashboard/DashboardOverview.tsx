@@ -32,21 +32,37 @@ function Badge({
   return <span className={`gm-badge gm-badge-${tone}`}>{children}</span>;
 }
 
-export function ProfileActionStrip({ profile }: { profile: OperatorProfile }) {
+export function ExecutiveNextAction({
+  profile,
+  ...pendingInput
+}: PendingCenterInput & { profile: OperatorProfile }) {
+  const nextAction = buildNextDashboardAction(pendingInput);
+  const fallbackAction = profile.actions[0];
+
   return (
-    <section className="profile-action-strip" aria-label="Atalhos por perfil">
+    <section className="profile-action-strip" aria-label="Próxima ação do turno">
       <div>
-        <span className="section-kicker">{profile.kicker}</span>
-        <strong>{profile.title}</strong>
-        <p>{profile.description}</p>
+        <span className="section-kicker">{nextAction ? "Próxima ação" : profile.kicker}</span>
+        <strong>{nextAction?.title ?? "Operação sob controle"}</strong>
+        <p>
+          {nextAction
+            ? `${nextAction.detail} · ${nextAction.owner} · ${nextAction.deadline}`
+            : profile.description}
+        </p>
       </div>
-      <div className="profile-action-buttons">
-        {profile.actions.map((action) => (
-          <a className="button secondary" href={action.href} key={action.href}>
-            {action.label}
+      {nextAction ? (
+        <div className="profile-action-buttons">
+          <a className="button primary" href={nextAction.href}>
+            {nextAction.actionLabel} <ArrowRight size={15} />
           </a>
-        ))}
-      </div>
+        </div>
+      ) : fallbackAction ? (
+        <div className="profile-action-buttons">
+          <a className="button secondary" href={fallbackAction.href}>
+            {fallbackAction.label} <ArrowRight size={15} />
+          </a>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -606,6 +622,10 @@ export function buildPendingActions({
   }
 
   return actions;
+}
+
+export function buildNextDashboardAction(input: PendingCenterInput): PendingAction | null {
+  return buildPendingActions(input)[0] ?? null;
 }
 
 export function PendingCenter(props: PendingCenterInput) {

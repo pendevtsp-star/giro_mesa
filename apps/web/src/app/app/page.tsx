@@ -23,11 +23,11 @@ import { AppShell } from "../../components/app-shell/AppShell";
 import { filterNavigationByPermissions } from "../../components/app-shell/navigation";
 import {
   BranchComparisonCard,
+  ExecutiveNextAction,
   OperationalReadinessPanel,
   OperationalSummaryCards,
   PendingCenter,
   PeriodSalesCard,
-  ProfileActionStrip,
   ProfileDashboardPanel,
   RecentAlertsSection,
 } from "../../features/dashboard/DashboardOverview";
@@ -361,7 +361,20 @@ export default function AppDashboardPage() {
       locale={locale}
       onLocaleChange={setLocale}
     >
-      <ProfileActionStrip profile={operatorProfile} />
+      <ExecutiveNextAction
+        profile={operatorProfile}
+        onboardingStatus={onboardingStatus}
+        currentShift={currentShift}
+        cashSummary={cashSummary}
+        inventoryAlerts={inventoryAlerts}
+        qrPendingOrders={qrPendingOrders}
+        tickets={tickets}
+        canManageTenant={canManageTenant}
+        canManageCash={canManageCash}
+        canManageInventory={canManageInventory}
+        canOperatePos={canOperatePos}
+        canOperateKds={canOperateKds}
+      />
 
       {billingBlocked ? (
         <section className="billing-gate panel">

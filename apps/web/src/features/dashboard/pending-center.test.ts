@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildNextDashboardAction,
   buildPendingActions,
   buildProfileInsights,
   type PendingCenterInput,
@@ -44,6 +45,18 @@ function profileInput(overrides: Partial<ProfileDashboardInput> = {}): ProfileDa
 }
 
 describe("dashboard pending center", () => {
+  it("promotes the first real blocker as the executive next action", () => {
+    const nextAction = buildNextDashboardAction(
+      baseInput({ canManageCash: true, currentShift: null }),
+    );
+
+    expect(nextAction).toMatchObject({
+      id: "shift",
+      title: "Abrir o turno",
+      href: "/app/cash",
+    });
+  });
+
   it("shows only actions allowed by the operator profile", () => {
     const actions = buildPendingActions(
       baseInput({
