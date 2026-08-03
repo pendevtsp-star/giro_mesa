@@ -70,6 +70,207 @@ export function OperationalSummaryCards({
   );
 }
 
+type ProfileInsight = {
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
+};
+
+export type ProfileDashboardInput = {
+  dashboardSummary: {
+    salesToday: number;
+    activeOrders: number;
+    occupiedTables: string;
+    cashBalance: number;
+    cashOpen: boolean;
+  } | null;
+  cashSummary: CashSessionSummary | null;
+  salesPeriodData: SalesByPeriodResponse | null;
+  inventoryAlerts: InventoryAlert[];
+  qrPendingOrders: QrPendingOrder[];
+  tickets: KdsTicket[];
+  canManageTenant: boolean;
+  canManageApprovals: boolean;
+  canManageCash: boolean;
+  canManageInventory: boolean;
+  canOperatePos: boolean;
+  canOperateKds: boolean;
+  occupiedLabel: string;
+};
+
+export function buildProfileInsights(input: ProfileDashboardInput): ProfileInsight[] {
+  const activeTickets = input.tickets.filter(
+    (ticket) => !["ready", "served"].includes(ticket.status),
+  ).length;
+  if (input.canManageTenant) {
+    return [
+      {
+        id: "sales",
+        label: "Vendas hoje",
+        value: input.dashboardSummary ? formatMoney(input.dashboardSummary.salesToday) : "R$ 0,00",
+        detail: input.salesPeriodData
+          ? `${input.salesPeriodData.summary.totalOrders} pedido(s) nos últimos 7 dias`
+          : "Sem dados do período",
+      },
+      {
+        id: "cash",
+        label: "Caixa atual",
+        value: input.dashboardSummary ? formatMoney(input.dashboardSummary.cashBalance) : "R$ 0,00",
+        detail: input.dashboardSummary?.cashOpen ? "Aberto e conciliando" : "Fechado",
+      },
+      {
+        id: "occupancy",
+        label: "Ocupação",
+        value: input.occupiedLabel,
+        detail: "Mesas ocupadas agora",
+      },
+      {
+        id: "alerts",
+        label: "Alertas operacionais",
+        value: String(input.inventoryAlerts.length + input.qrPendingOrders.length),
+        detail: `${input.inventoryAlerts.length} estoque · ${input.qrPendingOrders.length} QR em revisão`,
+      },
+    ];
+  }
+
+  if (input.canManageApprovals) {
+    return [
+      {
+        id: "service",
+        label: "Atendimento",
+        value: String(input.dashboardSummary?.activeOrders ?? 0),
+        detail: "Pedido(s) em andamento",
+      },
+      {
+        id: "qr",
+        label: "Pedidos QR",
+        value: String(input.qrPendingOrders.length),
+        detail: "Aguardando revisão da equipe",
+      },
+      {
+        id: "production",
+        label: "Produção",
+        value: String(activeTickets),
+        detail: "Ticket(s) em estações",
+      },
+      {
+        id: "inventory",
+        label: "Estoque",
+        value: String(input.inventoryAlerts.length),
+        detail: "Alerta(s) abaixo do mínimo",
+      },
+    ];
+  }
+
+  if (input.canManageCash) {
+    return [
+      {
+        id: "cash-status",
+        label: "Status do caixa",
+        value: input.cashSummary?.session?.status === "open" ? "Aberto" : "Fechado",
+        detail: "Sessão financeira atual",
+      },
+      {
+        id: "received",
+        label: "Recebido",
+        value: formatMoney(input.cashSummary?.payments.totalCents ?? 0),
+        detail: `${input.cashSummary?.payments.count ?? 0} pagamento(s) confirmado(s)`,
+      },
+      {
+        id: "open-orders",
+        label: "Contas abertas",
+        value: String(input.cashSummary?.openOrders.count ?? 0),
+        detail: "Acompanhar antes do fechamento",
+      },
+    ];
+  }
+
+  if (input.canOperateKds) {
+    return [
+      {
+        id: "production",
+        label: "Fila de produção",
+        value: String(activeTickets),
+        detail: "Ticket(s) ativos nas estações",
+      },
+      {
+        id: "qr",
+        label: "Pedidos QR",
+        value: String(input.qrPendingOrders.length),
+        detail: "Aguardando encaminhamento",
+      },
+    ];
+  }
+
+  if (input.canOperatePos) {
+    return [
+      {
+        id: "service",
+        label: "Atendimento",
+        value: String(input.dashboardSummary?.activeOrders ?? 0),
+        detail: "Pedido(s) em andamento",
+      },
+      {
+        id: "occupancy",
+        label: "Mesas ocupadas",
+        value: input.occupiedLabel,
+        detail: "Visão atual do salão",
+      },
+    ];
+  }
+
+  if (input.canManageInventory) {
+    return [
+      {
+        id: "inventory",
+        label: "Alertas de estoque",
+        value: String(input.inventoryAlerts.length),
+        detail: "Itens que precisam de reposição",
+      },
+    ];
+  }
+
+  return [];
+}
+
+export function ProfileDashboardPanel(props: ProfileDashboardInput) {
+  const insights = buildProfileInsights(props);
+  if (insights.length === 0) return null;
+
+  const title = props.canManageTenant
+    ? "Saúde do negócio"
+    : props.canManageApprovals
+      ? "Visão do gerente"
+      : props.canManageCash
+        ? "Resumo do caixa"
+        : props.canOperateKds
+          ? "Produção agora"
+          : props.canOperatePos
+            ? "Atendimento agora"
+            : "Resumo do estoque";
+
+  return (
+    <section className="profile-dashboard-panel" aria-label={title}>
+      <div className="panel-title">
+        <div>
+          <span className="section-kicker">Resumo por perfil</span>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      <div className="profile-insights-grid">
+        {insights.map((insight) => (
+          <article className="profile-insight-card" key={insight.id}>
+            <span>{insight.label}</span>
+            <strong>{insight.value}</strong>
+            <small>{insight.detail}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function PeriodSalesCard({ salesData }: { salesData: SalesByPeriodResponse | null }) {
   if (!salesData) {
     return null;

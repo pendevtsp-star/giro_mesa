@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildPendingActions, type PendingCenterInput } from "./DashboardOverview";
+import {
+  buildPendingActions,
+  buildProfileInsights,
+  type PendingCenterInput,
+  type ProfileDashboardInput,
+} from "./DashboardOverview";
 
 function baseInput(overrides: Partial<PendingCenterInput> = {}): PendingCenterInput {
   return {
@@ -14,6 +19,25 @@ function baseInput(overrides: Partial<PendingCenterInput> = {}): PendingCenterIn
     canManageInventory: false,
     canOperatePos: false,
     canOperateKds: false,
+    ...overrides,
+  };
+}
+
+function profileInput(overrides: Partial<ProfileDashboardInput> = {}): ProfileDashboardInput {
+  return {
+    dashboardSummary: null,
+    cashSummary: null,
+    salesPeriodData: null,
+    inventoryAlerts: [],
+    qrPendingOrders: [],
+    tickets: [],
+    canManageTenant: false,
+    canManageApprovals: false,
+    canManageCash: false,
+    canManageInventory: false,
+    canOperatePos: false,
+    canOperateKds: false,
+    occupiedLabel: "0/0",
     ...overrides,
   };
 }
@@ -44,5 +68,58 @@ describe("dashboard pending center", () => {
     );
 
     expect(actions).toEqual([]);
+  });
+});
+
+describe("profile dashboard", () => {
+  it("prioritizes the owner view when multiple permissions are present", () => {
+    const insights = buildProfileInsights(
+      profileInput({
+        canManageTenant: true,
+        canManageCash: true,
+        canOperatePos: true,
+        dashboardSummary: {
+          salesToday: 12500,
+          activeOrders: 3,
+          occupiedTables: "2/8",
+          cashBalance: 8900,
+          cashOpen: true,
+        },
+        occupiedLabel: "2/8",
+      }),
+    );
+
+    expect(insights.map((insight) => insight.id)).toEqual(["sales", "cash", "occupancy", "alerts"]);
+    expect(insights[0]?.value?.replace(/\u00a0/g, " ")).toBe("R$ 125,00");
+    expect(insights[1]?.value?.replace(/\u00a0/g, " ")).toBe("R$ 89,00");
+  });
+
+  it("shows the manager operational queue without duplicating terminal tickets", () => {
+    const insights = buildProfileInsights(
+      profileInput({
+        canManageApprovals: true,
+        dashboardSummary: {
+          salesToday: 0,
+          activeOrders: 4,
+          occupiedTables: "3/8",
+          cashBalance: 0,
+          cashOpen: false,
+        },
+        qrPendingOrders: [{} as ProfileDashboardInput["qrPendingOrders"][number]],
+        inventoryAlerts: [{} as ProfileDashboardInput["inventoryAlerts"][number]],
+        tickets: [
+          { status: "preparing" } as ProfileDashboardInput["tickets"][number],
+          { status: "served" } as ProfileDashboardInput["tickets"][number],
+        ],
+      }),
+    );
+
+    expect(insights.map((insight) => insight.id)).toEqual([
+      "service",
+      "qr",
+      "production",
+      "inventory",
+    ]);
+    expect(insights.find((insight) => insight.id === "production")?.value).toBe("1");
   });
 });

@@ -74,8 +74,8 @@ fechado apenas por existir código:
   inspirado no DoseClub e entrada discreta do ecossistema.
 - Fase 11: central de pendências role-scoped adicionada ao dashboard, consolidando
   onboarding, turno/caixa, pedidos QR, KDS, estoque e contas abertas com ação direta;
-  comparação entre filiais agora usa resumos tenant-scoped; dashboards por perfil
-  continuam pendentes.
+  comparação entre filiais agora usa resumos tenant-scoped; dashboards enxutos por
+  perfil destacam a próxima ação sem misturar permissões.
 - Fase 12/13: QR público passou a respeitar branding configurado, mostrar comanda real,
   recebimentos, restante, timeline e pré-conta com carrinho vazio.
 - Fase 13: rollback formal de experiência versionada, prévia administrativa e agendamento
@@ -415,7 +415,7 @@ registro, sem duplicar movimento financeiro.
 - [x] Criar busca global e acesso rápido às ações frequentes.
 - [x] Tornar troca de filial explícita e preservar contexto em todas as rotas.
 - [ ] Criar dashboard executivo com vendas, caixa, margem, ocupação, produção, estoque e alertas.
-- [ ] Criar dashboards distintos para proprietário, gerente, caixa, recepção, estoque e produção.
+- [x] Criar dashboards distintos para proprietário, gerente, caixa, recepção, estoque e produção.
 - [x] Permitir comparação entre filiais sem misturar permissões ou dados.
 - [x] Criar central de pendências com prioridade, responsável, prazo e ação direta.
 

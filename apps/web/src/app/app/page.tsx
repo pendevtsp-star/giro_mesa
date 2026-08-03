@@ -28,6 +28,7 @@ import {
   PendingCenter,
   PeriodSalesCard,
   ProfileActionStrip,
+  ProfileDashboardPanel,
   RecentAlertsSection,
 } from "../../features/dashboard/DashboardOverview";
 import type { AppStatus, DashboardMetric } from "../../features/dashboard/dashboard-types";
@@ -133,6 +134,7 @@ export default function AppDashboardPage() {
   const canOperatePos = permissions.includes("pos:operate");
   const canOperateKds = permissions.includes("kds:operate");
   const canManageCash = permissions.includes("cash:manage");
+  const canManageApprovals = permissions.includes("approvals:manage");
   const canReadReports = permissions.includes("reports:read");
   const canManageInventory = permissions.includes("inventory:manage");
   const accessibleQuickLinks = useMemo(() => {
@@ -375,6 +377,24 @@ export default function AppDashboardPage() {
       ) : null}
 
       {!billingBlocked && metrics.length > 0 ? <OperationalSummaryCards metrics={metrics} /> : null}
+
+      {!billingBlocked ? (
+        <ProfileDashboardPanel
+          dashboardSummary={dashboardSummary}
+          cashSummary={cashSummary}
+          salesPeriodData={salesPeriodData}
+          inventoryAlerts={inventoryAlerts}
+          qrPendingOrders={qrPendingOrders}
+          tickets={tickets}
+          canManageTenant={canManageTenant}
+          canManageApprovals={canManageApprovals}
+          canManageCash={canManageCash}
+          canManageInventory={canManageInventory}
+          canOperatePos={canOperatePos}
+          canOperateKds={canOperateKds}
+          occupiedLabel={occupiedLabel}
+        />
+      ) : null}
 
       {!billingBlocked ? (
         <div className="trial-status-strip">
