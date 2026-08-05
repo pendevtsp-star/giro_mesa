@@ -15,11 +15,14 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @giromesa/web... build
+RUN chown -R node:node /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 EXPOSE 3000
+
+USER node
 
 CMD ["pnpm", "--filter", "@giromesa/web", "start"]

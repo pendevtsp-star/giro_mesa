@@ -12,7 +12,10 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @giromesa/worker... build
+RUN chown -R node:node /app
 
 ENV NODE_ENV=production
+
+USER node
 
 CMD ["pnpm", "--filter", "@giromesa/worker", "start"]

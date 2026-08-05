@@ -12,10 +12,13 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @giromesa/api... build
+RUN chown -R node:node /app
 
 ENV NODE_ENV=production
 ENV PORT=3333
 
 EXPOSE 3333
+
+USER node
 
 CMD ["pnpm", "--filter", "@giromesa/api", "start"]
