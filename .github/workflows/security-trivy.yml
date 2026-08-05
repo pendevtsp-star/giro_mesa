@@ -45,6 +45,7 @@ jobs:
           format: sarif
           output: trivy-fs-results.sarif
           severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
           exit-code: "1"
           ignore-unfixed: false
           trivyignores: .trivyignore.generated
@@ -58,6 +59,7 @@ jobs:
           format: sarif
           output: trivy-config-results.sarif
           severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
           exit-code: "1"
           ignore-unfixed: false
           trivyignores: .trivyignore.generated
