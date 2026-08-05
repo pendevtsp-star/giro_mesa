@@ -309,6 +309,13 @@
       "when": 1785985200000,
       "tag": "0043_fiscal_payment_completion",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1785988800000,
+      "tag": "0044_repair_skipped_operational_schema",
+      "breakpoints": true
     }
   ]
 }
