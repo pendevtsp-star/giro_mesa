@@ -1,6 +1,16 @@
 "use client";
 
-import { Building2, CircleAlert, Menu, Search, Wifi, WifiOff, X } from "lucide-react";
+import { Dialog, Drawer } from "@giromesa/ui";
+import {
+  Building2,
+  CircleAlert,
+  Menu,
+  Search,
+  SlidersHorizontal,
+  Wifi,
+  WifiOff,
+  X,
+} from "lucide-react";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { readOperatorProfile } from "../../lib/formatters/app-dashboard";
@@ -46,12 +56,31 @@ function useConnectivity() {
 
 export function AppRouteFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { branding } = useSession();
+  const { branding, operationalDevice } = useSession();
   const activeBranding = branding ?? fallbackBranding;
 
   useEffect(() => {
     document.documentElement.dataset.accent = activeBranding.accentPreset;
   }, [activeBranding.accentPreset]);
+
+  useEffect(() => {
+    if (!operationalDevice || operationalDevice.allowModeSwitch) return;
+    const operationalPath = Object.keys(operationalTitles).find(
+      (path) => pathname === path || pathname.startsWith(`${path}/`),
+    );
+    if (!operationalPath) return;
+    const expectedPath = ["kds", "expedition"].includes(operationalDevice.initialMode)
+      ? "/app/kds"
+      : operationalDevice.initialMode === "table"
+        ? "/app/waiter"
+        : "/app/pos";
+    if (operationalPath === expectedPath) return;
+    const query = new URLSearchParams();
+    if (expectedPath === "/app/pos") query.set("mode", "counter");
+    if (expectedPath === "/app/kds" && operationalDevice.stationId)
+      query.set("stationId", operationalDevice.stationId);
+    window.location.replace(`${expectedPath}${query.size ? `?${query}` : ""}`);
+  }, [operationalDevice, pathname]);
 
   if (pathname === "/app") return children;
 
@@ -92,6 +121,43 @@ function BranchSwitcher() {
   );
 }
 
+export function ShellPreferences({
+  themeMode,
+  includeBranch,
+}: {
+  themeMode: TenantBranding["themeMode"];
+  includeBranch: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className={`gm-shell-preferences ${open ? "open" : ""}`}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={open ? "Fechar preferências" : "Abrir preferências"}
+        className="gm-shell-preferences-trigger"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <SlidersHorizontal aria-hidden="true" size={18} />
+      </button>
+      <div className="gm-shell-preferences-panel">
+        {includeBranch ? <BranchSwitcher /> : null}
+        <DensityToggle />
+        <ThemeToggle defaultPreference={themeMode} />
+      </div>
+      <Drawer onClose={() => setOpen(false)} open={open} title="Preferências">
+        <div className="gm-shell-preferences-drawer">
+          {includeBranch ? <BranchSwitcher /> : null}
+          <DensityToggle />
+          <ThemeToggle defaultPreference={themeMode} />
+        </div>
+      </Drawer>
+    </div>
+  );
+}
+
 function OperationalShell({ children, title }: { children: ReactNode; title: string }) {
   const online = useConnectivity();
   const { session, branding } = useSession();
@@ -122,6 +188,7 @@ function OperationalShell({ children, title }: { children: ReactNode; title: str
           <span
             className={`gm-connection ${online && !degraded ? "online" : "degraded"}`}
             role="status"
+            aria-label={online && !degraded ? "Online" : online ? "Status degradado" : "Offline"}
           >
             {online && !degraded ? (
               <Wifi size={15} />
@@ -134,8 +201,7 @@ function OperationalShell({ children, title }: { children: ReactNode; title: str
           </span>
           <span className="gm-operator-label">{profile.title}</span>
           <BranchSwitcher />
-          <DensityToggle />
-          <ThemeToggle defaultPreference={activeBranding.themeMode} />
+          <ShellPreferences includeBranch={false} themeMode={activeBranding.themeMode} />
         </fieldset>
       </header>
       <div className="gm-operational-content">{children}</div>
@@ -173,7 +239,6 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
         event.preventDefault();
         setQuickOpen(true);
       }
-      if (event.key === "Escape") setQuickOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -220,9 +285,7 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
               {online ? <Wifi size={15} /> : <WifiOff size={15} />}
               {online ? "Online" : "Offline"}
             </span>
-            <BranchSwitcher />
-            <DensityToggle />
-            <ThemeToggle defaultPreference={activeBranding.themeMode} />
+            <ShellPreferences includeBranch themeMode={activeBranding.themeMode} />
           </div>
         </header>
         <div className="gm-admin-content">{children}</div>
@@ -235,41 +298,39 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
           type="button"
         />
       ) : null}
-      {quickOpen ? (
-        <div className="gm-command-overlay" role="presentation">
-          <section
-            className="gm-command-palette"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Busca global"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="gm-command-search">
-              <Search size={18} aria-hidden="true" />
-              <input
-                value={quickQuery}
-                onChange={(event) => setQuickQuery(event.target.value)}
-                placeholder="Buscar módulo ou ação"
-                aria-label="Buscar módulo ou ação"
-              />
-              <kbd>Esc</kbd>
-            </div>
-            <div className="gm-command-results">
-              {quickItems.length ? (
-                quickItems.map((item) => (
-                  <a key={item.href} href={item.href} onClick={() => setQuickOpen(false)}>
-                    <item.icon size={17} aria-hidden="true" />
-                    <span>{item.label}</span>
-                    <small>{item.href}</small>
-                  </a>
-                ))
-              ) : (
-                <p className="muted-copy">{t("common.noResults")}</p>
-              )}
-            </div>
-          </section>
+      <Dialog
+        className="gm-command-palette"
+        onClose={() => setQuickOpen(false)}
+        open={quickOpen}
+        title="Busca global"
+      >
+        <div className="gm-command-search">
+          <Search size={18} aria-hidden="true" />
+          <input
+            value={quickQuery}
+            onChange={(event) => setQuickQuery(event.target.value)}
+            placeholder="Buscar módulo ou ação"
+            aria-label="Buscar módulo ou ação"
+            data-dialog-initial-focus
+          />
+          <kbd>Esc</kbd>
         </div>
-      ) : null}
+        <div className="gm-command-results">
+          {quickItems.length ? (
+            quickItems.map((item) => (
+              <a key={item.href} href={item.href} onClick={() => setQuickOpen(false)}>
+                <item.icon size={17} aria-hidden="true" />
+                <span>{item.label}</span>
+                <small>{item.href}</small>
+              </a>
+            ))
+          ) : (
+            <p className="muted-copy" role="status">
+              {t("common.noResults")}
+            </p>
+          )}
+        </div>
+      </Dialog>
     </div>
   );
 }

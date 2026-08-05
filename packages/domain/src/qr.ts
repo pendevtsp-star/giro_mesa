@@ -26,6 +26,12 @@ export type QrCategoryLabels = Record<string, string>;
 
 export type QrBranchSettings = {
   branchId: string;
+  mode: "disabled" | "menu_only" | "waiter_assisted" | "self_service";
+  presenceMethods: Array<"code" | "approval" | "network">;
+  tabVisibility: "shared" | "own_items";
+  presenceCodeTtlMinutes: number;
+  guestSessionTtlMinutes: number;
+  trustedNetworkCidrs: string[];
   capabilities: QrCapability[];
   reviewBeforeKds: boolean;
   template: QrTemplate;

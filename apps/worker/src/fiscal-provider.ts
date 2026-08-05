@@ -1,9 +1,12 @@
-import { type AppEnv, loadEnv } from "@giromesa/config";
+import { type AppEnv, loadEnv, type SafeHttpRequestInit, safeFetch } from "@giromesa/config";
 import type { FiscalProvider, ProviderResult } from "@giromesa/domain";
 
 type FiscalIssueInput = Parameters<FiscalProvider["issueConsumerInvoice"]>[0];
 
-type Fetcher = typeof fetch;
+type Fetcher = (
+  url: string | URL,
+  init?: SafeHttpRequestInit,
+) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 type AccessTokenResult =
   | { ok: true; data: { accessToken: string; expiresAt: number } }
   | { ok: false; errorCode: string; errorMessage: string; retryable: boolean };
@@ -29,7 +32,7 @@ function readProviderError(payload: unknown, fallback: string) {
   return fallback;
 }
 
-async function readJson(response: Response) {
+async function readJson(response: { text(): Promise<string> }) {
   const text = await response.text();
   if (!text) {
     return null;
@@ -43,9 +46,19 @@ async function readJson(response: Response) {
 }
 
 export class MockFiscalProvider implements FiscalProvider {
+  constructor(private readonly env: AppEnv = loadEnv()) {}
+
   async issueConsumerInvoice(
     input: FiscalIssueInput,
   ): Promise<ProviderResult<{ accessKey?: string; xmlUrl?: string; danfeUrl?: string }>> {
+    if (this.env.NODE_ENV === "production" || input.environment === "production") {
+      return {
+        ok: false,
+        errorCode: "mock_fiscal_provider_disabled",
+        errorMessage: "Mock fiscal provider is disabled for production",
+        retryable: false,
+      };
+    }
     const accessKey = mockAccessKey(input.fiscalDocumentId, input.number ?? null);
 
     return {
@@ -64,6 +77,14 @@ export class MockFiscalProvider implements FiscalProvider {
     fiscalDocumentId: string;
     reason: string;
   }): Promise<ProviderResult<{ canceledAt: string }>> {
+    if (this.env.NODE_ENV === "production") {
+      return {
+        ok: false,
+        errorCode: "mock_fiscal_provider_disabled",
+        errorMessage: "Mock fiscal provider is disabled for production",
+        retryable: false,
+      };
+    }
     return {
       ok: true,
       externalId: `mock-cancel-${input.fiscalDocumentId}`,
@@ -77,7 +98,7 @@ export class NuvemFiscalProvider implements FiscalProvider {
 
   constructor(
     private readonly env: AppEnv = loadEnv(),
-    private readonly fetcher: Fetcher = fetch,
+    private readonly fetcher: Fetcher = safeFetch,
   ) {}
 
   async issueConsumerInvoice(
@@ -290,7 +311,7 @@ export class NuvemFiscalProvider implements FiscalProvider {
 export class FocusNfeProvider implements FiscalProvider {
   constructor(
     private readonly env: AppEnv = loadEnv(),
-    private readonly fetcher: Fetcher = fetch,
+    private readonly fetcher: Fetcher = safeFetch,
   ) {}
 
   async issueConsumerInvoice(
@@ -467,5 +488,6 @@ export function createFiscalProvider(provider: string, env: AppEnv = loadEnv()):
     return new NuvemFiscalProvider(env);
   }
 
-  return new MockFiscalProvider();
+  if (provider === "mock") return new MockFiscalProvider(env);
+  throw new Error(`Unsupported fiscal provider: ${provider}`);
 }

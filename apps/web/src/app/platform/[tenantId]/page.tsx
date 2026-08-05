@@ -78,13 +78,26 @@ const fallbackTenant: PlatformTenantDetail = {
     slaTier: "standard",
     nextFollowUpAt: null,
     contactHistory: [],
+    access: {
+      mode: "read_only",
+      expiresAt: null,
+      reason: "",
+      grantId: null,
+      branchId: null,
+      resource: "operations",
+      actions: [],
+    },
   },
 };
 
 export default function PlatformTenantPage({ params }: { params: Promise<{ tenantId: string }> }) {
   const { tenantId } = use(params);
-  const [tenant, setTenant] = useState<PlatformTenantDetail>(fallbackTenant);
-  const [status, setStatus] = useState("demo");
+  const demoMode = process.env.NODE_ENV !== "production";
+  const [tenant, setTenant] = useState<PlatformTenantDetail | null>(
+    demoMode ? fallbackTenant : null,
+  );
+  const [status, setStatus] = useState(demoMode ? "demo" : "carregando");
+  const [loadError, setLoadError] = useState("");
   const [asaasMessage, setAsaasMessage] = useState("Checkout Asaas ainda não preparado.");
   const [supportNotes, setSupportNotes] = useState(fallbackTenant.support.commercialNotes);
   const [supportPriority, setSupportPriority] = useState<"normal" | "high">(
@@ -106,6 +119,15 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
     fallbackTenant.support.nextFollowUpAt?.slice(0, 16) ?? "",
   );
   const [contactSummary, setContactSummary] = useState("");
+  const [supportAccessMode, setSupportAccessMode] = useState<"read_only" | "elevated">(
+    fallbackTenant.support.access.mode,
+  );
+  const [elevationExpiresAt, setElevationExpiresAt] = useState("");
+  const [elevationReason, setElevationReason] = useState("");
+  const [supportBranchId, setSupportBranchId] = useState("");
+  const [supportResource, setSupportResource] = useState<"operations" | "integrations" | "audit">(
+    "operations",
+  );
   const [communicationStatus, setCommunicationStatus] = useState("Nenhuma comunicação recente.");
   const [busy, setBusy] = useState(false);
 
@@ -114,6 +136,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
     getPlatformTenant(tenantId)
       .then((response) => {
         if (!ignore) {
+          setLoadError("");
           setTenant(response);
           setSupportNotes(response.support.commercialNotes);
           setSupportPriority(response.support.priority);
@@ -122,23 +145,66 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
           setRelationshipOwnerEmail(response.support.relationshipOwnerEmail);
           setSlaTier(response.support.slaTier);
           setNextFollowUpAt(response.support.nextFollowUpAt?.slice(0, 16) ?? "");
+          setSupportAccessMode(response.support.access.mode);
+          setElevationExpiresAt(response.support.access.expiresAt?.slice(0, 16) ?? "");
+          setElevationReason(response.support.access.reason);
+          setSupportBranchId(response.support.access.branchId ?? "");
+          setSupportResource(response.support.access.resource);
           setStatus("online");
         }
       })
       .catch(() => {
         if (!ignore) {
-          setStatus("demo");
+          if (demoMode) {
+            setStatus("demo");
+          } else {
+            setStatus("erro");
+            setLoadError(
+              "N\u00e3o foi poss\u00edvel carregar este tenant. Verifique a sess\u00e3o e tente novamente.",
+            );
+          }
         }
       });
 
     return () => {
       ignore = true;
     };
-  }, [tenantId]);
+  }, [demoMode, tenantId]);
+
+  if (!tenant) {
+    return (
+      <main className="app-layout app-layout-night platform-detail-page">
+        <section className="workspace">
+          <header className="workspace-header">
+            <div>
+              <span className="section-kicker">Tenant SaaS - {status}</span>
+              <h1>{loadError ? "Tenant indispon\u00edvel" : "Carregando tenant"}</h1>
+              <p>{loadError || "Aguarde enquanto os dados reais s\u00e3o carregados."}</p>
+            </div>
+            <div className="toolbar">
+              <a className="button secondary" href="/platform">
+                <ArrowLeft size={17} /> Voltar
+              </a>
+              {loadError ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => window.location.reload()}
+                >
+                  Tentar novamente
+                </button>
+              ) : null}
+            </div>
+          </header>
+        </section>
+      </main>
+    );
+  }
 
   async function changeStatus(nextStatus: PlatformTenantDetail["status"]) {
+    if (!tenant) return;
     if (tenant.id === "demo") {
-      setTenant((current) => ({ ...current, status: nextStatus }));
+      setTenant({ ...tenant, status: nextStatus });
       return;
     }
 
@@ -154,6 +220,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   }
 
   async function prepareCheckout() {
+    if (!tenant) return;
     if (tenant.id === "demo") {
       setAsaasMessage("Prévia de checkout preparada para homologação.");
       return;
@@ -169,38 +236,55 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   }
 
   async function saveSupport() {
+    if (!tenant) return;
     if (tenant.id === "demo") {
-      setTenant((current) => ({
-        ...current,
-        support: {
-          priority: supportPriority,
-          status: supportStatus,
-          queueLabel:
-            supportStatus === "resolved"
-              ? "Resolvido"
-              : supportStatus === "waiting_customer"
-                ? "Aguardando cliente"
-                : supportStatus === "in_progress"
-                  ? "Em atendimento"
-                  : "Na fila",
-          commercialNotes: supportNotes,
-          relationshipOwnerName,
-          relationshipOwnerEmail,
-          slaTier,
-          nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt).toISOString() : null,
-          contactHistory: contactSummary.trim()
-            ? [
-                {
-                  id: `demo-${Date.now()}`,
-                  summary: contactSummary.trim(),
-                  createdAt: new Date().toISOString(),
-                  createdBy: "platform-demo",
+      setTenant((current) =>
+        current
+          ? {
+              ...current,
+              support: {
+                priority: supportPriority,
+                status: supportStatus,
+                queueLabel:
+                  supportStatus === "resolved"
+                    ? "Resolvido"
+                    : supportStatus === "waiting_customer"
+                      ? "Aguardando cliente"
+                      : supportStatus === "in_progress"
+                        ? "Em atendimento"
+                        : "Na fila",
+                commercialNotes: supportNotes,
+                relationshipOwnerName,
+                relationshipOwnerEmail,
+                slaTier,
+                nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt).toISOString() : null,
+                contactHistory: contactSummary.trim()
+                  ? [
+                      {
+                        id: `demo-${Date.now()}`,
+                        summary: contactSummary.trim(),
+                        createdAt: new Date().toISOString(),
+                        createdBy: "platform-demo",
+                      },
+                      ...current.support.contactHistory,
+                    ].slice(0, 12)
+                  : current.support.contactHistory,
+                access: {
+                  mode: supportAccessMode,
+                  expiresAt:
+                    supportAccessMode === "elevated" && elevationExpiresAt
+                      ? new Date(elevationExpiresAt).toISOString()
+                      : null,
+                  reason: supportAccessMode === "elevated" ? elevationReason : "",
+                  grantId: null,
+                  branchId: supportBranchId || null,
+                  resource: supportResource,
+                  actions: supportAccessMode === "elevated" ? ["read", "mutate"] : ["read"],
                 },
-                ...current.support.contactHistory,
-              ].slice(0, 12)
-            : current.support.contactHistory,
-        },
-      }));
+              },
+            }
+          : current,
+      );
       setContactSummary("");
       setStatus("suporte: prévia local");
       return;
@@ -217,6 +301,15 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
         slaTier,
         nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt).toISOString() : null,
         contactSummary,
+        accessMode: supportAccessMode,
+        elevationExpiresAt:
+          supportAccessMode === "elevated" && elevationExpiresAt
+            ? new Date(elevationExpiresAt).toISOString()
+            : null,
+        ...(supportAccessMode === "elevated" ? { elevationReason } : {}),
+        accessBranchId: supportBranchId || null,
+        accessResource: supportResource,
+        accessActions: supportAccessMode === "elevated" ? ["read", "mutate"] : ["read"],
       });
       const refreshed = await getPlatformTenant(tenant.id);
       setTenant(refreshed);
@@ -227,6 +320,11 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
       setRelationshipOwnerEmail(refreshed.support.relationshipOwnerEmail);
       setSlaTier(refreshed.support.slaTier);
       setNextFollowUpAt(refreshed.support.nextFollowUpAt?.slice(0, 16) ?? "");
+      setSupportAccessMode(refreshed.support.access.mode);
+      setElevationExpiresAt(refreshed.support.access.expiresAt?.slice(0, 16) ?? "");
+      setElevationReason(refreshed.support.access.reason);
+      setSupportBranchId(refreshed.support.access.branchId ?? "");
+      setSupportResource(refreshed.support.access.resource);
       setContactSummary("");
       setStatus("suporte: salvo");
     } finally {
@@ -235,12 +333,13 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   }
 
   async function simulatePastDue() {
+    if (!tenant) return;
     if (tenant.id === "demo") {
-      setTenant((current) => ({
-        ...current,
+      setTenant({
+        ...tenant,
         status: "past_due",
         billingStatus: "payment_required",
-      }));
+      });
       return;
     }
 
@@ -256,6 +355,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   }
 
   async function sendCommunication(type: "trial_ending" | "past_due" | "support_follow_up") {
+    if (!tenant) return;
     if (tenant.id === "demo") {
       setCommunicationStatus(`Mensagem ${type} preparada para envio em homologação.`);
       return;
@@ -280,6 +380,7 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
   );
 
   function handleExportTenantPdf() {
+    if (!tenant) return;
     const popup = window.open("", "_blank", "width=1120,height=860");
     if (!popup) {
       return;
@@ -660,6 +761,70 @@ export default function PlatformTenantPage({ params }: { params: Promise<{ tenan
                   placeholder="Resumo curto do ultimo contato com o cliente."
                 />
               </label>
+              <label>
+                Acesso de suporte
+                <select
+                  value={supportAccessMode}
+                  onChange={(event) =>
+                    setSupportAccessMode(event.target.value as "read_only" | "elevated")
+                  }
+                >
+                  <option value="read_only">Somente leitura</option>
+                  <option value="elevated">Elevação temporária</option>
+                </select>
+              </label>
+              <label>
+                Filial do grant
+                <select
+                  value={supportBranchId}
+                  onChange={(event) => setSupportBranchId(event.target.value)}
+                >
+                  <option value="">Tenant inteiro</option>
+                  {tenant.branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Recurso do grant
+                <select
+                  value={supportResource}
+                  onChange={(event) =>
+                    setSupportResource(
+                      event.target.value as "operations" | "integrations" | "audit",
+                    )
+                  }
+                >
+                  <option value="operations">Operação</option>
+                  <option value="integrations">Integrações</option>
+                  <option value="audit">Auditoria</option>
+                </select>
+              </label>
+              {supportAccessMode === "elevated" ? (
+                <>
+                  <label>
+                    Expira em até 8 horas
+                    <input
+                      type="datetime-local"
+                      value={elevationExpiresAt}
+                      onChange={(event) => setElevationExpiresAt(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Motivo da elevação
+                    <textarea
+                      value={elevationReason}
+                      rows={3}
+                      minLength={10}
+                      maxLength={600}
+                      onChange={(event) => setElevationReason(event.target.value)}
+                      placeholder="Explique a ação excepcional solicitada."
+                    />
+                  </label>
+                </>
+              ) : null}
               <div className="support-form-footer">
                 <small>{supportNotes.trim().length}/4000 notas</small>
                 <button

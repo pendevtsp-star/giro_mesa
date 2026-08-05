@@ -3,6 +3,7 @@ import { UnauthorizedException } from "@nestjs/common";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeaderRecord } from "../../common/http";
 import { RateLimitService } from "../../common/rate-limit";
+import { signWebhookPayload } from "../../common/webhook-signature";
 import { WebhooksController } from "./webhooks.controller";
 import type { WebhooksService } from "./webhooks.service";
 
@@ -20,9 +21,13 @@ const productionEnv = {
   EMAIL_PROVIDER: "resend",
   EMAIL_FROM: "no-reply@giromesa.com.br",
   RESEND_API_KEY: "re_test_key_for_config_validation",
+  LEGAL_TERMS_VERSION: "test-terms-v1",
+  LEGAL_TERMS_SHA256: "a".repeat(64),
+  LEGAL_PRIVACY_VERSION: "test-privacy-v1",
+  LEGAL_PRIVACY_SHA256: "b".repeat(64),
 } satisfies NodeJS.ProcessEnv;
 
-function buildController() {
+function buildController(rateLimitService: RateLimitService = new RateLimitService()) {
   const service = {
     accept: vi.fn(async (input) => ({
       accepted: true,
@@ -35,10 +40,7 @@ function buildController() {
   } satisfies Pick<WebhooksService, "accept">;
 
   return {
-    controller: new WebhooksController(
-      service as unknown as WebhooksService,
-      new RateLimitService(),
-    ),
+    controller: new WebhooksController(service as unknown as WebhooksService, rateLimitService),
     service,
   };
 }
@@ -118,5 +120,65 @@ describe("WebhooksController production safety", () => {
     return expect(
       controller.receiveIfood({ id: "ifood-event" }, { "x-forwarded-for": "203.0.113.5" }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("requires the Dose Club webhook secret", () => {
+    process.env = { ...productionEnv };
+    const { controller } = buildController();
+
+    expect(() =>
+      controller.receiveClubWhisky({ id: "club-event" }, { "x-forwarded-for": "203.0.113.6" }, {
+        rawBody: Buffer.from("{}"),
+      } as never),
+    ).toThrow(UnauthorizedException);
+  });
+
+  it("accepts Dose Club only with a valid HMAC and applies its rate-limit namespace", async () => {
+    const rawBody = Buffer.from(JSON.stringify({ id: "club-event" }));
+    const timestamp = new Date().toISOString();
+    const secret = "club-secret";
+    const rateLimitService = {
+      assertAllowed: vi.fn(),
+    } as unknown as RateLimitService;
+    process.env = { ...productionEnv, CLUB_WHISKY_WEBHOOK_SECRET: secret };
+    const { controller } = buildController(rateLimitService);
+
+    await expect(
+      controller.receiveClubWhisky(
+        { id: "club-event" },
+        {
+          "x-forwarded-for": "203.0.113.7",
+          "x-club-whisky-timestamp": timestamp,
+          "x-club-whisky-signature": signWebhookPayload({
+            secret,
+            timestamp,
+            eventId: "club-event",
+            rawBody,
+          }),
+        },
+        { rawBody } as never,
+      ),
+    ).resolves.toMatchObject({ accepted: true, provider: "club_whisky" });
+    expect(rateLimitService.assertAllowed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ namespace: "club_whisky_webhook" }),
+    );
+  });
+
+  it("rejects Dose Club with an invalid HMAC", () => {
+    process.env = { ...productionEnv, CLUB_WHISKY_WEBHOOK_SECRET: "club-secret" };
+    const { controller } = buildController();
+
+    expect(() =>
+      controller.receiveClubWhisky(
+        { id: "club-event" },
+        {
+          "x-forwarded-for": "203.0.113.8",
+          "x-club-whisky-timestamp": new Date().toISOString(),
+          "x-club-whisky-signature": "sha256=invalid",
+        },
+        { rawBody: Buffer.from("{}") } as never,
+      ),
+    ).toThrow(UnauthorizedException);
   });
 });

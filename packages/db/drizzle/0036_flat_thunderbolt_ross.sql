@@ -1,0 +1,9 @@
+ALTER TABLE "commission_accruals" ADD COLUMN "idempotency_payload_hash" varchar(64);--> statement-breakpoint
+ALTER TABLE "commission_payment_records" ADD COLUMN "idempotency_payload_hash" varchar(64);--> statement-breakpoint
+ALTER TABLE "operational_occurrence_events" ADD COLUMN "idempotency_payload_hash" varchar(64);--> statement-breakpoint
+ALTER TABLE "operational_occurrences" ADD COLUMN "idempotency_payload_hash" varchar(64);--> statement-breakpoint
+ALTER TABLE "waiter_shift_settlements" ADD COLUMN "calculate_payload_hash" varchar(64);--> statement-breakpoint
+ALTER TABLE "commission_payment_records" ADD CONSTRAINT "commission_payment_records_reverses_record_id_commission_payment_records_id_fk" FOREIGN KEY ("reverses_record_id") REFERENCES "public"."commission_payment_records"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "operational_occurrence_events" ADD CONSTRAINT "operational_occurrence_events_reverses_event_id_operational_occurrence_events_id_fk" FOREIGN KEY ("reverses_event_id") REFERENCES "public"."operational_occurrence_events"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "commission_payment_records_reversal_once_idx" ON "commission_payment_records" USING btree ("tenant_id","reverses_record_id") WHERE "commission_payment_records"."reverses_record_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "operational_occurrence_events_reversal_once_idx" ON "operational_occurrence_events" USING btree ("tenant_id","reverses_event_id") WHERE "operational_occurrence_events"."reverses_event_id" is not null;

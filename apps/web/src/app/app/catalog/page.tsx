@@ -17,6 +17,7 @@ import {
   listCategories,
   listProducts,
   type Product,
+  updateProduct,
 } from "../../../lib/giromesa-api";
 
 function moneyToCents(value: string) {
@@ -31,6 +32,7 @@ const initialProduct = {
   price: "",
   cost: "",
   channels: ["pos", "qr"],
+  isAlcoholic: false,
   isClubEligible: false,
   bottleVolumeMl: "750",
   defaultDoseMl: "50",
@@ -46,6 +48,7 @@ export default function CatalogPage() {
   const [busy, setBusy] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [bulkMode, setBulkMode] = useState(false);
+  const [updatingAlcoholId, setUpdatingAlcoholId] = useState<string | null>(null);
 
   const toggleProductSelection = useCallback((productId: string) => {
     setSelectedProducts((current) => {
@@ -145,6 +148,7 @@ export default function CatalogPage() {
         priceCents: moneyToCents(product.price),
         costCents: moneyToCents(product.cost),
         channels: product.channels,
+        isAlcoholic: product.isAlcoholic,
         isClubEligible: product.isClubEligible,
         ...(product.categoryId ? { categoryId: product.categoryId } : {}),
         ...(product.description.trim() ? { description: product.description.trim() } : {}),
@@ -173,6 +177,23 @@ export default function CatalogPage() {
         ? [...new Set([...current.channels, channel])]
         : current.channels.filter((item) => item !== channel),
     }));
+  }
+
+  async function setAlcoholicClassification(item: Product, isAlcoholic: boolean) {
+    setUpdatingAlcoholId(item.id);
+    try {
+      const updated = await updateProduct(item.id, { isAlcoholic });
+      setProducts((current) =>
+        current.map((productRow) => (productRow.id === updated.id ? updated : productRow)),
+      );
+      setMessage(
+        `${item.name}: classificação ${isAlcoholic ? "alcoólico (18+)" : "não alcoólico"} salva.`,
+      );
+    } catch {
+      setMessage("Não foi possível atualizar a classificação 18+ deste produto.");
+    } finally {
+      setUpdatingAlcoholId(null);
+    }
   }
 
   return (
@@ -317,6 +338,16 @@ export default function CatalogPage() {
             </fieldset>
             <label className="check-label">
               <input
+                checked={product.isAlcoholic}
+                onChange={(event) =>
+                  setProduct((current) => ({ ...current, isAlcoholic: event.target.checked }))
+                }
+                type="checkbox"
+              />{" "}
+              Produto alcoólico (ativa confirmação 18+ no QR)
+            </label>
+            <label className="check-label">
+              <input
                 checked={product.isClubEligible}
                 onChange={(event) =>
                   setProduct((current) => ({ ...current, isClubEligible: event.target.checked }))
@@ -416,6 +447,7 @@ export default function CatalogPage() {
               <header>
                 {bulkMode && (
                   <input
+                    aria-label={`Selecionar todos os produtos de ${category.name}`}
                     type="checkbox"
                     checked={category.products.every((p) => selectedProducts.has(p.id))}
                     onChange={() => {
@@ -461,6 +493,7 @@ export default function CatalogPage() {
                 >
                   {bulkMode && (
                     <input
+                      aria-label={`Selecionar ${item.name}`}
                       type="checkbox"
                       checked={selectedProducts.has(item.id)}
                       onChange={() => toggleProductSelection(item.id)}
@@ -479,6 +512,21 @@ export default function CatalogPage() {
                       {item.isClubEligible ? " · Dose Club" : ""}
                     </small>
                   </div>
+                  <label
+                    className="check-label product-alcohol-toggle"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      checked={item.isAlcoholic}
+                      disabled={updatingAlcoholId === item.id}
+                      onChange={(event) =>
+                        void setAlcoholicClassification(item, event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    18+
+                  </label>
                 </div>
               ))}
               {category.products.length === 0 ? (
@@ -491,6 +539,7 @@ export default function CatalogPage() {
               <header>
                 {bulkMode && (
                   <input
+                    aria-label="Selecionar todos os produtos sem categoria"
                     type="checkbox"
                     checked={products
                       .filter((p) => !p.categoryId)
@@ -539,6 +588,7 @@ export default function CatalogPage() {
                   >
                     {bulkMode && (
                       <input
+                        aria-label={`Selecionar ${item.name}`}
                         type="checkbox"
                         checked={selectedProducts.has(item.id)}
                         onChange={() => toggleProductSelection(item.id)}
@@ -551,6 +601,21 @@ export default function CatalogPage() {
                       <small>{item.description || "Sem descrição"}</small>
                     </div>
                     <strong>{formatMoney(item.priceCents)}</strong>
+                    <label
+                      className="check-label product-alcohol-toggle"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        checked={item.isAlcoholic}
+                        disabled={updatingAlcoholId === item.id}
+                        onChange={(event) =>
+                          void setAlcoholicClassification(item, event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      18+
+                    </label>
                   </div>
                 ))}
             </article>

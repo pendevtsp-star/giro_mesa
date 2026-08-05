@@ -1,4 +1,41 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+"use client";
+
+import {
+  type ComponentPropsWithoutRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
+
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+let bodyScrollLocks = 0;
+let bodyOverflowBeforeLock = "";
+
+function lockBodyScroll() {
+  if (typeof document === "undefined") return;
+  if (bodyScrollLocks === 0) {
+    bodyOverflowBeforeLock = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
+  bodyScrollLocks += 1;
+}
+
+function unlockBodyScroll() {
+  if (typeof document === "undefined") return;
+  bodyScrollLocks = Math.max(0, bodyScrollLocks - 1);
+  if (bodyScrollLocks === 0) document.body.style.overflow = bodyOverflowBeforeLock;
+}
 
 type ButtonProps = ComponentPropsWithoutRef<"button"> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -172,28 +209,103 @@ export function Dialog({
   children,
   actions,
   onClose,
+  initialFocusRef,
+  closeLabel = "Fechar",
+  dismissible = true,
+  className = "",
 }: {
   open: boolean;
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
   actions?: ReactNode;
   onClose: () => void;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  closeLabel?: string;
+  dismissible?: boolean;
+  className?: string;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    lockBodyScroll();
+    const focusFrame = window.requestAnimationFrame(() => {
+      const requested = initialFocusRef?.current;
+      const fallback =
+        dialogRef.current?.querySelector<HTMLElement>("[data-dialog-initial-focus]") ??
+        dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      (requested ?? fallback ?? dialogRef.current)?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      unlockBodyScroll();
+      window.requestAnimationFrame(() => previouslyFocused?.focus());
+    };
+  }, [initialFocusRef, open]);
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape" && dismissible) {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
+    ).filter((element) => !element.hasAttribute("hidden") && element.offsetParent !== null);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+
   if (!open) return null;
   return (
-    <div className="gm-dialog-backdrop">
+    // biome-ignore lint/a11y/noStaticElementInteractions: pointer dismissal is supplemental; keyboard dismissal is handled by the dialog.
+    <div
+      className="gm-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (dismissible && event.target === event.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
       <section
-        aria-label={title}
+        aria-labelledby={titleId}
         aria-modal="true"
-        className="gm-dialog"
-        onMouseDown={(event) => event.stopPropagation()}
+        className={`gm-dialog ${className}`.trim()}
+        onKeyDown={handleKeyDown}
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <header>
-          <h2>{title}</h2>
-          <button aria-label="Fechar" className="gm-icon-button" onClick={onClose} type="button">
-            <span aria-hidden="true" className="gm-close-icon" />
-          </button>
+          <h2 id={titleId}>{title}</h2>
+          {dismissible ? (
+            <button
+              aria-label={closeLabel}
+              className="gm-icon-button"
+              onClick={onClose}
+              type="button"
+            >
+              <span aria-hidden="true" className="gm-close-icon" />
+            </button>
+          ) : null}
         </header>
         <div className="gm-dialog-body">{children}</div>
         {actions ? <footer>{actions}</footer> : null}
@@ -207,27 +319,100 @@ export function Drawer({
   title,
   children,
   onClose,
+  initialFocusRef,
+  closeLabel = "Fechar",
+  dismissible = true,
 }: {
   open: boolean;
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
   onClose: () => void;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  closeLabel?: string;
+  dismissible?: boolean;
 }) {
+  const drawerRef = useRef<HTMLElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    lockBodyScroll();
+    const focusFrame = window.requestAnimationFrame(() => {
+      const requested = initialFocusRef?.current;
+      const fallback =
+        drawerRef.current?.querySelector<HTMLElement>("[data-dialog-initial-focus]") ??
+        drawerRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      (requested ?? fallback ?? drawerRef.current)?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      unlockBodyScroll();
+      window.requestAnimationFrame(() => previouslyFocused?.focus());
+    };
+  }, [initialFocusRef, open]);
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape" && dismissible) {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = Array.from(
+      drawerRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
+    ).filter((element) => !element.hasAttribute("hidden") && element.offsetParent !== null);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      drawerRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+
   if (!open) return null;
   return (
-    <div className="gm-drawer-backdrop">
+    // biome-ignore lint/a11y/noStaticElementInteractions: pointer dismissal is supplemental; keyboard dismissal is handled by the drawer.
+    <div
+      className="gm-drawer-backdrop"
+      onMouseDown={(event) => {
+        if (dismissible && event.target === event.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
       <aside
-        aria-label={title}
+        aria-labelledby={titleId}
         aria-modal="true"
         className="gm-drawer"
-        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={handleKeyDown}
+        ref={drawerRef}
         role="dialog"
+        tabIndex={-1}
       >
         <header>
-          <h2>{title}</h2>
-          <button aria-label="Fechar" className="gm-icon-button" onClick={onClose} type="button">
-            <span aria-hidden="true" className="gm-close-icon" />
-          </button>
+          <h2 id={titleId}>{title}</h2>
+          {dismissible ? (
+            <button
+              aria-label={closeLabel}
+              className="gm-icon-button"
+              onClick={onClose}
+              type="button"
+            >
+              <span aria-hidden="true" className="gm-close-icon" />
+            </button>
+          ) : null}
         </header>
         {children}
       </aside>

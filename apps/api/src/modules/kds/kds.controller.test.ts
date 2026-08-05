@@ -16,6 +16,12 @@ function controllerWithPermissions(permissions: string[]) {
   } as unknown as AuthService;
   const kdsService = {
     listTickets: vi.fn(async () => []),
+    recallLastDelivered: vi.fn(async (_context, stationId) => ({
+      id: "ticket-served",
+      stationId,
+      status: "served",
+      audit: "kds.delivery_recalled",
+    })),
     updateTicketItem: vi.fn(async (_context, ticketId, itemId, status) => ({
       id: ticketId,
       itemId,
@@ -60,6 +66,21 @@ describe("KdsController permissions", () => {
       "ticket-1",
       "item-1",
       "ready",
+    );
+  });
+
+  it("recalls the last delivered ticket within the requested station", async () => {
+    const { controller, kdsService } = controllerWithPermissions(["kds:operate"]);
+    const stationId = "11111111-1111-4111-8111-111111111111";
+
+    await expect(controller.recallLastDelivered({ stationId }, {})).resolves.toMatchObject({
+      stationId,
+      status: "served",
+      audit: "kds.delivery_recalled",
+    });
+    expect(kdsService.recallLastDelivered).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test", branchId: "branch-test" }),
+      stationId,
     );
   });
 });

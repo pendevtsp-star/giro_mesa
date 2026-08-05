@@ -16,6 +16,13 @@ const createDeliverySchema = z.object({
   riderName: z.string().max(120).optional(),
   riderPhone: z.string().max(40).optional(),
   notes: z.string().max(500).optional(),
+  externalCorrelationKey: z
+    .string()
+    .trim()
+    .min(6)
+    .max(120)
+    .regex(/^[A-Za-z0-9._:-]+$/)
+    .optional(),
 });
 
 const updateStatusSchema = z.object({

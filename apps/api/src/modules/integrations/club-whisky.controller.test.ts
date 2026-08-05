@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { clubSaleSchema, configureSchema, doseConsumptionSchema } from "./club-whisky.controller";
+import {
+  activateIntegrationSchema,
+  clubSaleSchema,
+  configureSchema,
+  doseConsumptionSchema,
+  integrationHealthSchema,
+  revokeIntegrationSchema,
+} from "./club-whisky.controller";
 
 describe("Dose Club integration request security", () => {
+  const branchId = "11111111-1111-4111-8111-111111111111";
   afterEach(() => {
     delete process.env.CLUB_WHISKY_API_BASE_URL;
     process.env.NODE_ENV = "test";
@@ -10,7 +18,7 @@ describe("Dose Club integration request security", () => {
   it("enforces mutually exclusive product fields for individual and combo sales", () => {
     expect(() =>
       clubSaleSchema.parse({
-        branchId: "branch-a",
+        branchId,
         saleType: "individual",
         productId: "product-a",
         eligibleProductIds: ["product-a", "product-b"],
@@ -78,6 +86,7 @@ describe("Dose Club integration request security", () => {
 
     expect(
       configureSchema.parse({
+        branchId,
         webhookUrl: "https://doseclube.giromesa.com.br/v1/webhooks/giromesa",
         webhookSecretRef: "CLUB_WHISKY_WEBHOOK_SECRET_TENANT_A",
       }),
@@ -91,5 +100,36 @@ describe("Dose Club integration request security", () => {
         webhookSecretRef: "UNSAFE_SECRET_NAME",
       }),
     ).toThrow();
+  });
+
+  it("rejects activation without an explicit branch", () => {
+    expect(() =>
+      configureSchema.parse({
+        webhookUrl: "https://doseclube.giromesa.com.br/v1/webhooks/giromesa",
+      }),
+    ).toThrow();
+  });
+
+  it("validates versioned lifecycle commands", () => {
+    expect(
+      activateIntegrationSchema.parse({
+        expectedVersion: 1,
+        contractVersion: "2026-07-30",
+        evidence: "Joint homologation evidence",
+      }),
+    ).toMatchObject({ expectedVersion: 1 });
+    expect(() =>
+      activateIntegrationSchema.parse({
+        expectedVersion: 1,
+        contractVersion: "unversioned",
+        evidence: "Joint homologation evidence",
+      }),
+    ).toThrow();
+    expect(
+      integrationHealthSchema.parse({ expectedVersion: 2, healthy: false, detail: "probe failed" }),
+    ).toMatchObject({ healthy: false });
+    expect(
+      revokeIntegrationSchema.parse({ expectedVersion: 3, reason: "tenant requested revocation" }),
+    ).toMatchObject({ expectedVersion: 3 });
   });
 });

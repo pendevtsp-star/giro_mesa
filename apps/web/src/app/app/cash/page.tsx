@@ -8,6 +8,7 @@ import {
   PlusCircle,
   Printer,
   Unlock,
+  UsersRound,
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { CashHandoverPanel } from "../../../features/cash/CashHandoverPanel";
@@ -145,6 +146,14 @@ export default function CashPage() {
               : "Abra o turno antes de iniciar a conferência operacional do caixa."}
           </p>
           <div className="ticket-actions">
+            {activeShift ? (
+              <a
+                className="button ghost"
+                href={`/app/team/settlements?shiftId=${encodeURIComponent(activeShift.id)}`}
+              >
+                <UsersRound size={16} /> Conferir equipe
+              </a>
+            ) : null}
             <button
               className="button primary"
               type="button"

@@ -10,6 +10,7 @@ import {
   Flame,
   LockKeyhole,
   Plus,
+  QrCode,
   Receipt,
   RefreshCw,
   Settings2,
@@ -93,6 +94,7 @@ function getActions(table: DiningTable): Action[] {
         { id: "send-kitchen", label: "Enviar cozinha", icon: <Flame size={16} /> },
         { id: "preview-bill", label: "Prévia da conta", icon: <FileText size={16} /> },
         { id: "close-account", label: "Fechar conta", icon: <CreditCard size={16} /> },
+        { id: "activate-qr", label: "Ativar ou renovar QR", icon: <QrCode size={16} /> },
       );
       break;
     case "waiting_payment":

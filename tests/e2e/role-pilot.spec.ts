@@ -122,6 +122,7 @@ test.describe("Piloto guiado por perfil", () => {
     await page.goto("/q/M03", { waitUntil: "networkidle" });
 
     await expect(page.getByRole("heading", { name: "Bar Aurora" })).toBeVisible();
+    await page.getByRole("button", { name: /Tenho 18 anos ou mais/i }).click();
     await expect(page.getByRole("button", { name: /Chamar garçom/i })).toBeEnabled();
     await page.getByRole("button", { name: /Chamar garçom/i }).click();
     await expect(page.locator(".qr-note")).toContainText("Garçom chamado");

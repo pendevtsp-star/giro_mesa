@@ -34,7 +34,13 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
     const table = await createOrderTestTable(api, context.branchId, "A");
 
     const opened = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 2 },
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: table.id,
+        peopleCount: 2,
+        idempotencyKey: `e2e-order-a-open-${Date.now()}`,
+      },
     });
     expect(opened.ok()).toBe(true);
     const order = await opened.json();
@@ -42,7 +48,12 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
     expect(order.status).toMatch(/draft|opened/);
 
     const item = await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: product.id, quantity: 2, notes: "E2E order test" },
+      data: {
+        productId: product.id,
+        quantity: 2,
+        notes: "E2E order test",
+        idempotencyKey: `e2e-order-a-item-1-${Date.now()}`,
+      },
     });
     expect(item.ok()).toBe(true);
     const orderItem = await item.json();
@@ -51,7 +62,11 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
     expect(orderItem.totalCents).toBeGreaterThan(0);
 
     const secondItem = await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: product.id, quantity: 1 },
+      data: {
+        productId: product.id,
+        quantity: 1,
+        idempotencyKey: `e2e-order-a-item-2-${Date.now()}`,
+      },
     });
     expect(secondItem.ok()).toBe(true);
 
@@ -70,12 +85,22 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
     const table = await createOrderTestTable(api, context.branchId, "B");
 
     const opened = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 1 },
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: table.id,
+        peopleCount: 1,
+        idempotencyKey: `e2e-order-b-open-${Date.now()}`,
+      },
     });
     const order = await opened.json();
 
     await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: productList[0].id, quantity: 1 },
+      data: {
+        productId: productList[0].id,
+        quantity: 1,
+        idempotencyKey: `e2e-order-b-item-${Date.now()}`,
+      },
     });
 
     const sent = await api.post(`/api/v1/pos/orders/${order.id}/send-to-kitchen`);
@@ -99,12 +124,22 @@ test.describe("Order: create, add items, send to kitchen, pay and close", () => 
     const table = await createOrderTestTable(api, context.branchId, "C");
 
     const opened = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 1 },
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: table.id,
+        peopleCount: 1,
+        idempotencyKey: `e2e-order-c-open-${Date.now()}`,
+      },
     });
     const order = await opened.json();
 
     const item = await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: productList[0].id, quantity: 1 },
+      data: {
+        productId: productList[0].id,
+        quantity: 1,
+        idempotencyKey: `e2e-order-c-item-${Date.now()}`,
+      },
     });
     const orderItem = await item.json();
 

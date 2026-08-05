@@ -13,30 +13,45 @@ import {
   QrCode,
   Search,
   Send,
+  Star,
   UtensilsCrossed,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addOrderItem,
+  claimWaiterTable,
   closeOrder,
   type DiningTable,
   formatMoney,
   getActiveOrder,
+  getCurrentOperationalDevice,
   getSession,
   getTenantBranding,
   listOrderPayments,
   listProducts,
   listTables,
+  listWaiterAssignments,
   type OpenOrderResponse,
+  type OperationalDeviceProfile,
   type OrderItemResponse,
   type OrderPayment,
   openOrder,
   type Product,
   registerManualPayment,
+  replayOperationalMutation,
+  requestWaiterHelp,
   sendOrderToKitchen,
   type TenantBranding,
   type TenantSession,
+  type WaiterAssignmentList,
 } from "../../lib/giromesa-api";
+import {
+  createOperationalOutbox,
+  createOperationIdempotencyKey,
+  executeOperationalCommand,
+  reconcileOperationalOutbox,
+} from "../../lib/operational-outbox";
+import { OperationalAttentionPanel } from "../operational-attention/OperationalAttentionPanel";
 
 const demoTables: DiningTable[] = [
   { id: "demo-m03", branchId: "demo", code: "M03", name: "Mesa 03", seats: 4, status: "free" },
@@ -67,6 +82,7 @@ const demoProducts: Product[] = [
     priceCents: 4290,
     costCents: 1800,
     isAvailable: true,
+    isAlcoholic: false,
     channels: ["pos"],
   },
   {
@@ -77,6 +93,7 @@ const demoProducts: Product[] = [
     priceCents: 1690,
     costCents: 720,
     isAvailable: true,
+    isAlcoholic: true,
     channels: ["pos"],
   },
   {
@@ -87,6 +104,7 @@ const demoProducts: Product[] = [
     priceCents: 2490,
     costCents: 980,
     isAvailable: true,
+    isAlcoholic: false,
     channels: ["pos"],
   },
 ];
@@ -101,9 +119,18 @@ const fallbackBranding: TenantBranding = {
 type Status = "loading" | "ready" | "demo" | "error";
 type Step = 1 | 2 | 3;
 type TableFilter = "all" | "free" | "occupied" | "waiting_payment";
-type ProductFilter = "all" | "kitchen" | "drinks" | "dessert";
+type ProductFilter = "all" | "kitchen" | "drinks" | "dessert" | "favorites" | "recent";
 type ServiceMode = "table" | "counter";
 type PaymentMethod = "pix" | "credit_card" | "debit_card" | "cash";
+type PendingWaiterItem = {
+  localKey: string;
+  orderId: string;
+  tableId: string | null;
+  productId: string;
+  productName: string;
+  quantity: number;
+  notes: string;
+};
 
 const notePresets = [
   "Cliente com pressa",
@@ -167,6 +194,14 @@ export default function OrderStepper() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [message, setMessage] = useState("Monte o pedido em 3 passos rápidos.");
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [recentProductIds, setRecentProductIds] = useState<string[]>([]);
+  const [operationalDevice, setOperationalDevice] = useState<OperationalDeviceProfile | null>(null);
+  const [pendingItems, setPendingItems] = useState<PendingWaiterItem[]>([]);
+  const [assignmentState, setAssignmentState] = useState<WaiterAssignmentList>({
+    shift: null,
+    assignments: [],
+  });
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) ?? tables[0];
   const itemsTotalCents = useMemo(
@@ -178,6 +213,9 @@ export default function OrderStepper() {
     .filter((payment) => payment.status === "confirmed")
     .reduce((sum, payment) => sum + payment.amountCents, 0);
   const remainingCents = Math.max(0, totalCents - paidCents);
+  const unsentCount = items.filter(
+    (item) => !["sent", "preparing", "ready", "served"].includes(item.status ?? "pending"),
+  ).length;
   const branchId = session?.branchId;
   const brandInitial = branding.displayName.slice(0, 1).toUpperCase() || "G";
 
@@ -197,10 +235,17 @@ export default function OrderStepper() {
     return products.filter((product) => {
       const matchesQuery =
         q.length === 0 || `${product.name} ${product.description ?? ""}`.toLowerCase().includes(q);
-      const matchesFilter = productFilter === "all" ? true : productKind(product) === productFilter;
+      const matchesFilter =
+        productFilter === "all"
+          ? true
+          : productFilter === "favorites"
+            ? favorites.includes(product.id)
+            : productFilter === "recent"
+              ? recentProductIds.includes(product.id)
+              : productKind(product) === productFilter;
       return matchesQuery && matchesFilter;
     });
-  }, [productFilter, productQuery, products]);
+  }, [favorites, productFilter, productQuery, products, recentProductIds]);
 
   const load = useCallback(async () => {
     try {
@@ -220,18 +265,28 @@ export default function OrderStepper() {
         }
         return;
       }
-      const [tableList, productList, tenantBranding] = await Promise.all([
+      const [tableList, productList, tenantBranding, device, assignments] = await Promise.all([
         listTables(activeSession.branchId),
         listProducts(),
         getTenantBranding(),
+        getCurrentOperationalDevice().catch(() => null),
+        listWaiterAssignments(activeSession.branchId).catch(() => ({
+          shift: null,
+          assignments: [],
+        })),
       ]);
       const nextTables = tableList.length > 0 ? tableList : activeSession.isDemo ? demoTables : [];
-      const nextProducts = productList.filter((p) => p.isAvailable).slice(0, 24);
+      const nextProducts = productList.filter((p) => p.isAvailable);
       setTables(nextTables);
       setProducts(
         nextProducts.length > 0 ? nextProducts : activeSession.isDemo ? demoProducts : [],
       );
       setBranding(tenantBranding);
+      setOperationalDevice(device);
+      setAssignmentState(assignments);
+      if (device) {
+        setServiceMode(device.initialMode === "table" ? "table" : "counter");
+      }
       setSelectedTableId(nextTables[0]?.id ?? "");
       setStatus("ready");
       setMessage(`Modo garçom conectado ao ${tenantBranding.displayName}.`);
@@ -245,7 +300,75 @@ export default function OrderStepper() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const draft = window.localStorage.getItem("gm_waiter_draft");
+    const storedFavorites = window.localStorage.getItem("gm_waiter_favorites");
+    const storedRecent = window.localStorage.getItem("gm_waiter_recent");
+    try {
+      const parsed = draft
+        ? (JSON.parse(draft) as Partial<{
+            serviceMode: ServiceMode;
+            selectedTableId: string;
+            peopleCount: number;
+            serviceNote: string;
+            pendingItems: PendingWaiterItem[];
+          }>)
+        : null;
+      if (parsed?.serviceMode) setServiceMode(parsed.serviceMode);
+      if (parsed?.selectedTableId) setSelectedTableId(parsed.selectedTableId);
+      if (parsed?.peopleCount) setPeopleCount(parsed.peopleCount);
+      if (parsed?.serviceNote) setServiceNote(parsed.serviceNote);
+      if (Array.isArray(parsed?.pendingItems)) setPendingItems(parsed.pendingItems);
+      if (storedFavorites) setFavorites(JSON.parse(storedFavorites) as string[]);
+      if (storedRecent) setRecentProductIds(JSON.parse(storedRecent) as string[]);
+    } catch {
+      window.localStorage.removeItem("gm_waiter_draft");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "loading") return;
+    window.localStorage.setItem(
+      "gm_waiter_draft",
+      JSON.stringify({ serviceMode, selectedTableId, peopleCount, serviceNote, pendingItems }),
+    );
+  }, [pendingItems, peopleCount, selectedTableId, serviceMode, serviceNote, status]);
+
+  useEffect(() => {
+    if (!session?.branchId || !window.navigator.onLine) return;
+    const outbox = createOperationalOutbox({
+      tenantId: session.tenantId,
+      branchId: session.branchId,
+    });
+    void reconcileOperationalOutbox(outbox, replayOperationalMutation).then((summary) => {
+      if (summary.confirmed > 0) {
+        setMessage(`${summary.confirmed} operação(ões) do garçom reconciliada(s).`);
+        void load();
+      }
+    });
+  }, [load, session?.branchId, session?.tenantId]);
+
+  async function runOperationalCommand<T extends Record<string, unknown>>(
+    input: Parameters<ReturnType<typeof createOperationalOutbox>["enqueue"]>[0],
+    send: () => Promise<T>,
+  ) {
+    if (!session?.branchId) throw new Error("Sessão operacional indisponível.");
+    const outbox = createOperationalOutbox({
+      tenantId: session.tenantId,
+      branchId: session.branchId,
+    });
+    const execution = await executeOperationalCommand(outbox, input, () => send());
+    if (!execution.result) throw new Error("Operação já confirmada. Atualize a comanda.");
+    return execution.result;
+  }
+
   async function run(label: string, action: () => Promise<void>) {
+    if (!window.navigator.onLine) {
+      setMessage(
+        "Conexão reduzida: lançamento bloqueado. Use 4G, a contingência térmica ou registre manualmente.",
+      );
+      return;
+    }
     try {
       setBusyLabel(label);
       await action();
@@ -284,12 +407,46 @@ export default function OrderStepper() {
         serviceMode === "table" && selectedTable
           ? await getActiveOrder(branchId, selectedTable.id)
           : null;
+      if (
+        serviceMode === "table" &&
+        selectedTable &&
+        !assignmentState.assignments.some((row) => row.assignment.tableId === selectedTable.id)
+      ) {
+        const claimed = await claimWaiterTable(branchId, selectedTable.id);
+        setAssignmentState((current) => ({
+          ...current,
+          assignments: [
+            ...current.assignments,
+            {
+              assignment: claimed.assignment,
+              tableCode: selectedTable.code,
+              tableName: selectedTable.name,
+              waiterName: "Você",
+            },
+          ],
+        }));
+      }
+      const idempotencyKey = createOperationIdempotencyKey("open-order");
+      const tableId = serviceMode === "table" ? selectedTable?.id : undefined;
+      const payload = {
+        branchId,
+        channel: tableId ? "table" : "counter",
+        ...(tableId ? { tableId } : {}),
+        peopleCount,
+        idempotencyKey,
+      };
       const opened =
         active ??
-        (await openOrder(
-          branchId,
-          serviceMode === "table" ? selectedTable?.id : undefined,
-          peopleCount,
+        (await runOperationalCommand(
+          {
+            idempotencyKey,
+            operation: "open_order",
+            method: "POST",
+            path: "/api/v1/pos/orders/open",
+            payload,
+            replayable: true,
+          },
+          () => openOrder(branchId, tableId, peopleCount, undefined, idempotencyKey),
         ));
       setOrder(opened);
       setItems("items" in opened && Array.isArray(opened.items) ? opened.items : []);
@@ -304,25 +461,135 @@ export default function OrderStepper() {
     });
   }
 
+  function handleRequestHelp(tableId: string) {
+    void run("Solicitando ajuda", async () => {
+      if (!branchId) return;
+      const payload = {
+        branchId,
+        tableId,
+        reason: "Apoio pontual solicitado no atendimento",
+      };
+      const result = await runOperationalCommand(
+        {
+          idempotencyKey: createOperationIdempotencyKey("waiter-help"),
+          operation: "request_waiter_help",
+          method: "POST",
+          path: "/api/v1/pos/waiter-assignments/help",
+          payload,
+          replayable: false,
+        },
+        () => requestWaiterHelp(payload),
+      );
+      setMessage(
+        result.replayed
+          ? "A solicitação de ajuda já está aguardando a gerência."
+          : "Ajuda solicitada. A gerência precisa autorizar antes do lançamento.",
+      );
+    });
+  }
+
   function handleAddItem(product: Product) {
-    void run("Lancando item", async () => {
-      if (!order) {
-        setMessage("Abra a mesa antes de lançar itens.");
-        return;
+    if (!order) {
+      setMessage("Abra a mesa antes de lançar itens.");
+      return;
+    }
+    const intent: PendingWaiterItem = {
+      localKey: crypto.randomUUID(),
+      orderId: order.id,
+      tableId: serviceMode === "table" ? (selectedTable?.id ?? null) : null,
+      productId: product.id,
+      productName: product.name,
+      quantity: 1,
+      notes: serviceNote.trim() || "Lançado pelo garçom",
+    };
+    if (!window.navigator.onLine) {
+      setPendingItems((current) => [...current, intent]);
+      setMessage(`${product.name} salvo no rascunho. Reenvie quando a conexão voltar.`);
+      return;
+    }
+    void (async () => {
+      try {
+        setBusyLabel("Lançando item");
+        const item = await addOrderItem(
+          order.id,
+          product.id,
+          [],
+          intent.notes,
+          intent.quantity,
+          intent.localKey,
+        );
+        setItems((current) => [...current, item]);
+        setRecentProductIds((current) => {
+          const next = [product.id, ...current.filter((id) => id !== product.id)].slice(0, 8);
+          window.localStorage.setItem("gm_waiter_recent", JSON.stringify(next));
+          return next;
+        });
+        setOrder((current) =>
+          current
+            ? { ...current, status: "opened", totalCents: current.totalCents + item.totalCents }
+            : current,
+        );
+        setMessage(`${product.name} lançado na conta.`);
+      } catch (error) {
+        setPendingItems((current) => [...current, intent]);
+        setMessage(
+          `${product.name} ficou no rascunho: ${error instanceof Error ? error.message : "falha de conexão"}. Reenvie manualmente.`,
+        );
+      } finally {
+        setBusyLabel(null);
       }
-      const item = await addOrderItem(
-        order.id,
-        product.id,
-        [],
-        serviceNote.trim() || "Lançado pelo garçom",
-      );
-      setItems((current) => [...current, item]);
-      setOrder((current) =>
-        current
-          ? { ...current, status: "opened", totalCents: current.totalCents + item.totalCents }
-          : current,
-      );
-      setMessage(`${product.name} lançado na conta.`);
+    })();
+  }
+
+  function retryPendingItems() {
+    if (!order || !window.navigator.onLine) {
+      setMessage("Abra a comanda e restabeleça a conexão antes de reenviar.");
+      return;
+    }
+    void (async () => {
+      setBusyLabel("Reenviando rascunho");
+      let sent = 0;
+      try {
+        const eligible = pendingItems.filter(
+          (intent) =>
+            intent.orderId === order.id &&
+            intent.tableId === (serviceMode === "table" ? (selectedTable?.id ?? null) : null),
+        );
+        for (const intent of eligible) {
+          const item = await addOrderItem(
+            intent.orderId,
+            intent.productId,
+            [],
+            intent.notes,
+            intent.quantity,
+            intent.localKey,
+          );
+          setItems((current) =>
+            current.some((existing) => existing.id === item.id) ? current : [...current, item],
+          );
+          setPendingItems((current) =>
+            current.filter((entry) => entry.localKey !== intent.localKey),
+          );
+          sent += 1;
+        }
+        setMessage(`${sent} item(ns) do rascunho reenviado(s) sem duplicar lançamentos.`);
+      } catch (error) {
+        setMessage(
+          `Reenvio interrompido após ${sent} item(ns): ${error instanceof Error ? error.message : "falha de conexão"}.`,
+        );
+      } finally {
+        setBusyLabel(null);
+      }
+    })();
+  }
+
+  function toggleFavorite(productId: string) {
+    setFavorites((current) => {
+      const next = current.includes(productId)
+        ? current.filter((id) => id !== productId)
+        : [...current, productId];
+      window.localStorage.setItem("gm_waiter_favorites", JSON.stringify(next));
+      return next;
     });
   }
 
@@ -332,7 +599,18 @@ export default function OrderStepper() {
         setMessage("Lance ao menos um item antes de enviar para produção.");
         return;
       }
-      const sent = await sendOrderToKitchen(order.id);
+      const idempotencyKey = createOperationIdempotencyKey("waiter-send-production");
+      const sent = await runOperationalCommand(
+        {
+          idempotencyKey,
+          operation: "send_to_production",
+          method: "POST",
+          path: `/api/v1/pos/orders/${order.id}/send-to-kitchen`,
+          payload: {},
+          replayable: true,
+        },
+        () => sendOrderToKitchen(order.id),
+      );
       setOrder((current) => (current ? { ...current, status: "sent_to_kitchen" } : current));
       setMessage(`${String(sent.ticketsCreated.length)} lote(s) enviado(s) para produção.`);
     });
@@ -357,11 +635,23 @@ export default function OrderStepper() {
         debit_card: "debit_card",
         cash: "cash",
       };
-      const payment = await registerManualPayment(order.id, amount, {
+      const idempotencyKey = `waiter:${order.id}:${amount}:${methodMap[paymentMethod]}`;
+      const paymentInput = {
         method: methodMap[paymentMethod],
         registeredVia: "waiter",
-        idempotencyKey: `waiter:${order.id}:${amount}:${methodMap[paymentMethod]}`,
-      });
+        idempotencyKey,
+      } as const;
+      const payment = await runOperationalCommand(
+        {
+          idempotencyKey,
+          operation: "register_payment",
+          method: "POST",
+          path: `/api/v1/pos/orders/${order.id}/payments`,
+          payload: { amountCents: amount, ...paymentInput },
+          replayable: true,
+        },
+        () => registerManualPayment(order.id, amount, paymentInput),
+      );
       const nextPayments = await listOrderPayments(order.id);
       setPayments(nextPayments);
       setOrder((current) => (current ? { ...current, status: payment.orderStatus } : current));
@@ -380,11 +670,23 @@ export default function OrderStepper() {
         setMessage("Receba o saldo restante antes de fechar a conta.");
         return;
       }
-      await closeOrder(order.id);
+      const idempotencyKey = createOperationIdempotencyKey("waiter-close-order");
+      await runOperationalCommand(
+        {
+          idempotencyKey,
+          operation: "close_order",
+          method: "POST",
+          path: `/api/v1/pos/orders/${order.id}/close`,
+          payload: {},
+          replayable: true,
+        },
+        () => closeOrder(order.id),
+      );
       setOrder(null);
       setItems([]);
       setPayments([]);
       setStep(1);
+      window.localStorage.removeItem("gm_waiter_draft");
       setMessage("Conta fechada e mesa liberada para o próximo atendimento.");
     });
   }
@@ -417,6 +719,14 @@ export default function OrderStepper() {
           )}
         </div>
       </header>
+
+      {session?.branchId ? (
+        <OperationalAttentionPanel
+          tenantId={session.tenantId}
+          branchId={session.branchId}
+          onResolved={load}
+        />
+      ) : null}
 
       {/* Step indicator */}
       <nav className="stepper-indicator" aria-label="Progresso do pedido">
@@ -458,6 +768,10 @@ export default function OrderStepper() {
             serviceNote={serviceNote}
             setServiceNote={setServiceNote}
             busyLabel={busyLabel}
+            allowModeSwitch={operationalDevice?.allowModeSwitch !== false}
+            assignments={assignmentState}
+            currentUserId={session?.userId ?? ""}
+            onRequestHelp={handleRequestHelp}
           />
         )}
 
@@ -471,13 +785,22 @@ export default function OrderStepper() {
             order={order}
             items={items}
             totalCents={totalCents}
+            unsentCount={unsentCount}
             busyLabel={busyLabel}
             serviceMode={serviceMode}
             selectedTable={selectedTable}
             peopleCount={peopleCount}
             serviceNote={serviceNote}
             onAddItem={handleAddItem}
+            onToggleFavorite={toggleFavorite}
+            favorites={favorites}
+            onRepeatItem={(productId) => {
+              const product = products.find((entry) => entry.id === productId);
+              if (product) handleAddItem(product);
+            }}
             onSendToKitchen={handleSendToKitchen}
+            pendingItems={pendingItems.filter((intent) => intent.orderId === order?.id)}
+            onRetryPending={retryPendingItems}
           />
         )}
 
@@ -589,6 +912,10 @@ function StepMesa(props: {
   serviceNote: string;
   setServiceNote: (n: string) => void;
   busyLabel: string | null;
+  allowModeSwitch: boolean;
+  assignments: WaiterAssignmentList;
+  currentUserId: string;
+  onRequestHelp: (tableId: string) => void;
 }) {
   const {
     serviceMode,
@@ -602,7 +929,36 @@ function StepMesa(props: {
     setPeopleCount,
     serviceNote,
     setServiceNote,
+    busyLabel,
+    allowModeSwitch,
+    assignments,
+    currentUserId,
+    onRequestHelp,
   } = props;
+
+  const assignmentByTable = new Map(
+    assignments.assignments.map((row) => [row.assignment.tableId, row]),
+  );
+  const selectedAssignment = assignmentByTable.get(selectedTableId);
+  const groups = [
+    {
+      label: "Minhas mesas",
+      tables: filteredTables.filter(
+        (table) => assignmentByTable.get(table.id)?.assignment.waiterUserId === currentUserId,
+      ),
+    },
+    {
+      label: "Livres",
+      tables: filteredTables.filter((table) => !assignmentByTable.has(table.id)),
+    },
+    {
+      label: "Outras mesas",
+      tables: filteredTables.filter((table) => {
+        const assignment = assignmentByTable.get(table.id);
+        return assignment && assignment.assignment.waiterUserId !== currentUserId;
+      }),
+    },
+  ].filter((group) => group.tables.length > 0);
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -611,22 +967,24 @@ function StepMesa(props: {
         <p className="stepper-step-subtitle">Selecione a mesa ou abra um atendimento de balcão.</p>
       </div>
 
-      <div className="stepper-mode-switch" role="tablist" aria-label="Modo de atendimento">
-        <button
-          className={`button ${serviceMode === "table" ? "primary" : "ghost"} compact`}
-          type="button"
-          onClick={() => setServiceMode("table")}
-        >
-          <UtensilsCrossed size={16} /> Mesa
-        </button>
-        <button
-          className={`button ${serviceMode === "counter" ? "primary" : "ghost"} compact`}
-          type="button"
-          onClick={() => setServiceMode("counter")}
-        >
-          <CupSoda size={16} /> Balcão
-        </button>
-      </div>
+      {allowModeSwitch ? (
+        <div className="stepper-mode-switch" role="tablist" aria-label="Modo de atendimento">
+          <button
+            className={`button ${serviceMode === "table" ? "primary" : "ghost"} compact`}
+            type="button"
+            onClick={() => setServiceMode("table")}
+          >
+            <UtensilsCrossed size={16} /> Mesa
+          </button>
+          <button
+            className={`button ${serviceMode === "counter" ? "primary" : "ghost"} compact`}
+            type="button"
+            onClick={() => setServiceMode("counter")}
+          >
+            <CupSoda size={16} /> Balcão
+          </button>
+        </div>
+      ) : null}
 
       {serviceMode === "table" && (
         <>
@@ -644,22 +1002,42 @@ function StepMesa(props: {
               </select>
             </label>
           </div>
-          <div className="stepper-table-grid">
-            {filteredTables.map((table) => (
-              <button
-                className={`stepper-table-card ${table.id === selectedTableId ? "selected" : ""} ${table.status === "occupied" ? "occupied" : ""} ${table.status === "waiting_payment" ? "waiting" : ""}`}
-                type="button"
-                key={table.id}
-                onClick={() => setSelectedTableId(table.id)}
-              >
-                <strong>{table.code}</strong>
-                <span>{table.name}</span>
-                <small>
-                  {table.seats} lugares · {tableStatusLabel(table.status)}
-                </small>
-              </button>
-            ))}
-          </div>
+          {groups.map((group) => (
+            <section key={group.label} aria-label={group.label}>
+              <h3 className="stepper-group-title">{group.label}</h3>
+              <div className="stepper-table-grid">
+                {group.tables.map((table) => (
+                  <button
+                    className={`stepper-table-card ${table.id === selectedTableId ? "selected" : ""} ${table.status === "occupied" ? "occupied" : ""} ${table.status === "waiting_payment" ? "waiting" : ""}`}
+                    type="button"
+                    key={table.id}
+                    onClick={() => setSelectedTableId(table.id)}
+                  >
+                    <strong>{table.code}</strong>
+                    <span>{table.name}</span>
+                    <small>
+                      {table.seats} lugares · {tableStatusLabel(table.status)}
+                    </small>
+                    {group.label === "Outras mesas" ? (
+                      <small>
+                        Responsável: {assignmentByTable.get(table.id)?.waiterName ?? "outro garçom"}
+                      </small>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+          {selectedAssignment && selectedAssignment.assignment.waiterUserId !== currentUserId ? (
+            <button
+              className="button secondary"
+              disabled={busyLabel !== null}
+              onClick={() => onRequestHelp(selectedTableId)}
+              type="button"
+            >
+              Solicitar ajuda nesta mesa
+            </button>
+          ) : null}
         </>
       )}
 
@@ -721,13 +1099,19 @@ function StepItens(props: {
   order: OpenOrderResponse | null;
   items: OrderItemResponse[];
   totalCents: number;
+  unsentCount: number;
   busyLabel: string | null;
   serviceMode: ServiceMode;
   selectedTable: DiningTable | undefined;
   peopleCount: number;
   serviceNote: string;
   onAddItem: (product: Product) => void;
+  onToggleFavorite: (productId: string) => void;
+  favorites: string[];
+  onRepeatItem: (productId: string) => void;
   onSendToKitchen: () => void;
+  pendingItems: PendingWaiterItem[];
+  onRetryPending: () => void;
 }) {
   const {
     productFilter,
@@ -738,13 +1122,19 @@ function StepItens(props: {
     order,
     items,
     totalCents,
+    unsentCount,
     busyLabel,
     serviceMode,
     selectedTable,
     peopleCount,
     serviceNote,
     onAddItem,
+    onToggleFavorite,
+    favorites,
+    onRepeatItem,
     onSendToKitchen,
+    pendingItems,
+    onRetryPending,
   } = props;
 
   return (
@@ -766,6 +1156,25 @@ function StepItens(props: {
         </div>
         <strong>{formatMoney(totalCents)}</strong>
       </div>
+
+      <div className="stepper-status-row" role="status">
+        <span>Itens aguardando envio</span>
+        <strong>{unsentCount}</strong>
+      </div>
+
+      {pendingItems.length > 0 ? (
+        <div className="stepper-status-row" role="status">
+          <span>{pendingItems.length} item(ns) salvo(s) no rascunho deste aparelho.</span>
+          <button
+            className="button secondary compact"
+            type="button"
+            disabled={Boolean(busyLabel)}
+            onClick={onRetryPending}
+          >
+            Reenviar agora
+          </button>
+        </div>
+      ) : null}
 
       {order ? (
         <div className="stepper-status-row">
@@ -798,23 +1207,38 @@ function StepItens(props: {
                 <option value="kitchen">Cozinha</option>
                 <option value="drinks">Bebidas</option>
                 <option value="dessert">Sobremesa</option>
+                <option value="favorites">Favoritos</option>
+                <option value="recent">Recentes</option>
               </select>
             </label>
           </div>
 
           <div className="stepper-product-grid">
             {filteredProducts.map((product) => (
-              <button
-                className="stepper-product-tile"
-                type="button"
-                key={product.id}
-                onClick={() => onAddItem(product)}
-                disabled={!order || Boolean(busyLabel)}
-              >
-                <strong>{product.name}</strong>
-                <small>{product.description ?? "Item de venda"}</small>
-                <b>{formatMoney(product.priceCents)}</b>
-              </button>
+              <div className="stepper-product-tile-wrap" key={product.id}>
+                <button
+                  className="stepper-product-tile"
+                  type="button"
+                  onClick={() => onAddItem(product)}
+                  disabled={!order || Boolean(busyLabel)}
+                >
+                  <strong>{product.name}</strong>
+                  <small>{product.description ?? "Item de venda"}</small>
+                  <b>{formatMoney(product.priceCents)}</b>
+                </button>
+                <button
+                  className="stepper-favorite"
+                  type="button"
+                  aria-label={
+                    favorites.includes(product.id)
+                      ? `Remover ${product.name} dos favoritos`
+                      : `Favoritar ${product.name}`
+                  }
+                  onClick={() => onToggleFavorite(product.id)}
+                >
+                  <Star size={15} fill={favorites.includes(product.id) ? "currentColor" : "none"} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -829,7 +1253,17 @@ function StepItens(props: {
               items.map((item) => (
                 <div className="stepper-ticket-line" key={item.id}>
                   <span>{item.nameSnapshot}</span>
-                  <strong>{formatMoney(item.totalCents)}</strong>
+                  <div>
+                    <strong>{formatMoney(item.totalCents)}</strong>
+                    <button
+                      className="button ghost compact"
+                      type="button"
+                      disabled={Boolean(busyLabel)}
+                      onClick={() => onRepeatItem(item.productId)}
+                    >
+                      Repetir
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (

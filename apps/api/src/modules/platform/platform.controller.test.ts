@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthService } from "../auth/auth.service";
 import type { BackupService } from "./backup.service";
@@ -92,6 +92,12 @@ function controllerWithContext(permissions: string[]) {
         priority: "high",
         commercialNotes: "Cliente pediu retorno amanha.",
       },
+    })),
+    getSupportResource: vi.fn(async () => ({ tenantId: "tenant-id", actorId: "platform-user" })),
+    recordSupportDiagnostic: vi.fn(async () => ({ id: "audit-id", tenantId: "tenant-id" })),
+    revokeSupportGrant: vi.fn(async () => ({
+      tenantId: "tenant-id",
+      grantId: "00000000-0000-4000-8000-000000000001",
     })),
     sendTenantCommunication: vi.fn(async () => ({
       tenantId: "tenant-id",
@@ -213,6 +219,15 @@ describe("PlatformController", () => {
     );
   });
 
+  it("keeps backoffice restore disabled even for platform operators", async () => {
+    const { controller, backupService } = controllerWithContext(["platform:manage"]);
+
+    await expect(controller.restoreBackup("backup-1", {})).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(backupService.restoreBackup).not.toHaveBeenCalled();
+  });
+
   it("persists support notes through the protected platform endpoint", async () => {
     const { controller, platformService } = controllerWithContext(["platform:manage"]);
 
@@ -235,6 +250,33 @@ describe("PlatformController", () => {
         supportStatus: "queued",
       },
     );
+  });
+
+  it("routes scoped read, elevated diagnostic and revocation without impersonation", async () => {
+    const { controller, platformService } = controllerWithContext(["platform:manage"]);
+    await controller.getSupportResource(
+      "tenant-id",
+      { branchId: "00000000-0000-4000-8000-000000000002", resource: "operations" },
+      {},
+    );
+    await controller.recordSupportDiagnostic(
+      "tenant-id",
+      {
+        branchId: "00000000-0000-4000-8000-000000000002",
+        resource: "operations",
+        summary: "Synthetic diagnostic result",
+      },
+      {},
+    );
+    await controller.revokeSupportGrant("tenant-id", "00000000-0000-4000-8000-000000000001", {});
+    expect(platformService.getSupportResource).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "platform-user" }),
+      "tenant-id",
+      "00000000-0000-4000-8000-000000000002",
+      "operations",
+    );
+    expect(platformService.recordSupportDiagnostic).toHaveBeenCalled();
+    expect(platformService.revokeSupportGrant).toHaveBeenCalled();
   });
 
   it("sends customer communication through the protected platform endpoint", async () => {

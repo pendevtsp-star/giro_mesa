@@ -1,3 +1,5 @@
+import { summarizeNetChargeAllocations } from "../../common/payment-ledger";
+
 type FiscalOrder = {
   id: string;
   branchId: string;
@@ -44,10 +46,13 @@ type FiscalItem = {
 };
 
 type FiscalPayment = {
+  id: string;
   method: string;
   amountCents: number;
   provider: string;
   status: string;
+  paymentType: string;
+  originalPaymentId: string | null;
 };
 
 type BuildFocusNfeNfcePayloadInput = {
@@ -75,9 +80,8 @@ const paymentMethodCodes: Record<string, string> = {
 
 export function buildFocusNfeNfcePayload(input: BuildFocusNfeNfcePayloadInput) {
   const configPayload = readObject(input.settings.config.focusNfePayload);
-  const totalPaid = input.payments
-    .filter((payment) => payment.status === "confirmed")
-    .reduce((sum, payment) => sum + payment.amountCents, 0);
+  const netPayments = summarizeNetChargeAllocations(input.payments);
+  assertFiscalPaymentCoverage(netPayments.totalCents, input.order.totalCents);
 
   return {
     ...configPayload,
@@ -111,22 +115,26 @@ export function buildFocusNfeNfcePayload(input: BuildFocusNfeNfcePayloadInput) {
       pis_aliquota: percent(item.fiscalPisRate),
       cofins_aliquota: percent(item.fiscalCofinsRate),
     })),
-    formas_pagamento: buildPaymentDetails(input.payments, input.order.totalCents),
-    valor_troco: money(Math.max(totalPaid - input.order.totalCents, 0)),
+    formas_pagamento: buildPaymentDetails(netPayments.allocations),
+    valor_troco: money(Math.max(netPayments.totalCents - input.order.totalCents, 0)),
     informacoes_adicionais_contribuinte:
       "Documento fiscal gerado pelo GiroMesa. Validar regras fiscais com contador.",
   };
 }
 
-function buildPaymentDetails(payments: FiscalPayment[], orderTotalCents: number) {
-  const confirmed = payments.filter((payment) => payment.status === "confirmed");
-  const source =
-    confirmed.length > 0 ? confirmed : [{ method: "invoiced", amountCents: orderTotalCents }];
-
-  return source.map((payment) => ({
+function buildPaymentDetails(allocations: Array<{ payment: FiscalPayment; amountCents: number }>) {
+  return allocations.map(({ payment, amountCents }) => ({
     forma_pagamento: paymentMethodCodes[payment.method] ?? "99",
-    valor_pagamento: money(payment.amountCents),
+    valor_pagamento: money(amountCents),
   }));
+}
+
+function assertFiscalPaymentCoverage(netPaidCents: number, fiscalTotalCents: number) {
+  if (netPaidCents < fiscalTotalCents) {
+    throw new Error(
+      "Net payment total after refunds does not cover the original fiscal document total",
+    );
+  }
 }
 
 function readPresence(channel: string) {

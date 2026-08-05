@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { resolveKdsStationScope } from "../../../features/kds/device-station";
 import {
   buildRealtimeEventsUrl,
   getBranchOperationalSettings,
@@ -18,9 +19,11 @@ import {
   type KdsTicket,
   listKdsStations,
   listKdsTickets,
+  recallLastDeliveredKdsTicket,
   updateKdsTicket,
   updateKdsTicketItem,
 } from "../../../lib/giromesa-api";
+import { useSession } from "../../../lib/session-context";
 
 const statusLabel: Record<string, string> = {
   sent: "Novo",
@@ -76,6 +79,8 @@ const defaultShortcuts = {
   sound: "s",
   fullscreen: "f",
   advance: " ",
+  return: "Backspace",
+  recall: "l",
   up: "ArrowUp",
   down: "ArrowDown",
 };
@@ -88,8 +93,9 @@ function matchesShortcut(event: KeyboardEvent, shortcut: string | undefined) {
 }
 
 export default function KdsPage() {
+  const { operationalDevice, isLoading: sessionLoading } = useSession();
   const [tickets, setTickets] = useState<KdsTicket[]>([]);
-  const [station, setStation] = useState("all");
+  const [requestedStation, setRequestedStation] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [message, setMessage] = useState("Carregando produção...");
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -107,10 +113,20 @@ export default function KdsPage() {
   const initializedRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const pageRef = useRef<HTMLElement | null>(null);
+  const stationScope = useMemo(
+    () => resolveKdsStationScope(operationalDevice, requestedStation),
+    [operationalDevice, requestedStation],
+  );
+  const station = stationScope.stationId;
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("stationId");
+    if (requested) setRequestedStation(requested);
+  }, []);
   async function load() {
     try {
       const [ticketRows, stationRows, session] = await Promise.all([
-        listKdsTickets(),
+        listKdsTickets(station === "all" ? {} : { stationId: station }),
         listKdsStations(),
         getSession(),
       ]);
@@ -179,13 +195,13 @@ export default function KdsPage() {
   }, []);
   const visible = useMemo(
     () =>
-      tickets
-        .filter((ticket) => station === "all" || ticket.stationName === station)
+      (sessionLoading ? [] : tickets)
+        .filter((ticket) => station === "all" || ticket.stationId === station)
         .filter((ticket) =>
           statusFilter === "active" ? ticket.status !== "served" : ticket.status === statusFilter,
         )
         .sort((a, b) => Number(b.priority ?? 0) - Number(a.priority ?? 0)),
-    [station, statusFilter, tickets],
+    [sessionLoading, station, statusFilter, tickets],
   );
   async function advance(ticket: KdsTicket) {
     const next =
@@ -200,6 +216,15 @@ export default function KdsPage() {
     }
   }
 
+  async function returnTicket(ticket: KdsTicket) {
+    if (ticket.status !== "ready") return;
+    const updated = await updateKdsTicket(ticket.id, "preparing");
+    setTickets((current) =>
+      current.map((item) => (item.id === ticket.id ? { ...item, ...updated } : item)),
+    );
+    setMessage("Ticket retornado para preparo e registrado na auditoria.");
+  }
+
   async function advanceItem(ticket: KdsTicket, item: KdsPayloadItem) {
     if (!item.id) return;
     const current = item.status ?? "sent";
@@ -210,6 +235,17 @@ export default function KdsPage() {
         currentTicket.id === ticket.id ? { ...currentTicket, ...updated } : currentTicket,
       ),
     );
+  }
+
+  async function returnItem(ticket: KdsTicket, item: KdsPayloadItem) {
+    if (!item.id || item.status !== "ready") return;
+    const updated = await updateKdsTicketItem(ticket.id, item.id, "preparing");
+    setTickets((currentTickets) =>
+      currentTickets.map((currentTicket) =>
+        currentTicket.id === ticket.id ? { ...currentTicket, ...updated } : currentTicket,
+      ),
+    );
+    setMessage("Item retornado para preparo e registrado na auditoria.");
   }
   async function toggleSound() {
     const next = !soundEnabled;
@@ -240,6 +276,30 @@ export default function KdsPage() {
     }
   }
 
+  async function recallLastDelivery() {
+    const stationId =
+      station !== "all"
+        ? station
+        : tickets.find((ticket) => ticket.id === focusedTicketId)?.stationId;
+    if (!stationId) {
+      setMessage("Selecione uma estação ou um ticket para rever a última entrega.");
+      return;
+    }
+    try {
+      const recalled = await recallLastDeliveredKdsTicket(stationId);
+      setTickets((current) =>
+        current.some((ticket) => ticket.id === recalled.id)
+          ? current.map((ticket) => (ticket.id === recalled.id ? recalled : ticket))
+          : [...current, recalled],
+      );
+      setStatusFilter("served");
+      setFocusedTicketId(recalled.id);
+      setMessage("Última entrega recuperada do servidor; o status não foi alterado.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível rever a entrega.");
+    }
+  }
+
   // O KDS precisa continuar operável em monitor sem toque ou com bump bar.
   // ponytail: atalhos ficam locais à tela; um mapeador por estação entra na fase de configuração.
   // biome-ignore lint/correctness/useExhaustiveDependencies: atalhos devem apontar para o estado atual da tela.
@@ -261,6 +321,13 @@ export default function KdsPage() {
         event.preventDefault();
         const ticket = visible.find((item) => item.id === focusedTicketId);
         if (ticket) void advance(ticket);
+      } else if (matchesShortcut(event, shortcuts.return) && focusedTicketId) {
+        event.preventDefault();
+        const ticket = visible.find((item) => item.id === focusedTicketId);
+        if (ticket) void returnTicket(ticket);
+      } else if (matchesShortcut(event, shortcuts.recall)) {
+        event.preventDefault();
+        void recallLastDelivery();
       } else if (matchesShortcut(event, shortcuts.down) || matchesShortcut(event, shortcuts.up)) {
         event.preventDefault();
         if (!visible.length) return;
@@ -319,6 +386,14 @@ export default function KdsPage() {
             <RefreshCw size={16} /> Atualizar
           </button>
           <button
+            className="button secondary compact"
+            onClick={() => void recallLastDelivery()}
+            title={`Rever última entrega (${shortcuts.recall})`}
+            type="button"
+          >
+            Rever última entrega
+          </button>
+          <button
             aria-label={isFullscreen ? "Sair da tela cheia" : "Abrir tela cheia"}
             className="button secondary compact"
             onClick={() => void toggleFullscreen()}
@@ -347,14 +422,24 @@ export default function KdsPage() {
         </div>
         <label>
           Estação
-          <select value={station} onChange={(event) => setStation(event.target.value)}>
-            <option value="all">Todas</option>
-            {stations.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name}
-              </option>
-            ))}
+          <select
+            value={station}
+            disabled={stationScope.locked}
+            onChange={(event) => setRequestedStation(event.target.value)}
+            aria-describedby={stationScope.locked ? "kds-bound-station" : undefined}
+          >
+            {stationScope.locked ? null : <option value="all">Todas</option>}
+            {stations
+              .filter((item) => !stationScope.locked || item.id === station)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
           </select>
+          {stationScope.locked ? (
+            <small id="kds-bound-station">Estação vinculada a este terminal</small>
+          ) : null}
         </label>
         <label>
           Status
@@ -372,6 +457,8 @@ export default function KdsPage() {
             {shortcuts.refresh.toUpperCase()} atualizar · {shortcuts.sound.toUpperCase()} som ·{" "}
             {shortcuts.fullscreen.toUpperCase()} tela cheia · {shortcuts.up}/{shortcuts.down}{" "}
             selecionar · {shortcuts.advance === " " ? "Espaço" : shortcuts.advance} avançar
+            {" · "}
+            {shortcuts.return} retornar · {shortcuts.recall.toUpperCase()} rever entrega
           </span>
         </p>
       </section>
@@ -383,7 +470,6 @@ export default function KdsPage() {
           const late = ageMinutes >= 15 && ticket.status !== "served";
           return (
             <article
-              aria-keyshortcuts="Space ArrowDown ArrowUp"
               className={`kds-ticket kds-${ticket.status}${late ? " is-late" : ""}${focusedTicketId === ticket.id ? " is-focused" : ""}`}
               key={ticket.id}
             >
@@ -416,19 +502,30 @@ export default function KdsPage() {
                         {modifiers.length ? <span>{modifiers.join(" · ")}</span> : null}
                         {item.notes ? <small>{item.notes}</small> : null}
                         {item.id ? (
-                          <button
-                            className="button ghost compact kds-item-action"
-                            type="button"
-                            onClick={() => void advanceItem(ticket, item)}
-                          >
-                            {item.status === "sent" || !item.status
-                              ? "Iniciar item"
-                              : item.status === "preparing"
-                                ? "Marcar item pronto"
-                                : item.status === "ready"
-                                  ? "Entregar item"
-                                  : "Entregue"}
-                          </button>
+                          <>
+                            <button
+                              className="button ghost compact kds-item-action"
+                              type="button"
+                              onClick={() => void advanceItem(ticket, item)}
+                            >
+                              {item.status === "sent" || !item.status
+                                ? "Iniciar item"
+                                : item.status === "preparing"
+                                  ? "Marcar item pronto"
+                                  : item.status === "ready"
+                                    ? "Entregar item"
+                                    : "Entregue"}
+                            </button>
+                            {item.status === "ready" ? (
+                              <button
+                                className="button ghost compact kds-item-action"
+                                type="button"
+                                onClick={() => void returnItem(ticket, item)}
+                              >
+                                Retornar item
+                              </button>
+                            ) : null}
+                          </>
                         ) : null}
                       </li>
                     );
@@ -454,17 +551,28 @@ export default function KdsPage() {
                   {late ? " · atrasado" : ""}
                 </span>
                 {ticket.status !== "served" ? (
-                  <button
-                    className="button primary compact"
-                    type="button"
-                    onClick={() => void advance(ticket)}
-                  >
-                    {ticket.status === "sent"
-                      ? "Iniciar"
-                      : ticket.status === "preparing"
-                        ? "Marcar pronto"
-                        : "Entregar"}
-                  </button>
+                  <div>
+                    {ticket.status === "ready" ? (
+                      <button
+                        className="button secondary compact"
+                        type="button"
+                        onClick={() => void returnTicket(ticket)}
+                      >
+                        Retornar
+                      </button>
+                    ) : null}
+                    <button
+                      className="button primary compact"
+                      type="button"
+                      onClick={() => void advance(ticket)}
+                    >
+                      {ticket.status === "sent"
+                        ? "Iniciar"
+                        : ticket.status === "preparing"
+                          ? "Marcar pronto"
+                          : "Entregar"}
+                    </button>
+                  </div>
                 ) : null}
               </footer>
             </article>

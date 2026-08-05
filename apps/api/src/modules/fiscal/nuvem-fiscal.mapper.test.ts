@@ -53,10 +53,13 @@ describe("buildNuvemFiscalNfcePayload", () => {
       ],
       payments: [
         {
+          id: "payment-001",
           method: "pix_manual",
           amountCents: 6500,
           provider: "manual",
           status: "confirmed",
+          paymentType: "charge",
+          originalPaymentId: null,
         },
       ],
     });
@@ -106,11 +109,77 @@ describe("buildNuvemFiscalNfcePayload", () => {
         config: { nuvemFiscalPayload: { custom_field: "custom-value" } },
       },
       items: [],
-      payments: [],
+      payments: [
+        {
+          id: "payment-002",
+          method: "invoiced",
+          amountCents: 1000,
+          provider: "manual",
+          status: "confirmed",
+          paymentType: "charge",
+          originalPaymentId: null,
+        },
+      ],
     });
 
     expect(payload.ambiente).toBe("producao");
     expect((payload as Record<string, unknown>).custom_field).toBe("custom-value");
     expect(payload.infNFe.ide.presenca_comprador).toBe("internet");
+  });
+
+  it("rejects an original-sale payload whose net payment was reduced by a partial refund", () => {
+    expect(() =>
+      buildNuvemFiscalNfcePayload({
+        fiscalDocumentId: "document-refund",
+        model: "nfce",
+        number: 4,
+        order: {
+          id: "order-refund",
+          branchId: "branch-001",
+          channel: "counter",
+          subtotalCents: 1000,
+          discountCents: 0,
+          serviceChargeCents: 100,
+          deliveryFeeCents: 0,
+          totalCents: 1100,
+        },
+        settings: {
+          provider: "nuvem_fiscal",
+          environment: "homologation",
+          series: "1",
+          legalName: "Bar Aurora LTDA",
+          tradeName: "Bar Aurora",
+          document: "00000000000191",
+          stateRegistration: null,
+          municipalRegistration: null,
+          taxRegime: "simples_nacional",
+          uf: "SP",
+          cityCode: "3550308",
+          cityName: "Sao Paulo",
+          config: {},
+        },
+        items: [],
+        payments: [
+          {
+            id: "charge-refund",
+            method: "pix_manual",
+            amountCents: 1100,
+            provider: "manual",
+            status: "confirmed",
+            paymentType: "charge",
+            originalPaymentId: null,
+          },
+          {
+            id: "partial-refund",
+            method: "pix_manual",
+            amountCents: 550,
+            provider: "manual",
+            status: "refunded",
+            paymentType: "refund",
+            originalPaymentId: "charge-refund",
+          },
+        ],
+      }),
+    ).toThrow(/does not cover the original fiscal document total/i);
   });
 });

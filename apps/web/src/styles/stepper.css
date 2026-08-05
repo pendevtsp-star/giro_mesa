@@ -178,6 +178,15 @@
   gap: 10px;
 }
 
+.stepper-group-title {
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .stepper-table-card {
   display: grid;
   gap: 4px;
@@ -385,6 +394,39 @@
   align-items: start;
 }
 
+.stepper-product-tile-wrap {
+  position: relative;
+}
+
+.stepper-product-tile-wrap .stepper-product-tile {
+  width: 100%;
+}
+
+.stepper-favorite {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent-strong);
+}
+
+.stepper-ticket-preview {
+  position: sticky;
+  top: 16px;
+}
+
+.stepper-ticket-line > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Payment methods */
 .stepper-payment-methods {
   display: grid;
@@ -517,6 +559,10 @@
 
 /* Responsive */
 @media (max-width: 900px) {
+  .stepper-ticket-preview {
+    position: static;
+  }
+
   .stepper-items-layout {
     grid-template-columns: 1fr;
   }

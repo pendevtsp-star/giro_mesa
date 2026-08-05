@@ -459,7 +459,6 @@ body
   display: grid;
   min-height: 100dvh;
   grid-template-columns: 17.25rem minmax(0, 1fr);
-  overflow-x: clip;
   background:
     radial-gradient(circle at 84% 2%, rgba(37, 99, 235, 0.13), transparent 28rem), #08131f;
 }
@@ -1985,11 +1984,16 @@ body :is(.workspace-page, .pos-workspace, .report-page, .kds-page, .salon-page) 
   }
 
   .app-layout-night .sidebar nav {
+    display: none;
     grid-column: 1 / -1;
     grid-auto-flow: column;
     margin-top: 0;
     overflow-x: auto;
     padding-bottom: 0.2rem;
+  }
+
+  .app-layout-night .sidebar nav.is-open {
+    display: grid;
   }
 
   .app-layout-night .nav-group {

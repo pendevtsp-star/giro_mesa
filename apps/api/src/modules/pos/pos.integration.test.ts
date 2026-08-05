@@ -8,10 +8,14 @@ import {
   kdsStations,
   kdsTickets,
   operationalEvents,
+  operationIdempotency,
   orderItems,
   orders,
   outboxEvents,
   payments,
+  printerDevices,
+  printJobs,
+  printRoutes,
   products,
   tenants,
   users,
@@ -44,6 +48,10 @@ const databaseUrl =
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
   await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
+  await db.delete(operationIdempotency).where(eq(operationIdempotency.tenantId, tenantId));
+  await db.delete(printJobs).where(eq(printJobs.tenantId, tenantId));
+  await db.delete(printRoutes).where(eq(printRoutes.tenantId, tenantId));
+  await db.delete(printerDevices).where(eq(printerDevices.tenantId, tenantId));
   await db.delete(kdsTickets).where(eq(kdsTickets.tenantId, tenantId));
   await db.delete(kdsStations).where(eq(kdsStations.tenantId, tenantId));
   await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));
@@ -220,12 +228,9 @@ runIntegration("POS QR conference behavior", () => {
     catalogService = new CatalogService(databaseService);
     const posRepository = new PosRepository(databaseService);
     const orderRepository = new OrderRepository(databaseService);
-    const ordersService = new OrdersService(
-      databaseService,
-      posRepository,
-      orderRepository,
-      {} as FiscalService,
-    );
+    const ordersService = new OrdersService(databaseService, posRepository, orderRepository, {
+      createPendingOrderDocumentInTransaction: async () => undefined,
+    } as unknown as FiscalService);
     const paymentsService = new PaymentsService(databaseService, orderRepository);
     posService = new PosService(
       databaseService,
@@ -260,8 +265,50 @@ runIntegration("POS QR conference behavior", () => {
         tableId: fixture.table.id,
         channel: "table",
         peopleCount: 2,
+        idempotencyKey: "wrong-branch-open-order",
       }),
     ).rejects.toThrow("Table does not belong to the selected branch");
+  });
+
+  it("opens one table order across concurrent retries and rejects payload drift", async () => {
+    const [table] = await db
+      .insert(diningTables)
+      .values({
+        tenantId: fixture.tenant.id,
+        branchId: fixture.branch.id,
+        code: "M-IDEMP",
+        name: "Mesa idempotente",
+        seats: 4,
+        status: "free",
+      })
+      .returning();
+    if (!table) throw new Error("Failed to create idempotency table");
+    const context = {
+      tenantId: fixture.tenant.id,
+      branchId: fixture.branch.id,
+      userId: fixture.user.id,
+      requestId: "open-order-concurrency",
+      permissions: ["pos:operate"],
+    };
+    const input = {
+      branchId: fixture.branch.id,
+      tableId: table.id,
+      channel: "table" as const,
+      peopleCount: 4,
+      idempotencyKey: "open-order-concurrency-key",
+    };
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => posService.openOrder(context, input)),
+    );
+    expect(new Set(results.map((result) => result.id))).toHaveLength(1);
+    await expect(posService.openOrder(context, { ...input, peopleCount: 5 })).rejects.toThrow(
+      /idempotência|idempotency/i,
+    );
+    const created = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(and(eq(orders.tenantId, fixture.tenant.id), eq(orders.tableId, table.id)));
+    expect(created).toHaveLength(1);
   });
 
   it("adds QR items to the active table order instead of opening a parallel order", async () => {
@@ -511,5 +558,59 @@ runIntegration("POS QR conference behavior", () => {
     );
     expect(outboxRows.filter((event) => event.topic === "payment.confirmed")).toHaveLength(1);
     expect(outboxRows.filter((event) => event.topic === "order.closed")).toHaveLength(1);
+
+    await db.insert(orderItems).values({
+      tenantId: fixture.tenant.id,
+      orderId: fixture.order.id,
+      productId: fixture.brownieItem.productId,
+      nameSnapshot: "Item estornado",
+      quantity: "1",
+      unitPriceCents: 2200,
+      totalCents: 0,
+      sourceChannel: "pos",
+      status: "refunded",
+    });
+    const [printer] = await db
+      .insert(printerDevices)
+      .values({
+        tenantId: fixture.tenant.id,
+        branchId: fixture.branch.id,
+        name: `Caixa teste ${Date.now()}`,
+        role: "cashier",
+        connectionType: "mock",
+        charactersPerLine: 32,
+      })
+      .returning();
+    if (!printer) throw new Error("Failed to create receipt printer");
+    await db.insert(printRoutes).values({
+      tenantId: fixture.tenant.id,
+      branchId: fixture.branch.id,
+      name: "Comprovante do pagamento",
+      trigger: "payment_confirmed",
+      targetType: "payment_receipt",
+      printerDeviceId: printer.id,
+    });
+
+    const receipt = await posService.printPaymentReceipt(context, fixture.order.id);
+
+    expect(receipt.renderedText).toContain("Burger Teste");
+    expect(receipt.renderedText).not.toContain("Brownie Teste");
+    expect(receipt.renderedText).not.toContain("Item estornado");
+    expect(receipt.renderedText).toContain("Total");
+
+    await db
+      .update(products)
+      .set({ isAlcoholic: true })
+      .where(
+        and(
+          eq(products.tenantId, fixture.tenant.id),
+          eq(products.id, fixture.burgerItem.productId),
+        ),
+      );
+    const publicMenu = await catalogService.getPublicMenu(fixture.tenant.slug);
+    expect(
+      publicMenu.products.find((product) => product.id === fixture.burgerItem.productId)
+        ?.isAlcoholic,
+    ).toBe(true);
   });
 });

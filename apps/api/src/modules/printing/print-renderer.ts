@@ -19,6 +19,7 @@ export type KitchenTicketInput = {
 export type ReceiptLine = {
   name: string;
   quantity: string;
+  unitPriceCents?: number;
   totalCents: number;
 };
 
@@ -54,11 +55,18 @@ export type CashSummaryInput = {
 
 export type PaymentReceiptInput = {
   tenantName?: string;
+  establishmentDocument?: string | null;
+  branchName?: string | null;
+  address?: string | null;
   orderCode: string;
   tableCode?: string | null;
   operatorName?: string | null;
-  paymentMethod: string;
-  amountCents: number;
+  items: ReceiptLine[];
+  subtotalCents: number;
+  discountCents: number;
+  serviceChargeCents: number;
+  totalCents: number;
+  payments: PaymentLine[];
   paidAt: string;
   charactersPerLine: number;
 };
@@ -161,6 +169,15 @@ export function renderPaymentReceipt(input: PaymentReceiptInput) {
   const lines: string[] = [];
 
   pushDocumentHeader(lines, width, input.tenantName ?? "GIROMESA", "COMPROVANTE");
+  if (input.establishmentDocument) {
+    lines.push(...wrapLine(`CNPJ/CPF: ${input.establishmentDocument}`, width));
+  }
+  if (input.branchName) {
+    lines.push(...wrapLine(`Unidade: ${input.branchName}`, width));
+  }
+  if (input.address) {
+    lines.push(...wrapLine(input.address, width));
+  }
   lines.push(`Pedido: ${input.orderCode}`);
   if (input.tableCode) {
     lines.push(`Mesa/Comanda: ${input.tableCode}`);
@@ -168,10 +185,29 @@ export function renderPaymentReceipt(input: PaymentReceiptInput) {
   if (input.operatorName) {
     lines.push(`Operador: ${input.operatorName}`);
   }
-  lines.push(`Pagamento: ${readPaymentMethod(input.paymentMethod)}`);
   lines.push(`Emitido: ${formatDate(input.paidAt)}`);
   lines.push("-".repeat(width));
-  lines.push(labelMoney("Valor pago", input.amountCents, width));
+  for (const item of input.items) {
+    lines.push(...wrapLine(`${readQuantity(item.quantity)} ${item.name}`, width));
+    if (item.unitPriceCents !== undefined) {
+      lines.push(labelMoney("  Unitario", item.unitPriceCents, width));
+    }
+    lines.push(labelMoney("  Item", item.totalCents, width));
+  }
+  lines.push("-".repeat(width));
+  lines.push(labelMoney("Subtotal", input.subtotalCents, width));
+  if (input.discountCents > 0) {
+    lines.push(labelMoney("Desconto", -input.discountCents, width));
+  }
+  if (input.serviceChargeCents > 0) {
+    lines.push(labelMoney("Servico", input.serviceChargeCents, width));
+  }
+  lines.push(labelMoney("Total", input.totalCents, width));
+  lines.push("-".repeat(width));
+  for (const payment of input.payments) {
+    lines.push(labelMoney(readPaymentMethod(payment.method), payment.amountCents, width));
+  }
+  lines.push(center("COMPROVANTE NÃƒO FISCAL", width));
   pushDocumentFooter(lines, width, "Via caixa");
   lines.push("\n\n");
 

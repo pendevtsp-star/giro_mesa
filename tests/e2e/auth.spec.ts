@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
 import {
+  acceptCurrentLegalDocuments,
   adminEmail,
   adminPassword,
   authenticateBrowserPage,
   authenticatedApiContext,
+  chooseCookieConsent,
   loginViaUi,
   platformEmail,
   platformPassword,
@@ -15,8 +17,19 @@ test.describe("Auth: login flow", () => {
     await skipWhenApiUnavailable();
     await page.goto("/login", { waitUntil: "networkidle" });
 
-    await loginViaUi(page, adminEmail, adminPassword);
+    await loginViaUi(page, "gerente@bar-aurora-demo.local", adminPassword, {
+      acceptLegal: false,
+    });
     await expect(page).toHaveURL(/\/app/);
+    await expect(
+      page.getByRole("heading", { name: "Revise e aceite para continuar" }),
+    ).toBeVisible();
+
+    await acceptCurrentLegalDocuments(page);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Revise e aceite para continuar" })).toHaveCount(
+      0,
+    );
     await expect(page.getByTestId("workspace-dashboard")).toBeVisible();
   });
 
@@ -60,6 +73,7 @@ test.describe("Auth: login flow", () => {
     await skipWhenApiUnavailable();
     await page.goto("/login", { waitUntil: "networkidle" });
 
+    await chooseCookieConsent(page, "reject");
     await page.locator('input[name="email"]').fill(adminEmail);
     await page.getByRole("button", { name: /reset de senha/i }).click();
 
@@ -70,6 +84,7 @@ test.describe("Auth: login flow", () => {
 
   test("guides an empty reset request without calling the API", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
+    await chooseCookieConsent(page, "reject");
     let resetRequests = 0;
     page.on("request", (request) => {
       if (request.url().includes("/api/v1/auth/password/reset/request")) resetRequests += 1;
@@ -85,6 +100,7 @@ test.describe("Auth: login flow", () => {
 
   test("opens the in-product support center instead of the email client", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
+    await chooseCookieConsent(page, "accept");
     const supportLink = page.getByRole("link", { name: "Suporte" });
     await expect(supportLink).toHaveAttribute("href", "/suporte");
 

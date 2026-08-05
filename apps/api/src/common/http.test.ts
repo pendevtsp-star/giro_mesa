@@ -18,4 +18,16 @@ describe("http session helpers", () => {
     expect(cookie).not.toContain("Domain=localhost");
     expect(parseCookies(cookie).get("gm_session")).toBe("abc");
   });
+
+  it("adds Secure to production session cookies", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+
+    try {
+      expect(sessionCookie("abc", 60)).toContain("Secure");
+      expect(sessionCookie("abc", 60)).toContain("Path=/");
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+  });
 });

@@ -3,6 +3,7 @@
 import {
   Download,
   ExternalLink,
+  Eye,
   Palette,
   Printer,
   QrCode,
@@ -22,6 +23,7 @@ import {
   listProducts,
   listQrTables,
   type Product,
+  previewQrExperience,
   publishQrExperience,
   type QrAdminTable,
   type QrArtwork,
@@ -60,6 +62,7 @@ export default function QrManagementPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [preview, setPreview] = useState<GuestExperienceRevision["config"] | null>(null);
 
   const allSelected = tables.length > 0 && selected.size === tables.length;
   async function load() {
@@ -156,6 +159,11 @@ export default function QrManagementPage() {
     setBusy(true);
     try {
       const updated = await updateQrSettings({
+        mode: settings.mode,
+        presenceMethods: settings.presenceMethods,
+        tabVisibility: settings.tabVisibility,
+        presenceCodeTtlMinutes: settings.presenceCodeTtlMinutes,
+        guestSessionTtlMinutes: settings.guestSessionTtlMinutes,
         capabilities: settings.capabilities,
         reviewBeforeKds: settings.reviewBeforeKds,
         template: settings.template,
@@ -220,8 +228,9 @@ export default function QrManagementPage() {
     }
     setBusy(true);
     try {
+      const { branchId: _branchId, ...experienceInput } = settings;
       const revision = await createQrExperienceDraft(
-        scheduledIso ? { ...settings, scheduledAt: scheduledIso } : settings,
+        scheduledIso ? { ...experienceInput, scheduledAt: scheduledIso } : experienceInput,
       );
       setExperience((current) => ({
         draft: revision,
@@ -236,6 +245,21 @@ export default function QrManagementPage() {
       );
     } catch (error) {
       setMessage(getErrorMessage(error, "Falha ao salvar o rascunho."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function showPreview() {
+    if (!settings) return;
+    setBusy(true);
+    try {
+      const { branchId: _branchId, ...experienceInput } = settings;
+      const result = await previewQrExperience(experienceInput);
+      setPreview(result.config);
+      setMessage("Prévia calculada sem salvar rascunho nem publicar alterações.");
+    } catch (error) {
+      setMessage(getErrorMessage(error, "Falha ao gerar a prévia sem persistência."));
     } finally {
       setBusy(false);
     }
@@ -355,6 +379,15 @@ export default function QrManagementPage() {
     setSettings({ ...settings, capabilities });
   }
 
+  function togglePresenceMethod(method: QrBranchSettings["presenceMethods"][number]) {
+    if (!settings) return;
+    const enabled = settings.presenceMethods.includes(method);
+    const presenceMethods = enabled
+      ? settings.presenceMethods.filter((item) => item !== method)
+      : [...settings.presenceMethods, method];
+    if (presenceMethods.length > 0) setSettings({ ...settings, presenceMethods });
+  }
+
   function setCategoryLabel(categoryId: string, label: string) {
     if (!settings) return;
     const categoryLabels = { ...(settings.categoryLabels ?? {}) };
@@ -417,6 +450,102 @@ export default function QrManagementPage() {
                 <h2>Identidade e política</h2>
               </div>
             </div>
+
+            <fieldset className="qr-capabilities">
+              <legend>Como os clientes usarão o QR?</legend>
+              {[
+                ["disabled", "QR desligado", "Nenhum acesso pelo QR nesta filial."],
+                ["menu_only", "Somente cardápio", "Consulta preços e produtos, sem ações na mesa."],
+                [
+                  "waiter_assisted",
+                  "Atendimento com garçom",
+                  "Cardápio, comanda e solicitações; o garçom conduz os pedidos.",
+                ],
+                [
+                  "self_service",
+                  "Autoatendimento",
+                  "O cliente também envia pedidos após confirmar presença.",
+                ],
+              ].map(([value, label, description]) => (
+                <label key={value}>
+                  <input
+                    checked={settings.mode === value}
+                    name="qr-mode"
+                    onChange={() =>
+                      setSettings({ ...settings, mode: value as QrBranchSettings["mode"] })
+                    }
+                    type="radio"
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small className="muted-copy">{description}</small>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+
+            {settings.mode === "waiter_assisted" || settings.mode === "self_service" ? (
+              <details>
+                <summary>Segurança para confirmar que o cliente está na mesa</summary>
+                <p className="muted-copy">
+                  O QR identifica a mesa. A primeira ação protegida exige uma confirmação
+                  temporária.
+                </p>
+                <fieldset className="qr-capabilities">
+                  <legend>Formas aceitas</legend>
+                  {[
+                    ["code", "Código de 6 dígitos mostrado pela equipe"],
+                    ["approval", "Aprovação rápida do garçom"],
+                    ["network", "Rede autorizada do estabelecimento"],
+                  ].map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        checked={settings.presenceMethods.includes(
+                          value as QrBranchSettings["presenceMethods"][number],
+                        )}
+                        onChange={() =>
+                          togglePresenceMethod(value as QrBranchSettings["presenceMethods"][number])
+                        }
+                        type="checkbox"
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                <div className="form-grid two-columns">
+                  <label>
+                    Comanda visível
+                    <select
+                      value={settings.tabVisibility}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          tabVisibility: event.target.value as QrBranchSettings["tabVisibility"],
+                        })
+                      }
+                    >
+                      <option value="shared">Toda a mesa, sem dados pessoais</option>
+                      <option value="own_items">Somente itens deste aparelho</option>
+                    </select>
+                  </label>
+                  <label>
+                    Sessão confirmada por (minutos)
+                    <input
+                      max={1440}
+                      min={5}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          guestSessionTtlMinutes: Number(event.target.value) || 5,
+                        })
+                      }
+                      type="number"
+                      value={settings.guestSessionTtlMinutes}
+                    />
+                  </label>
+                </div>
+              </details>
+            ) : null}
 
             <div className="form-grid two-columns">
               <label>
@@ -642,29 +771,32 @@ export default function QrManagementPage() {
               <span>Exibir a marca do estabelecimento no material e na experiência pública</span>
             </label>
 
-            <fieldset className="qr-capabilities">
-              <legend>Recursos disponíveis ao cliente</legend>
-              {Object.entries(capabilityLabels).map(([value, label]) => (
-                <label key={value}>
-                  <input
-                    checked={settings.capabilities.includes(value as QrCapability)}
-                    onChange={() => toggleCapability(value as QrCapability)}
-                    type="checkbox"
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
-            </fieldset>
-            <label className="qr-switch-row">
-              <input
-                checked={settings.reviewBeforeKds}
-                onChange={(event) =>
-                  setSettings({ ...settings, reviewBeforeKds: event.target.checked })
-                }
-                type="checkbox"
-              />
-              <span>Equipe revisa pedidos QR antes de enviar ao KDS</span>
-            </label>
+            <details>
+              <summary>Recursos avançados do QR</summary>
+              <fieldset className="qr-capabilities">
+                <legend>Recursos disponíveis ao cliente</legend>
+                {Object.entries(capabilityLabels).map(([value, label]) => (
+                  <label key={value}>
+                    <input
+                      checked={settings.capabilities.includes(value as QrCapability)}
+                      onChange={() => toggleCapability(value as QrCapability)}
+                      type="checkbox"
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+              <label className="qr-switch-row">
+                <input
+                  checked={settings.reviewBeforeKds}
+                  onChange={(event) =>
+                    setSettings({ ...settings, reviewBeforeKds: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+                <span>Equipe revisa pedidos QR antes de enviar ao KDS</span>
+              </label>
+            </details>
             {experience?.draft ? (
               <label className="qr-schedule-field">
                 Publicar rascunho automaticamente em (opcional)
@@ -688,6 +820,14 @@ export default function QrManagementPage() {
               Salvar configuração
             </button>
             <div className="qr-experience-actions">
+              <button
+                className="button secondary"
+                disabled={busy}
+                onClick={() => void showPreview()}
+                type="button"
+              >
+                <Eye size={16} /> Pré-visualizar sem salvar
+              </button>
               <button
                 className="button secondary"
                 disabled={busy}
@@ -719,6 +859,16 @@ export default function QrManagementPage() {
                 </>
               ) : null}
             </div>
+            {preview ? (
+              <article className="panel" aria-label="Prévia não persistida">
+                <span className="section-kicker">Prévia local</span>
+                <h3>{preview.welcomeMessage || "Bem-vindo"}</h3>
+                <p>{preview.menuHeadline || preview.instruction}</p>
+                <small className="muted-copy">
+                  Modelo {preview.template} · cor {preview.primaryColor} · nenhuma versão foi criada
+                </small>
+              </article>
+            ) : null}
             <p className="muted-copy">
               {experience?.published
                 ? `Versão publicada: v${experience.published.version}. Alterações ficam em rascunho até a publicação.`

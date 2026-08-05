@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export * from "./safe-http-client";
+export * from "./sensitive-data";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_NAME: z.string().default("GiroMesa"),
@@ -8,6 +11,12 @@ const envSchema = z.object({
   API_URL: z.url().default("http://localhost:3333"),
   API_PORT: z.coerce.number().int().positive().max(65535).default(3333),
   DATABASE_URL: z.string().min(1).default("postgres://giromesa:giromesa@localhost:55432/giromesa"),
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(12),
+  DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(30_000),
+  DATABASE_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(500).max(120_000).default(5_000),
+  API_INSTANCE_ID: z.string().min(1).max(80).default("local-api"),
+  REALTIME_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(30_000).default(1_000),
+  REALTIME_BATCH_LIMIT: z.coerce.number().int().min(1).max(200).default(200),
   REDIS_URL: z.string().min(1).default("redis://localhost:6380"),
   SESSION_SECRET: z.string().min(1).default("local-development-session-secret"),
   FEDERATION_ISSUER_URL: z.url().default("https://accounts.giromesa.com.br"),
@@ -46,6 +55,10 @@ const envSchema = z.object({
   CLUB_WHISKY_API_BASE_URL: z.url().optional(),
   CLUB_WHISKY_API_KEY: z.string().optional(),
   FISCAL_PROVIDER: z.string().default("mock"),
+  FISCAL_PRODUCTION_ENABLED: z.enum(["true", "false"]).default("false"),
+  FISCAL_CREDENTIALS_ENCRYPTION_KEY: z.string().min(1).optional(),
+  FISCAL_SIMULATOR_WEBHOOK_SECRET: z.string().min(16).optional(),
+  FOCUS_NFE_PLATFORM_TOKEN: z.string().optional(),
   FISCAL_API_BASE_URL: z.string().optional(),
   FISCAL_API_KEY: z.string().optional(),
   FISCAL_CERTIFICATE_A1: z.string().optional(),
@@ -70,6 +83,18 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+  CSP_REPORT_ONLY: z.enum(["true", "false"]).default("false"),
+  PILOT_INVITE_ONLY: z.enum(["true", "false"]).optional(),
+  LEGAL_TERMS_VERSION: z.string().min(1).optional(),
+  LEGAL_TERMS_SHA256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  LEGAL_PRIVACY_VERSION: z.string().min(1).optional(),
+  LEGAL_PRIVACY_SHA256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
   BACKUP_ENABLED: z.enum(["true", "false"]).default("true"),
   BACKUP_SCHEDULE: z.string().default("0 2 * * *"),
   BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
@@ -91,6 +116,10 @@ const requiredProductionKeys = [
   "PUBLIC_APP_URL",
   "API_URL",
   "EMAIL_PROVIDER",
+  "LEGAL_TERMS_VERSION",
+  "LEGAL_TERMS_SHA256",
+  "LEGAL_PRIVACY_VERSION",
+  "LEGAL_PRIVACY_SHA256",
 ] as const;
 
 const secretProductionKeys = [
@@ -131,6 +160,10 @@ function validateProductionEnv(rawInput: NodeJS.ProcessEnv, env: AppEnv) {
       errors.push(`${key}: required in production`);
       continue;
     }
+    if (typeof parsedValue !== "string" || parsedValue.trim().length === 0) {
+      errors.push(`${key}: required in production`);
+      continue;
+    }
     if (isPlaceholderValue(parsedValue)) {
       errors.push(`${key}: development placeholder is not allowed in production`);
     }
@@ -141,6 +174,10 @@ function validateProductionEnv(rawInput: NodeJS.ProcessEnv, env: AppEnv) {
     if (value.length < 32) {
       errors.push(`${key}: must be at least 32 characters in production`);
     }
+  }
+
+  if (env.FISCAL_PRODUCTION_ENABLED === "true" && !rawInput.FISCAL_CREDENTIALS_ENCRYPTION_KEY) {
+    errors.push("FISCAL_CREDENTIALS_ENCRYPTION_KEY: required when fiscal production is enabled");
   }
 
   for (const key of ["DATABASE_URL", "REDIS_URL"] as const) {
@@ -165,7 +202,13 @@ function validateProductionEnv(rawInput: NodeJS.ProcessEnv, env: AppEnv) {
       }
     }
     const smtpHost = rawInput.SMTP_HOST?.trim();
-    if (!smtpHost || smtpHost === "smtp.example.com" || smtpHost.endsWith(".example.com")) {
+    if (
+      !smtpHost ||
+      smtpHost === "smtp.example.com" ||
+      smtpHost.endsWith(".example.com") ||
+      smtpHost.endsWith(".invalid") ||
+      smtpHost.endsWith(".test")
+    ) {
       errors.push("SMTP_HOST: placeholder is not allowed when EMAIL_PROVIDER=smtp");
     }
   } else {

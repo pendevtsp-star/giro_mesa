@@ -204,6 +204,111 @@
       "when": 1785794400000,
       "tag": "0028_fantastic_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1785791496529,
+      "tag": "0029_serious_butterfly",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785793087805,
+      "tag": "0030_living_shinobi_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785794017810,
+      "tag": "0031_lovely_husk",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785861134600,
+      "tag": "0032_absent_jazinda",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785878844976,
+      "tag": "0033_warm_speed",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785880581674,
+      "tag": "0034_certain_zzzax",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785891298864,
+      "tag": "0035_chubby_freak",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785893853738,
+      "tag": "0036_flat_thunderbolt_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1785895000000,
+      "tag": "0037_immutable_staff_finance_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1785896000000,
+      "tag": "0038_fiscal_payment_fail_closed",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785897600000,
+      "tag": "0039_managerial_staff_settlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785898200000,
+      "tag": "0040_active_commission_policy_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1785900000000,
+      "tag": "0041_staff_finance_final_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1785901200000,
+      "tag": "0042_structured_service_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1785985200000,
+      "tag": "0043_fiscal_payment_completion",
+      "breakpoints": true
     }
   ]
 }

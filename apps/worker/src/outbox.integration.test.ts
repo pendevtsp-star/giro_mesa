@@ -1,11 +1,12 @@
 import { createHmac } from "node:crypto";
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
+import { SafeHttpClient, type SafeHttpResolver, type SafeHttpTransport } from "@giromesa/config";
 import * as schema from "@giromesa/db";
 import { integrationAccounts, outboxEvents, tenants } from "@giromesa/db";
 import { eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { publishPendingClubWhiskyOutbox } from "./outbox";
 
 type Db = NodePgDatabase<typeof schema>;
@@ -37,6 +38,7 @@ runIntegration("club whisky outbox publisher", () => {
   let receivedHeaders: Record<string, string | string[] | undefined> | undefined;
   let receivedRawBody: string | undefined;
   let tenantId: string;
+  let fixturePort: number;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
@@ -56,8 +58,8 @@ runIntegration("club whisky outbox publisher", () => {
       });
     });
 
-    const port = await listen(server);
-    process.env.CLUB_WHISKY_API_BASE_URL = `http://127.0.0.1:${port}`;
+    fixturePort = await listen(server);
+    process.env.CLUB_WHISKY_API_BASE_URL = "https://doseclub.test";
     process.env.CLUB_WHISKY_WEBHOOK_SECRET = "worker-test-webhook-secret";
   });
 
@@ -113,7 +115,15 @@ runIntegration("club whisky outbox publisher", () => {
       throw new Error("Failed to create worker test outbox event");
     }
 
-    const result = await publishPendingClubWhiskyOutbox(db);
+    const resolver: SafeHttpResolver = async (hostname) => {
+      expect(hostname).toBe("doseclub.test");
+      return [{ address: "203.0.113.20", family: 4 }];
+    };
+    const transport = fixtureTransport(fixturePort);
+    const safeClient = new SafeHttpClient(resolver, transport);
+    const result = await publishPendingClubWhiskyOutbox(db, {
+      request: safeClient.fetch.bind(safeClient),
+    });
     const [storedEvent] = await db
       .select()
       .from(outboxEvents)
@@ -138,5 +148,71 @@ runIntegration("club whisky outbox publisher", () => {
     );
     expect(storedEvent?.status).toBe("processed");
     expect(storedEvent?.processedAt).toBeInstanceOf(Date);
+
+    const [unsafeEvent] = await db
+      .insert(outboxEvents)
+      .values({
+        tenantId,
+        topic: "club.stock_movement.created",
+        payload: { movementType: "unsafe-resolution-probe" },
+        availableAt: new Date(Date.now() - 1_000),
+      })
+      .returning();
+    if (!unsafeEvent) throw new Error("Failed to create unsafe resolver test event");
+    const unusedTransport = vi.fn<SafeHttpTransport>();
+    const unsafeClient = new SafeHttpClient(
+      async () => [{ address: "127.0.0.1", family: 4 }],
+      unusedTransport,
+    );
+    await publishPendingClubWhiskyOutbox(db, {
+      request: unsafeClient.fetch.bind(unsafeClient),
+    });
+    const [storedUnsafeEvent] = await db
+      .select()
+      .from(outboxEvents)
+      .where(eq(outboxEvents.id, unsafeEvent.id))
+      .limit(1);
+    expect(unusedTransport).not.toHaveBeenCalled();
+    expect(storedUnsafeEvent).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      errorMessage: "club_whisky_publish_unavailable",
+    });
   });
 });
+
+function fixtureTransport(port: number): SafeHttpTransport {
+  return async (outbound) => {
+    expect(outbound.url.protocol).toBe("https:");
+    expect(outbound.address).toEqual({ address: "203.0.113.20", family: 4 });
+
+    return new Promise((resolve, reject) => {
+      const request = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: `${outbound.url.pathname}${outbound.url.search}`,
+          method: outbound.method,
+          headers: outbound.headers,
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            resolve({
+              status: response.statusCode ?? 0,
+              statusText: response.statusMessage ?? "",
+              headers: {},
+              body: Buffer.concat(chunks),
+            });
+          });
+        },
+      );
+      request.on("error", reject);
+      if (outbound.body !== undefined) request.write(outbound.body);
+      request.end();
+    });
+  };
+}

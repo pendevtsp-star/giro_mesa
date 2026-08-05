@@ -1,3 +1,5 @@
+import { safeFetch } from "@giromesa/config";
+
 const META_GRAPH_API_VERSION = "v21.0";
 const META_GRAPH_API_BASE = `https://graph.facebook.com/${META_GRAPH_API_VERSION}`;
 
@@ -121,7 +123,7 @@ export class WhatsAppCloudProvider implements WhatsAppProvider {
     for (let attempt = 1; attempt <= SEND_RETRY_ATTEMPTS; attempt++) {
       try {
         const body = this.buildRequestBody(message);
-        const response = await fetch(
+        const response = await safeFetch(
           `${META_GRAPH_API_BASE}/${this.config.phoneNumberId}/messages`,
           {
             method: "POST",

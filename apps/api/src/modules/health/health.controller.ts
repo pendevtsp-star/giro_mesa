@@ -1,6 +1,9 @@
-import { Controller, Get, Inject, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, Headers, Inject, ServiceUnavailableException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
+import type { HeaderRecord } from "../../common/http";
 import { getMetricsAsText } from "../../common/metrics";
+import { requirePermission } from "../../common/security";
+import { AuthService } from "../auth/auth.service";
 import { DatabaseService } from "../database/database.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { PosService } from "../pos/pos.service";
@@ -9,6 +12,7 @@ import { PosService } from "../pos/pos.service";
 export class HealthController {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(AuthService) private readonly authService: AuthService,
     @Inject(InventoryService) readonly _inventoryService: InventoryService,
     @Inject(PosService) readonly _posService: PosService,
   ) {}
@@ -42,7 +46,8 @@ export class HealthController {
   }
 
   @Get("detailed")
-  async getDetailedHealth() {
+  async getDetailedHealth(@Headers() headers: HeaderRecord) {
+    await this.requirePlatformAccess(headers);
     const checks: Record<string, { status: string; latencyMs?: number }> = {};
     let overallStatus = "ok";
 
@@ -66,12 +71,14 @@ export class HealthController {
   }
 
   @Get("metrics")
-  getMetrics() {
+  async getMetrics(@Headers() headers: HeaderRecord) {
+    await this.requirePlatformAccess(headers);
     return getMetricsAsText();
   }
 
   @Get("alerts")
-  async getAlerts() {
+  async getAlerts(@Headers() headers: HeaderRecord) {
+    await this.requirePlatformAccess(headers);
     const alerts: Array<{
       type: string;
       severity: "critical" | "warning";
@@ -138,5 +145,10 @@ export class HealthController {
       count: alerts.length,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  private async requirePlatformAccess(headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
   }
 }

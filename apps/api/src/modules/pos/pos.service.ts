@@ -41,12 +41,14 @@ import { DatabaseService } from "../database/database.service";
 import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/club-whisky-events";
 import { appendCancellationNotice, buildStockReversals } from "./cancellation-propagation";
 import { CashService } from "./cash.service";
+import { confirmOperation, reserveOperation } from "./operation-receipts";
 import { OperationalService } from "./operational.service";
 import { decideDiscountFlow, requiresCancellationApproval } from "./operational-exceptions";
 import { OrdersService } from "./orders.service";
 import { PaymentsService } from "./payments.service";
 import { PosRepository } from "./pos.repository";
 import { ShiftService } from "./shift.service";
+import { WaiterAssignmentService } from "./waiter-assignment.service";
 
 type OpenOrderInput = {
   channel: "counter" | "table" | "tab" | "delivery" | "qr";
@@ -54,6 +56,7 @@ type OpenOrderInput = {
   tableId?: string | undefined;
   customerId?: string | undefined;
   peopleCount?: number | undefined;
+  idempotencyKey: string;
 };
 
 type AddItemInput = {
@@ -61,6 +64,7 @@ type AddItemInput = {
   quantity: number;
   notes?: string | undefined;
   modifiers?: Record<string, unknown>[] | undefined;
+  idempotencyKey: string;
 };
 
 type RegisterPaymentInput = {
@@ -69,6 +73,19 @@ type RegisterPaymentInput = {
   idempotencyKey: string;
   registeredVia?: "waiter" | "cashier" | undefined;
   reference?: string | undefined;
+  allocations?: PaymentAllocationInput[] | undefined;
+  executionMode?: "manual" | "smartpos" | "tef" | undefined;
+  terminalDeviceId?: string | undefined;
+  simulatorScenario?: "authorized" | "denied" | "unknown" | "timeout" | undefined;
+  managerOverride?: boolean | undefined;
+  overrideReason?: string | undefined;
+};
+
+type PaymentAllocationInput = {
+  orderItemId?: string | undefined;
+  seatLabel?: string | undefined;
+  amountCents: number;
+  idempotencyKey: string;
 };
 
 type UpdateQrOrderItemInput = {
@@ -110,6 +127,8 @@ type CloseShiftInput = {
   notes?: string | undefined;
   idempotencyKey?: string | undefined;
 };
+
+type PosTransaction = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
 
 // Business metrics
 const orderCount = createCounter("giromesa_orders_total", "Total number of orders created");
@@ -167,6 +186,9 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     @Optional()
     @Inject(OperationalService)
     private readonly operationalService?: OperationalService,
+    @Optional()
+    @Inject(WaiterAssignmentService)
+    private readonly waiterAssignments?: WaiterAssignmentService,
   ) {}
 
   onModuleInit() {
@@ -177,6 +199,76 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
 
   async listTables(context: TenantContext, branchId: string) {
     return this.posRepository.listTables(context, branchId);
+  }
+
+  async listWaiterAssignments(context: TenantContext, branchId: string) {
+    return this.requireWaiterAssignments().list(context, branchId);
+  }
+
+  async assignWaiter(
+    context: TenantContext,
+    input: {
+      branchId: string;
+      tableId: string;
+      waiterUserId: string;
+      reason?: string | undefined;
+      source?: "manager" | "area" | undefined;
+      expectedVersion?: number | undefined;
+    },
+  ) {
+    return this.requireWaiterAssignments().assign(context, input);
+  }
+
+  async assignWaiterBatch(
+    context: TenantContext,
+    input: Parameters<WaiterAssignmentService["assignBatch"]>[1],
+  ) {
+    return this.requireWaiterAssignments().assignBatch(context, input);
+  }
+
+  async copyPreviousWaiterShift(context: TenantContext, branchId: string) {
+    return this.requireWaiterAssignments().copyPreviousShift(context, branchId);
+  }
+
+  async redistributeInactiveWaiterAssignments(
+    context: TenantContext,
+    input: Parameters<WaiterAssignmentService["redistributeInactive"]>[1],
+  ) {
+    return this.requireWaiterAssignments().redistributeInactive(context, input);
+  }
+
+  async claimWaiterAssignment(
+    context: TenantContext,
+    input: { branchId: string; tableId: string },
+  ) {
+    return this.requireWaiterAssignments().claim(context, input.branchId, input.tableId);
+  }
+
+  async transferWaiterAssignment(
+    context: TenantContext,
+    input: Parameters<WaiterAssignmentService["transfer"]>[1],
+  ) {
+    return this.requireWaiterAssignments().transfer(context, input);
+  }
+
+  async requestWaiterHelp(
+    context: TenantContext,
+    input: Omit<Parameters<WaiterAssignmentService["requestHelp"]>[1], "idempotencyKey"> & {
+      idempotencyKey?: string | undefined;
+    },
+  ) {
+    return this.requireWaiterAssignments().requestHelp(context, {
+      ...input,
+      idempotencyKey: input.idempotencyKey ?? context.requestId,
+    });
+  }
+
+  async listWaiterHelpRequests(context: TenantContext, branchId: string) {
+    return this.requireWaiterAssignments().listHelpRequests(context, branchId);
+  }
+
+  async grantWaiterHelp(context: TenantContext, requestId: string, managerPin: string) {
+    return this.requireWaiterAssignments().grantHelp(context, requestId, managerPin);
   }
 
   async createTable(
@@ -392,6 +484,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       if (!order) {
         throw new NotFoundException("QR order not found or already processed");
       }
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
 
       const [item] = await tx
         .select()
@@ -501,6 +594,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       if (!order) {
         throw new NotFoundException("QR order not found or already processed");
       }
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
 
       const [item] = await tx
         .select()
@@ -624,6 +718,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       if (!order) {
         throw new NotFoundException("QR order not found or already processed");
       }
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
 
       await tx
         .update(orderItems)
@@ -929,6 +1024,14 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     return this.requireOperationalService().listDevices(context, branchId);
   }
 
+  async activateOperationalDevice(context: TenantContext, token: string) {
+    return this.requireOperationalService().activateDevice(context, token);
+  }
+
+  async resolveOperationalDevice(context: TenantContext, token?: string) {
+    return this.requireOperationalService().resolveDevice(context, token);
+  }
+
   async revokeOperationalDevice(context: TenantContext, deviceId: string) {
     return this.requireOperationalService().revokeDevice(context, deviceId);
   }
@@ -944,6 +1047,13 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     limit: number,
   ) {
     return this.requireOperationalService().listEvents(context, branchId, afterVersion, limit);
+  }
+
+  async getOperationReceipt(
+    context: TenantContext,
+    input: Parameters<OperationalService["getReceipt"]>[1],
+  ) {
+    return this.requireOperationalService().getReceipt(context, input);
   }
 
   async getOperationalSession(
@@ -980,97 +1090,189 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
   async requestDiscount(
     context: TenantContext,
     orderId: string,
-    input: { amountCents: number; reason: string },
+    input: { amountCents: number; reason: string; idempotencyKey?: string | undefined },
   ) {
-    const [order] = await this.database.db
-      .select()
-      .from(orders)
-      .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
-      .limit(1);
-    if (!order) throw new NotFoundException("Order not found");
+    const idempotencyKey = input.idempotencyKey ?? context.requestId;
     const approvals = this.requireApprovalsService();
     const policy = await approvals.getEffectivePolicy(context);
-    const flow = decideDiscountFlow({
-      subtotalCents: order.subtotalCents,
-      amountCents: input.amountCents,
-      maxDiscountWithoutApprovalBps: policy.maxDiscountWithoutApprovalBps,
-    });
-    if (flow === "invalid") {
-      throw new BadRequestException("Discount must be positive and cannot exceed subtotal");
-    }
-    if (flow === "request_approval") {
-      const approval = await approvals.createRequest(context, {
+    return this.database.db.transaction(async (tx) => {
+      const [order] = await tx
+        .select()
+        .from(orders)
+        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+        .limit(1)
+        .for("update");
+      if (!order) throw new NotFoundException("Order not found");
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
+      const reservation = await reserveOperation<Record<string, unknown>>(tx, {
+        tenantId: context.tenantId,
         branchId: order.branchId,
-        entityType: "order",
-        entityId: order.id,
-        action: "order.discount",
-        requestedValueCents: input.amountCents,
-        reason: input.reason,
-        metadata: { orderId: order.id, amountCents: input.amountCents },
+        scope: "order.discount.request",
+        idempotencyKey,
+        payload: {
+          orderId,
+          amountCents: input.amountCents,
+          reason: input.reason,
+          requestedByUserId: context.userId ?? null,
+        },
       });
-      return {
-        orderId,
+      if (reservation.reservationId === null) return reservation.replay;
+      const flow = decideDiscountFlow({
+        subtotalCents: order.subtotalCents,
         amountCents: input.amountCents,
-        status: "pending_approval",
-        approval,
-      };
-    }
-    const updated = await this.applyDiscount(
-      context,
-      orderId,
-      input.amountCents,
-      input.reason,
-      null,
-    );
-    return {
-      orderId,
-      amountCents: input.amountCents,
-      status: "applied",
-      order: updated,
-    };
+        maxDiscountWithoutApprovalBps: policy.maxDiscountWithoutApprovalBps,
+      });
+      if (flow === "invalid") {
+        throw new BadRequestException("Discount must be positive and cannot exceed subtotal");
+      }
+      if (flow === "request_approval") {
+        const approval = await approvals.createRequest(
+          context,
+          {
+            branchId: order.branchId,
+            entityType: "order",
+            entityId: order.id,
+            action: "order.discount",
+            requestedValueCents: input.amountCents,
+            reason: input.reason,
+            metadata: { orderId: order.id, amountCents: input.amountCents },
+          },
+          tx,
+        );
+        return confirmOperation(tx, {
+          reservationId: reservation.reservationId,
+          scope: "order.discount.request",
+          idempotencyKey,
+          aggregateType: "order",
+          aggregateId: order.id,
+          version: order.version,
+          result: {
+            orderId,
+            amountCents: input.amountCents,
+            status: "pending_approval",
+            approval,
+          },
+        });
+      }
+      const updated = await this.applyDiscount(
+        context,
+        orderId,
+        input.amountCents,
+        input.reason,
+        null,
+        tx,
+        true,
+      );
+      return confirmOperation(tx, {
+        reservationId: reservation.reservationId,
+        scope: "order.discount.request",
+        idempotencyKey,
+        aggregateType: "order",
+        aggregateId: order.id,
+        version: updated.version,
+        result: {
+          orderId,
+          amountCents: input.amountCents,
+          status: "applied",
+          order: updated,
+        },
+      });
+    });
   }
 
   async requestItemCancellation(
     context: TenantContext,
     orderId: string,
     itemId: string,
-    input: { reason: string },
+    input: { reason: string; idempotencyKey?: string | undefined },
   ) {
-    const [item] = await this.database.db
-      .select()
-      .from(orderItems)
-      .where(
-        and(
-          eq(orderItems.tenantId, context.tenantId),
-          eq(orderItems.orderId, orderId),
-          eq(orderItems.id, itemId),
-        ),
-      )
-      .limit(1);
-    if (!item) throw new NotFoundException("Order item not found");
-    if (item.status === "canceled" || item.status === "refunded") {
-      throw new BadRequestException("Order item is already canceled");
-    }
+    const idempotencyKey = input.idempotencyKey ?? context.requestId;
     const approvals = this.requireApprovalsService();
     const policy = await approvals.getEffectivePolicy(context);
-    if (requiresCancellationApproval(item.status, policy.requireApprovalAfterKitchen)) {
-      const approval = await approvals.createRequest(context, {
-        branchId: context.branchId ?? null,
-        entityType: "order_item",
-        entityId: item.id,
-        action: "order_item.cancel",
-        reason: input.reason,
-        metadata: {
+    return this.database.db.transaction(async (tx) => {
+      const [order] = await tx
+        .select()
+        .from(orders)
+        .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
+        .limit(1)
+        .for("update");
+      const [item] = await tx
+        .select()
+        .from(orderItems)
+        .where(
+          and(
+            eq(orderItems.tenantId, context.tenantId),
+            eq(orderItems.orderId, orderId),
+            eq(orderItems.id, itemId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!order || !item) throw new NotFoundException("Order item not found");
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
+      const reservation = await reserveOperation<Record<string, unknown>>(tx, {
+        tenantId: context.tenantId,
+        branchId: order.branchId,
+        scope: "order_item.cancel.request",
+        idempotencyKey,
+        payload: {
           orderId,
           itemId,
-          previousStatus: item.status,
-          sentToKitchenAt: item.sentToKitchenAt?.toISOString() ?? null,
+          reason: input.reason,
+          requestedByUserId: context.userId ?? null,
         },
       });
-      return { orderId, itemId, status: "pending_approval", approval };
-    }
-    const updated = await this.applyItemCancellation(context, orderId, itemId, input.reason, null);
-    return { orderId, itemId, status: "canceled", order: updated };
+      if (reservation.reservationId === null) return reservation.replay;
+      if (item.status === "canceled" || item.status === "refunded") {
+        throw new BadRequestException("Order item is already canceled");
+      }
+      if (requiresCancellationApproval(item.status, policy.requireApprovalAfterKitchen)) {
+        const approval = await approvals.createRequest(
+          context,
+          {
+            branchId: order.branchId,
+            entityType: "order_item",
+            entityId: item.id,
+            action: "order_item.cancel",
+            reason: input.reason,
+            metadata: {
+              orderId,
+              itemId,
+              previousStatus: item.status,
+              sentToKitchenAt: item.sentToKitchenAt?.toISOString() ?? null,
+            },
+          },
+          tx,
+        );
+        return confirmOperation(tx, {
+          reservationId: reservation.reservationId,
+          scope: "order_item.cancel.request",
+          idempotencyKey,
+          aggregateType: "order_item",
+          aggregateId: item.id,
+          version: order.version,
+          result: { orderId, itemId, status: "pending_approval", approval },
+        });
+      }
+      const updated = await this.applyItemCancellation(
+        context,
+        orderId,
+        itemId,
+        input.reason,
+        null,
+        tx,
+        true,
+      );
+      return confirmOperation(tx, {
+        reservationId: reservation.reservationId,
+        scope: "order_item.cancel.request",
+        idempotencyKey,
+        aggregateType: "order_item",
+        aggregateId: item.id,
+        version: updated.version,
+        result: { orderId, itemId, status: "canceled", order: updated },
+      });
+    });
   }
 
   async applyApproval(context: TenantContext, approval: ApprovalRecord) {
@@ -1110,14 +1312,19 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     amountCents: number,
     reason: string,
     approvalId: string | null,
+    existingTx?: PosTransaction,
+    accessAlreadyChecked = false,
   ) {
-    return this.database.db.transaction(async (tx) => {
+    const apply = async (tx: PosTransaction) => {
       const [order] = await tx
         .select()
         .from(orders)
         .where(and(eq(orders.tenantId, context.tenantId), eq(orders.id, orderId)))
         .limit(1);
       if (!order) throw new NotFoundException("Order not found");
+      if (!accessAlreadyChecked) {
+        await this.waiterAssignments?.assertOrderAccess(context, order, tx);
+      }
       if (amountCents > order.subtotalCents) {
         throw new BadRequestException("Discount cannot exceed subtotal");
       }
@@ -1147,7 +1354,8 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         metadata: { amountCents, reason, approvalId },
       });
       return updated;
-    });
+    };
+    return existingTx ? apply(existingTx) : this.database.db.transaction(apply);
   }
 
   private async applyItemCancellation(
@@ -1156,8 +1364,10 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     itemId: string,
     reason: string,
     approvalId: string | null,
+    existingTx?: PosTransaction,
+    accessAlreadyChecked = false,
   ) {
-    return this.database.db.transaction(async (tx) => {
+    const apply = async (tx: PosTransaction) => {
       const [order] = await tx
         .select()
         .from(orders)
@@ -1175,6 +1385,9 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         )
         .limit(1);
       if (!order || !item) throw new NotFoundException("Order item not found");
+      if (!accessAlreadyChecked) {
+        await this.waiterAssignments?.assertOrderAccess(context, order, tx);
+      }
       if (item.status === "canceled") return order;
       await tx
         .update(orderItems)
@@ -1342,7 +1555,8 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         });
       }
       return updated;
-    });
+    };
+    return existingTx ? apply(existingTx) : this.database.db.transaction(apply);
   }
 
   private requireApprovalsService() {
@@ -1359,6 +1573,13 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     return this.operationalService;
   }
 
+  private requireWaiterAssignments() {
+    if (!this.waiterAssignments) {
+      throw new BadRequestException("Atendimento por responsável está indisponível");
+    }
+    return this.waiterAssignments;
+  }
+
   // --- Payments (delegates to PaymentsService) ---
 
   splitBill(context: TenantContext, orderId: string, people: number) {
@@ -1370,6 +1591,38 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     revenueTotal.inc({ tenant_id: context.tenantId, method: input.method }, input.amountCents);
     orderValueHistogram.observe({ tenant_id: context.tenantId }, input.amountCents);
     return result;
+  }
+
+  async createPaymentIntent(context: TenantContext, orderId: string, input: RegisterPaymentInput) {
+    return this.paymentsService.createPaymentIntent(context, orderId, input);
+  }
+
+  async getPayment(context: TenantContext, paymentId: string) {
+    return this.paymentsService.getPayment(context, paymentId);
+  }
+
+  async queryPayment(context: TenantContext, paymentId: string, input: { idempotencyKey: string }) {
+    return this.paymentsService.queryPayment(context, paymentId, input);
+  }
+
+  async cancelPayment(
+    context: TenantContext,
+    paymentId: string,
+    input: { idempotencyKey: string; reason?: string | undefined },
+  ) {
+    return this.paymentsService.cancelPayment(context, paymentId, input);
+  }
+
+  async refundPayment(
+    context: TenantContext,
+    paymentId: string,
+    input: {
+      idempotencyKey: string;
+      reason?: string | undefined;
+      amountCents?: number | undefined;
+    },
+  ) {
+    return this.paymentsService.refundPayment(context, paymentId, input);
   }
 
   async listOrderPayments(context: TenantContext, orderId: string) {
@@ -1511,6 +1764,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
           and(
             eq(orderItemsTable.tenantId, context.tenantId),
             eq(orderItemsTable.orderId, order.id),
+            inArray(orderItemsTable.status, ["pending", "sent", "preparing", "ready", "served"]),
           ),
         );
 
@@ -1576,10 +1830,12 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
     return this.database.db.transaction(async (tx) => {
       const {
         orders: ordersTable,
+        orderItems: orderItemsTable,
         payments: paymentsTable,
         printRoutes: printRoutesTable,
         printerDevices: printerDevicesTable,
         tenants: tenantsTable,
+        branches: branchesTable,
         diningTables: diningTablesTable,
         printJobs: printJobsTable,
         users: usersTable,
@@ -1595,7 +1851,7 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
         throw new NotFoundException("Order not found");
       }
 
-      const [payment] = await tx
+      const confirmedPayments = await tx
         .select()
         .from(paymentsTable)
         .where(
@@ -1605,12 +1861,29 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
             eq(paymentsTable.status, "confirmed"),
           ),
         )
-        .orderBy(desc(paymentsTable.confirmedAt), desc(paymentsTable.createdAt))
-        .limit(1);
+        .orderBy(paymentsTable.confirmedAt, paymentsTable.createdAt);
 
+      const payment = confirmedPayments.at(-1);
       if (!payment) {
         throw new BadRequestException("No confirmed payment found for this order");
       }
+
+      const receiptItems = await tx
+        .select({
+          name: orderItemsTable.nameSnapshot,
+          quantity: orderItemsTable.quantity,
+          unitPriceCents: orderItemsTable.unitPriceCents,
+          totalCents: orderItemsTable.totalCents,
+        })
+        .from(orderItemsTable)
+        .where(
+          and(
+            eq(orderItemsTable.tenantId, context.tenantId),
+            eq(orderItemsTable.orderId, order.id),
+            inArray(orderItemsTable.status, ["pending", "sent", "preparing", "ready", "served"]),
+          ),
+        )
+        .orderBy(orderItemsTable.createdAt);
 
       const [route] = await tx
         .select({
@@ -1645,9 +1918,20 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       }
 
       const [tenant] = await tx
-        .select({ name: tenantsTable.name, settings: tenantsTable.settings })
+        .select({
+          name: tenantsTable.name,
+          document: tenantsTable.document,
+          settings: tenantsTable.settings,
+        })
         .from(tenantsTable)
         .where(eq(tenantsTable.id, context.tenantId))
+        .limit(1);
+      const [branch] = await tx
+        .select({ name: branchesTable.name, document: branchesTable.document })
+        .from(branchesTable)
+        .where(
+          and(eq(branchesTable.tenantId, context.tenantId), eq(branchesTable.id, order.branchId)),
+        )
         .limit(1);
       const [table] = order.tableId
         ? await tx
@@ -1674,11 +1958,21 @@ export class PosService implements OnModuleInit, ApprovalApplicator {
       const { renderPaymentReceipt } = await import("../printing/print-renderer");
       const renderedText = renderPaymentReceipt({
         tenantName: readTenantDisplayName(tenant?.settings, tenant?.name ?? "GiroMesa"),
+        establishmentDocument: branch?.document ?? tenant?.document ?? null,
+        branchName: branch?.name ?? null,
+        address: readTenantAddress(tenant?.settings),
         orderCode: order.id.slice(0, 8),
         tableCode: table?.code ?? null,
         operatorName: operator?.name ?? null,
-        paymentMethod: payment.method,
-        amountCents: payment.amountCents,
+        items: receiptItems,
+        subtotalCents: order.subtotalCents,
+        discountCents: order.discountCents,
+        serviceChargeCents: order.serviceChargeCents,
+        totalCents: order.totalCents,
+        payments: confirmedPayments.map((confirmedPayment) => ({
+          method: confirmedPayment.method,
+          amountCents: confirmedPayment.amountCents,
+        })),
         paidAt: (payment.confirmedAt ?? payment.createdAt).toISOString(),
         charactersPerLine: route.charactersPerLine,
       });
@@ -1890,4 +2184,14 @@ function readTenantDisplayName(
   return typeof rawBranding.displayName === "string" && rawBranding.displayName.trim()
     ? rawBranding.displayName.trim()
     : fallbackName;
+}
+
+function readTenantAddress(settings: Record<string, unknown> | undefined) {
+  const business =
+    settings && typeof settings.business === "object" && settings.business !== null
+      ? (settings.business as Record<string, unknown>)
+      : {};
+  return typeof business.address === "string" && business.address.trim()
+    ? business.address.trim()
+    : null;
 }

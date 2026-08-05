@@ -12,6 +12,7 @@ import {
 import type { TenantContext } from "@giromesa/domain";
 import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { netPaymentSumSql, paymentLedgerDeltaSql } from "../../common/payment-ledger";
 import { DatabaseService } from "../database/database.service";
 
 type FinancialReportInput = {
@@ -84,7 +85,7 @@ export class ReportsService {
     const paymentFilters = [
       eq(payments.tenantId, context.tenantId),
       eq(orders.branchId, branchId),
-      eq(payments.status, "confirmed"),
+      sql`${paymentLedgerDeltaSql()} <> 0`,
       gte(payments.createdAt, from),
     ];
     if (input.paymentMethod) {
@@ -97,7 +98,7 @@ export class ReportsService {
     const paymentRows = await this.database.db
       .select({
         method: payments.method,
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        totalCents: netPaymentSumSql(),
         count: sql<number>`count(${payments.id})::int`,
       })
       .from(payments)
@@ -108,7 +109,7 @@ export class ReportsService {
     const previousPaymentFilters = [
       eq(payments.tenantId, context.tenantId),
       eq(orders.branchId, branchId),
-      eq(payments.status, "confirmed"),
+      sql`${paymentLedgerDeltaSql()} <> 0`,
       gte(payments.createdAt, previous.from),
     ];
     if (input.paymentMethod) {
@@ -120,7 +121,7 @@ export class ReportsService {
 
     const previousPaymentRows = await this.database.db
       .select({
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        totalCents: netPaymentSumSql(),
         count: sql<number>`count(${payments.id})::int`,
       })
       .from(payments)
@@ -130,7 +131,7 @@ export class ReportsService {
     const channelRows = await this.database.db
       .select({
         channel: orders.channel,
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        totalCents: netPaymentSumSql(),
         count: sql<number>`count(${payments.id})::int`,
       })
       .from(payments)
@@ -190,7 +191,7 @@ export class ReportsService {
       sessionRows.map(async (session) => {
         const [sessionPayments] = await this.database.db
           .select({
-            totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+            totalCents: netPaymentSumSql(),
             count: sql<number>`count(${payments.id})::int`,
           })
           .from(payments)
@@ -198,7 +199,7 @@ export class ReportsService {
           .where(
             and(
               eq(payments.tenantId, context.tenantId),
-              eq(payments.status, "confirmed"),
+              sql`${paymentLedgerDeltaSql()} <> 0`,
               inArray(payments.cashHandoverStatus, ["not_required", "received"]),
               input.paymentMethod ? eq(payments.method, input.paymentMethod) : sql`true`,
               eq(orders.branchId, branchId),
@@ -518,12 +519,12 @@ export class ReportsService {
       const periodRows = await this.database.db
         .select({
           period: sql<string>`${groupByExpression}`,
-          totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+          totalCents: netPaymentSumSql(),
           orderCount: sql<number>`count(distinct ${orders.id})::int`,
           averageTicketCents: sql<number>`
             case
               when count(distinct ${orders.id}) > 0
-              then round(coalesce(sum(${payments.amountCents}), 0) / count(distinct ${orders.id}))
+              then round(${netPaymentSumSql()} / count(distinct ${orders.id}))
               else 0
             end::int
           `,
@@ -534,7 +535,7 @@ export class ReportsService {
           and(
             eq(payments.tenantId, context.tenantId),
             eq(orders.branchId, branchId),
-            eq(payments.status, "confirmed"),
+            sql`${paymentLedgerDeltaSql()} <> 0`,
             gte(payments.createdAt, from),
             to ? lte(payments.createdAt, to) : sql`true`,
           ),
@@ -726,7 +727,7 @@ export class ReportsService {
 
     const revenueResult = await this.database.db
       .select({
-        totalRevenueCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        totalRevenueCents: netPaymentSumSql(),
         confirmedCount: sql<number>`count(${payments.id})::int`,
       })
       .from(payments)
@@ -735,7 +736,7 @@ export class ReportsService {
         and(
           eq(payments.tenantId, context.tenantId),
           eq(orders.branchId, branchId),
-          eq(payments.status, "confirmed"),
+          sql`${paymentLedgerDeltaSql()} <> 0`,
           gte(payments.createdAt, from),
           to ? lte(payments.createdAt, to) : sql`true`,
         ),
@@ -744,7 +745,7 @@ export class ReportsService {
     const paymentsByMethod = await this.database.db
       .select({
         method: payments.method,
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int`,
+        totalCents: netPaymentSumSql(),
         count: sql<number>`count(${payments.id})::int`,
       })
       .from(payments)
@@ -753,7 +754,7 @@ export class ReportsService {
         and(
           eq(payments.tenantId, context.tenantId),
           eq(orders.branchId, branchId),
-          eq(payments.status, "confirmed"),
+          sql`${paymentLedgerDeltaSql()} <> 0`,
           gte(payments.createdAt, from),
           to ? lte(payments.createdAt, to) : sql`true`,
         ),

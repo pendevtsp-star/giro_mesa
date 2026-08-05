@@ -26,6 +26,7 @@ const createProductSchema = z.object({
   costCents: z.number().int().nonnegative().optional(),
   imageUrl: z.string().optional(),
   isAvailable: z.boolean().optional(),
+  isAlcoholic: z.boolean(),
   isClubEligible: z.boolean().optional(),
   bottleVolumeMl: z.number().int().positive().optional(),
   defaultDoseMl: z.number().int().positive().optional(),

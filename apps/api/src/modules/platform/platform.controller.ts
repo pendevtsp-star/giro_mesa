@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  Headers,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { z } from "zod";
 import { firstHeader, type HeaderRecord } from "../../common/http";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
@@ -30,6 +41,26 @@ const updateTenantSupportSchema = z.object({
   slaTier: z.enum(["standard", "priority", "critical"]).default("standard"),
   nextFollowUpAt: z.iso.datetime().optional().nullable(),
   contactSummary: z.string().max(600).optional(),
+  accessMode: z.enum(["read_only", "elevated"]).optional(),
+  elevationExpiresAt: z.iso.datetime().optional().nullable(),
+  elevationReason: z.string().min(10).max(600).optional(),
+  accessBranchId: z.string().uuid().optional().nullable(),
+  accessResource: z.enum(["operations", "integrations", "audit"]).optional(),
+  accessActions: z
+    .array(z.enum(["read", "mutate"]))
+    .min(1)
+    .optional(),
+});
+
+const supportScopeSchema = z.object({
+  branchId: z.string().uuid().optional(),
+  resource: z.enum(["operations", "integrations", "audit"]),
+});
+
+const supportDiagnosticSchema = z.object({
+  branchId: z.string().uuid().optional().nullable(),
+  resource: z.enum(["operations", "integrations", "audit"]),
+  summary: z.string().min(10).max(600),
 });
 
 const sendTenantCommunicationSchema = z.object({
@@ -141,6 +172,54 @@ export class PlatformController {
     );
   }
 
+  @Get("tenants/:tenantId/support-resource")
+  async getSupportResource(
+    @Param("tenantId") tenantId: string,
+    @Query() query: Record<string, string | undefined>,
+    @Headers() headers: HeaderRecord,
+  ) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+    const input = supportScopeSchema.parse(query);
+    return this.platformService.getSupportResource(
+      context,
+      tenantId,
+      input.branchId ?? null,
+      input.resource,
+    );
+  }
+
+  @Post("tenants/:tenantId/support-diagnostics")
+  async recordSupportDiagnostic(
+    @Param("tenantId") tenantId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+    const input = supportDiagnosticSchema.parse(body);
+    return this.platformService.recordSupportDiagnostic(context, tenantId, {
+      ...input,
+      branchId: input.branchId ?? null,
+    });
+  }
+
+  @Post("tenants/:tenantId/support-grants/:grantId/revoke")
+  async revokeSupportGrant(
+    @Param("tenantId") tenantId: string,
+    @Param("grantId") grantId: string,
+    @Headers() headers: HeaderRecord,
+  ) {
+    const context = await this.authService.resolveContext(headers);
+    requirePermission(context, "platform:manage");
+    return this.platformService.revokeSupportGrant(
+      context,
+      tenantId,
+      z.string().uuid().parse(grantId),
+    );
+  }
+
   @Post("tenants/:tenantId/asaas/checkout")
   async prepareAsaasCheckout(
     @Param("tenantId") tenantId: string,
@@ -205,7 +284,12 @@ export class PlatformController {
     const context = await this.authService.resolveContext(headers);
     requirePermission(context, "platform:manage");
 
-    return this.backupService.restoreBackup(context, id);
+    // Restoring an in-use database is intentionally unavailable until an isolated
+    // restore workflow with verification and dual control exists.
+    throw new ConflictException({
+      error: "backup_restore_disabled",
+      message: "Restore pelo backoffice está desabilitado. Acione a operação de plataforma.",
+    });
   }
 
   @Post("backup/:id/validate")

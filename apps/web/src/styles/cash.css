@@ -91,6 +91,16 @@
   .cash-figures {
     grid-template-columns: 1fr;
   }
+
+  .branding-page-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .branding-page-header h1 {
+    overflow-wrap: anywhere;
+    font-size: clamp(2rem, 11vw, 3rem);
+  }
 }
 
 .logo-upload-dropzone {

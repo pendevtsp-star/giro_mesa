@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { loadEnv } from "@giromesa/config";
 import {
   auditLogs,
@@ -15,8 +15,13 @@ import {
   products,
   publicRequestIdempotency,
   qrBranchSettings,
+  qrGuestAccessRequests,
+  qrGuestSessions,
   serviceRequests,
+  tableServiceSessions,
+  tableWaiterAssignments,
   tenants,
+  users,
 } from "@giromesa/db";
 import type {
   GuestExperienceConfig,
@@ -36,14 +41,26 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import QRCode from "qrcode";
 import { DatabaseService } from "../database/database.service";
+import {
+  type ConfirmedOperation,
+  confirmOperation,
+  reserveOperation,
+} from "../pos/operation-receipts";
+import { OrdersService } from "../pos/orders.service";
 
 type TokenPayload = { tenantId: string; branchId: string; tableId: string; version: number };
+type AgeConfirmationPayload = TokenPayload & {
+  kind: "age_confirmation";
+  expiresAt: number;
+};
 type PublicOrderInput = {
   guestLabel?: string | undefined;
+  ageConfirmationToken?: string | undefined;
   items: Array<{
     productId: string;
     quantity: number;
@@ -51,9 +68,36 @@ type PublicOrderInput = {
     modifiers?: Array<{ optionId: string }> | undefined;
   }>;
 };
-type PublicServiceRequestInput = {
-  type: "call_waiter" | "request_pre_bill" | "need_help";
-  message?: string | undefined;
+type PublicOrderReceipt = {
+  orderId: string;
+  status: string;
+  requiresReview: boolean;
+  itemCount: number;
+  dispatchStatus: "pending" | "review" | "sent" | "attention";
+};
+type PublicServiceRequestInput =
+  | {
+      type: "call_waiter" | "request_pre_bill" | "need_help";
+      message?: string | undefined;
+    }
+  | {
+      type: "split_intent";
+      message?: string | undefined;
+      split: { mode: "equal" | "by_item" | "custom"; people?: number | undefined };
+    }
+  | {
+      type: "payment_preference";
+      message?: string | undefined;
+      payment: {
+        method: "cash" | "pix" | "credit_card" | "debit_card" | "other";
+        splitMode?: "single" | "equal" | "by_item" | "custom" | undefined;
+      };
+    };
+
+type TableServiceActivationResult = {
+  sessionId: string;
+  code: string;
+  expiresAt: string;
 };
 type GuestExperienceDraftInput = {
   [key in Exclude<keyof GuestExperienceConfig, "branchId">]?:
@@ -61,6 +105,15 @@ type GuestExperienceDraftInput = {
     | undefined;
 } & {
   scheduledAt?: Date | null | undefined;
+};
+
+type PublicGuestSession = {
+  id: string;
+  tableServiceSessionId: string;
+  orderId: string | null;
+  expiresAt: Date;
+  mode: "disabled" | "menu_only" | "waiter_assisted" | "self_service";
+  tabVisibility: "shared" | "own_items";
 };
 
 export type PublicPartnerAttribution = {
@@ -166,7 +219,12 @@ const activeOrderStatuses = [
 
 @Injectable()
 export class QrService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Optional()
+    @Inject(OrdersService)
+    private readonly ordersService?: OrdersService,
+  ) {}
 
   async getSettings(context: TenantContext): Promise<QrBranchSettings> {
     const branchId = requireBranch(context);
@@ -186,6 +244,12 @@ export class QrService {
   async updateSettings(
     context: TenantContext,
     input: {
+      mode?: QrBranchSettings["mode"] | undefined;
+      presenceMethods?: QrBranchSettings["presenceMethods"] | undefined;
+      tabVisibility?: QrBranchSettings["tabVisibility"] | undefined;
+      presenceCodeTtlMinutes?: number | undefined;
+      guestSessionTtlMinutes?: number | undefined;
+      trustedNetworkCidrs?: string[] | undefined;
       capabilities?: QrCapability[] | undefined;
       reviewBeforeKds?: boolean | undefined;
       template?: QrTemplate | undefined;
@@ -208,6 +272,9 @@ export class QrService {
         set: { ...input, updatedAt: new Date() },
       })
       .returning();
+    if (input.mode === "disabled") {
+      await this.revokeBranchServiceSessions(context, branchId, "qr_disabled");
+    }
     await this.audit(context, "qr.settings_updated", "branch", branchId, input);
     return settings ? mapSettings(settings) : defaultSettings(branchId);
   }
@@ -231,6 +298,24 @@ export class QrService {
       draft: draft ? mapExperienceRevision(draft) : null,
       published: published ? mapExperienceRevision(published) : null,
       history: rows.slice(0, 12).map(mapExperienceRevision),
+    };
+  }
+
+  async previewExperience(context: TenantContext, input: GuestExperienceDraftInput) {
+    const branchId = requireBranch(context);
+    const { scheduledAt: _scheduledAt, ...configInput } = input;
+    const rawConfig = configInput as Record<string, unknown>;
+    await this.assertPersonalizationScope(
+      context.tenantId,
+      branchId,
+      sanitizeQrPersonalization(rawConfig),
+    );
+    const current = await this.settingsForBranch(context.tenantId, branchId, false);
+    return {
+      preview: true,
+      persisted: false,
+      branchId,
+      config: mergeExperienceSettings(current, rawConfig),
     };
   }
 
@@ -508,6 +593,39 @@ export class QrService {
         .update(diningTables)
         .set({ qrTokenHash: sha256(token) })
         .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, table.id)));
+      const revokedSessions = await tx
+        .update(tableServiceSessions)
+        .set({
+          status: "revoked",
+          revokedAt: new Date(),
+          revokedByUserId: context.userId ?? null,
+          revokeReason: "qr_rotated",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(tableServiceSessions.tenantId, context.tenantId),
+            eq(tableServiceSessions.tableId, table.id),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .returning({ id: tableServiceSessions.id });
+      if (revokedSessions.length) {
+        await tx
+          .update(qrGuestSessions)
+          .set({
+            status: "revoked",
+            revokedAt: new Date(),
+            revokedByUserId: context.userId ?? null,
+            updatedAt: new Date(),
+          })
+          .where(
+            inArray(
+              qrGuestSessions.tableServiceSessionId,
+              revokedSessions.map((session) => session.id),
+            ),
+          );
+      }
       await tx.insert(auditLogs).values({
         tenantId: context.tenantId,
         branchId,
@@ -613,10 +731,13 @@ export class QrService {
     };
   }
 
-  async getPublicContext(token: string) {
+  async getPublicContext(token: string, guestToken?: string) {
     const resolved = await this.resolveToken(token);
     const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
-    const [menuCategories, menuProducts, doseClubAccount] = await Promise.all([
+    if (settings.mode === "disabled") {
+      throw new ForbiddenException("O acesso por QR está desativado nesta filial");
+    }
+    const [menuCategories, menuProducts, doseClubAccount, serviceSession] = await Promise.all([
       this.database.db
         .select()
         .from(categories)
@@ -640,6 +761,8 @@ export class QrService {
           priceCents: products.priceCents,
           imageUrl: products.imageUrl,
           channels: products.channels,
+          isAlcoholic: products.isAlcoholic,
+          spiritType: products.spiritType,
         })
         .from(products)
         .where(
@@ -664,7 +787,28 @@ export class QrService {
           ),
         )
         .limit(1),
+      this.database.db
+        .select({
+          id: tableServiceSessions.id,
+          status: tableServiceSessions.status,
+          mode: tableServiceSessions.mode,
+          presenceMethods: tableServiceSessions.presenceMethods,
+          presenceCodeExpiresAt: tableServiceSessions.presenceCodeExpiresAt,
+        })
+        .from(tableServiceSessions)
+        .where(
+          and(
+            eq(tableServiceSessions.tenantId, resolved.tenant.id),
+            eq(tableServiceSessions.tableId, resolved.table.id),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
     ]);
+    const guest = guestToken
+      ? await this.requireGuestSession(resolved, guestToken).catch(() => null)
+      : null;
     const active = isTableActive(resolved.table.status);
     const categoryLabels = settings.categoryLabels ?? {};
     const recommendedProductIds = new Set(settings.recommendedProductIds ?? []);
@@ -690,6 +834,17 @@ export class QrService {
         active,
       },
       capabilities: settings.capabilities,
+      mode: settings.mode,
+      service: {
+        active: Boolean(serviceSession),
+        presenceRequired: settings.mode !== "menu_only",
+        presenceMethods: serviceSession?.presenceMethods ?? settings.presenceMethods,
+        ...(serviceSession?.presenceCodeExpiresAt
+          ? { codeExpiresAt: serviceSession.presenceCodeExpiresAt.toISOString() }
+          : {}),
+        guestValidated: Boolean(guest),
+        ...(guest ? { guestExpiresAt: guest.expiresAt.toISOString() } : {}),
+      },
       reviewBeforeKds: settings.reviewBeforeKds,
       qrSettings: {
         template: settings.template,
@@ -723,6 +878,467 @@ export class QrService {
           recommended: recommendedProductIds.has(product.id),
         })),
     };
+  }
+
+  async activateTableService(
+    context: TenantContext,
+    tableId: string,
+    input: { idempotencyKey?: string | undefined; expectedTableVersion?: number | undefined } = {},
+  ): Promise<ConfirmedOperation<TableServiceActivationResult>> {
+    const branchId = requireBranch(context);
+    const idempotencyKey = input.idempotencyKey ?? context.requestId;
+    const settings = await this.settingsForBranch(context.tenantId, branchId);
+    if (settings.mode === "disabled" || settings.mode === "menu_only") {
+      throw new BadRequestException("Esta filial não permite ações de mesa por QR");
+    }
+    const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + settings.presenceCodeTtlMinutes * 60_000);
+    return this.database.db.transaction(async (tx) => {
+      const reservation = await reserveOperation<ConfirmedOperation<TableServiceActivationResult>>(
+        tx,
+        {
+          tenantId: context.tenantId,
+          branchId,
+          scope: "qr.table_service.activate",
+          idempotencyKey,
+          payload: {
+            tableId,
+            expectedTableVersion: input.expectedTableVersion ?? null,
+          },
+        },
+      );
+      if (reservation.replay) return reservation.replay;
+      const [table] = await tx
+        .select()
+        .from(diningTables)
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, branchId),
+            eq(diningTables.id, tableId),
+          ),
+        )
+        .limit(1);
+      if (!table) throw new NotFoundException("Mesa não encontrada");
+      if (
+        input.expectedTableVersion !== undefined &&
+        table.version !== input.expectedTableVersion
+      ) {
+        throw new ConflictException({
+          error: "dining_table_version_conflict",
+          currentVersion: table.version,
+        });
+      }
+      this.assertActive(table.status);
+      const [order] = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.tenantId, context.tenantId),
+            eq(orders.branchId, branchId),
+            eq(orders.tableId, tableId),
+            inArray(orders.status, activeOrderStatuses),
+          ),
+        )
+        .orderBy(desc(orders.openedAt), desc(orders.createdAt))
+        .limit(1);
+      if (!order) throw new ConflictException("Abra o atendimento da mesa antes de ativar o QR");
+      const [existing] = await tx
+        .select()
+        .from(tableServiceSessions)
+        .where(
+          and(
+            eq(tableServiceSessions.tenantId, context.tenantId),
+            eq(tableServiceSessions.tableId, tableId),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .limit(1);
+      let session: typeof tableServiceSessions.$inferSelect | undefined;
+      if (existing) {
+        await tx
+          .update(qrGuestSessions)
+          .set({
+            status: "revoked",
+            revokedAt: now,
+            revokedByUserId: context.userId ?? null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(qrGuestSessions.tenantId, context.tenantId),
+              eq(qrGuestSessions.tableServiceSessionId, existing.id),
+              eq(qrGuestSessions.status, "active"),
+            ),
+          );
+        [session] = await tx
+          .update(tableServiceSessions)
+          .set({
+            orderId: order.id,
+            mode: settings.mode,
+            capabilities: settings.capabilities,
+            presenceMethods: settings.presenceMethods,
+            tabVisibility: settings.tabVisibility,
+            guestSessionTtlMinutes: settings.guestSessionTtlMinutes,
+            presenceCodeHash: this.presenceCodeDigest(code),
+            presenceCodeExpiresAt: expiresAt,
+            presenceCodeAttempts: 0,
+            version: sql`${tableServiceSessions.version} + 1`,
+            updatedAt: now,
+          })
+          .where(eq(tableServiceSessions.id, existing.id))
+          .returning();
+      } else {
+        [session] = await tx
+          .insert(tableServiceSessions)
+          .values({
+            tenantId: context.tenantId,
+            branchId,
+            tableId,
+            orderId: order.id,
+            mode: settings.mode,
+            capabilities: settings.capabilities,
+            presenceMethods: settings.presenceMethods,
+            tabVisibility: settings.tabVisibility,
+            guestSessionTtlMinutes: settings.guestSessionTtlMinutes,
+            presenceCodeHash: this.presenceCodeDigest(code),
+            presenceCodeExpiresAt: expiresAt,
+            activatedByUserId: context.userId ?? null,
+          })
+          .returning();
+      }
+      if (!session) throw new ConflictException("Não foi possível ativar a mesa");
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId,
+        userId: context.userId ?? null,
+        requestId: context.requestId,
+        action: "qr.table_service_activated",
+        entityType: "table_service_session",
+        entityId: session.id,
+        metadata: {
+          tableId,
+          sessionId: session.id,
+          sessionVersion: session.version,
+          mode: settings.mode,
+          presenceMethods: settings.presenceMethods,
+        },
+      });
+      return confirmOperation(tx, {
+        reservationId: reservation.reservationId,
+        scope: "qr.table_service.activate",
+        idempotencyKey,
+        aggregateType: "table_service_session",
+        aggregateId: session.id,
+        version: session.version,
+        result: { sessionId: session.id, code, expiresAt: expiresAt.toISOString() },
+        serverTime: now,
+      });
+    });
+  }
+
+  async revokeTableService(context: TenantContext, tableId: string, reason = "revoked_by_team") {
+    const branchId = requireBranch(context);
+    return this.database.db.transaction(async (tx) => {
+      const sessions = await tx
+        .update(tableServiceSessions)
+        .set({
+          status: "revoked",
+          revokedAt: new Date(),
+          revokedByUserId: context.userId ?? null,
+          revokeReason: reason,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(tableServiceSessions.tenantId, context.tenantId),
+            eq(tableServiceSessions.branchId, branchId),
+            eq(tableServiceSessions.tableId, tableId),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .returning({ id: tableServiceSessions.id });
+      if (!sessions.length) return { revoked: false };
+      await tx
+        .update(qrGuestSessions)
+        .set({
+          status: "revoked",
+          revokedAt: new Date(),
+          revokedByUserId: context.userId ?? null,
+          updatedAt: new Date(),
+        })
+        .where(
+          inArray(
+            qrGuestSessions.tableServiceSessionId,
+            sessions.map((session) => session.id),
+          ),
+        );
+      await tx.insert(auditLogs).values({
+        tenantId: context.tenantId,
+        branchId,
+        userId: context.userId ?? null,
+        requestId: context.requestId,
+        action: "qr.table_service_revoked",
+        entityType: "dining_table",
+        entityId: tableId,
+        metadata: { reason, sessions: sessions.length },
+      });
+      return { revoked: true, sessions: sessions.length };
+    });
+  }
+
+  async validatePresenceCode(token: string, code: string) {
+    const resolved = await this.resolveToken(token);
+    const [session] = await this.database.db
+      .select()
+      .from(tableServiceSessions)
+      .where(
+        and(
+          eq(tableServiceSessions.tenantId, resolved.tenant.id),
+          eq(tableServiceSessions.tableId, resolved.table.id),
+          eq(tableServiceSessions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!session?.presenceMethods.includes("code")) {
+      throw new ForbiddenException("Confirmação por código não está disponível para esta mesa");
+    }
+    const now = new Date();
+    if (
+      !session.presenceCodeHash ||
+      !session.presenceCodeExpiresAt ||
+      session.presenceCodeExpiresAt <= now ||
+      session.presenceCodeAttempts >= 5
+    ) {
+      throw new ForbiddenException(
+        "O código desta mesa expirou ou precisa ser renovado pela equipe",
+      );
+    }
+    const supplied = this.presenceCodeDigest(code);
+    const expected = session.presenceCodeHash;
+    const valid =
+      supplied.length === expected.length &&
+      timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+    if (!valid) {
+      await this.database.db
+        .update(tableServiceSessions)
+        .set({
+          presenceCodeAttempts: sql`${tableServiceSessions.presenceCodeAttempts} + 1`,
+          updatedAt: now,
+        })
+        .where(eq(tableServiceSessions.id, session.id));
+      throw new ForbiddenException("Código da mesa inválido");
+    }
+    const rawToken = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(now.getTime() + session.guestSessionTtlMinutes * 60_000);
+    await this.database.db.insert(qrGuestSessions).values({
+      tenantId: resolved.tenant.id,
+      branchId: resolved.table.branchId,
+      tableServiceSessionId: session.id,
+      tokenHash: sha256(rawToken),
+      validationMethod: "code",
+      expiresAt,
+      lastUsedAt: now,
+    });
+    return {
+      token: rawToken,
+      expiresAt: expiresAt.toISOString(),
+      maxAgeSeconds: Math.max(1, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)),
+      validationMethod: "code" as const,
+    };
+  }
+
+  async requestPresenceApproval(token: string) {
+    const resolved = await this.resolveToken(token);
+    const [session] = await this.database.db
+      .select()
+      .from(tableServiceSessions)
+      .where(
+        and(
+          eq(tableServiceSessions.tenantId, resolved.tenant.id),
+          eq(tableServiceSessions.tableId, resolved.table.id),
+          eq(tableServiceSessions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!session?.presenceMethods.includes("approval")) {
+      throw new ForbiddenException("Aprovação da equipe não está disponível para esta mesa");
+    }
+    const claimKey = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + 5 * 60_000);
+    const [request] = await this.database.db
+      .insert(qrGuestAccessRequests)
+      .values({
+        tenantId: resolved.tenant.id,
+        branchId: resolved.table.branchId,
+        tableServiceSessionId: session.id,
+        claimKeyHash: sha256(claimKey),
+        expiresAt,
+      })
+      .returning({ id: qrGuestAccessRequests.id, expiresAt: qrGuestAccessRequests.expiresAt });
+    if (!request) throw new ConflictException("Não foi possível solicitar a aprovação");
+    return { requestId: request.id, claimKey, expiresAt: request.expiresAt.toISOString() };
+  }
+
+  async validatePresenceNetwork(token: string, remoteIp: string) {
+    const resolved = await this.resolveToken(token);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
+    if (
+      !settings.presenceMethods.includes("network") ||
+      !settings.trustedNetworkCidrs.some((cidr) => ipv4InCidr(remoteIp, cidr))
+    ) {
+      throw new ForbiddenException("A rede atual não está autorizada para esta mesa");
+    }
+    const [session] = await this.database.db
+      .select()
+      .from(tableServiceSessions)
+      .where(
+        and(
+          eq(tableServiceSessions.tenantId, resolved.tenant.id),
+          eq(tableServiceSessions.tableId, resolved.table.id),
+          eq(tableServiceSessions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!session) throw new ConflictException("O atendimento desta mesa não está ativo");
+    const now = new Date();
+    const rawToken = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(now.getTime() + session.guestSessionTtlMinutes * 60_000);
+    await this.database.db.insert(qrGuestSessions).values({
+      tenantId: resolved.tenant.id,
+      branchId: resolved.table.branchId,
+      tableServiceSessionId: session.id,
+      tokenHash: sha256(rawToken),
+      validationMethod: "network",
+      expiresAt,
+      lastUsedAt: now,
+    });
+    return {
+      token: rawToken,
+      expiresAt: expiresAt.toISOString(),
+      maxAgeSeconds: Math.max(1, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)),
+      validationMethod: "network" as const,
+    };
+  }
+
+  async approvePresenceRequest(context: TenantContext, requestId: string) {
+    const branchId = requireBranch(context);
+    if (!context.userId) throw new ForbiddenException("Operador autenticado obrigatório");
+    if (
+      !context.permissions.includes("tenant:manage") &&
+      !context.permissions.includes("approvals:manage")
+    ) {
+      throw new ForbiddenException("Somente a gerência pode aprovar o acesso por QR");
+    }
+    const now = new Date();
+    const [request] = await this.database.db
+      .update(qrGuestAccessRequests)
+      .set({ status: "approved", approvedByUserId: context.userId, decidedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(qrGuestAccessRequests.tenantId, context.tenantId),
+          eq(qrGuestAccessRequests.branchId, branchId),
+          eq(qrGuestAccessRequests.id, requestId),
+          eq(qrGuestAccessRequests.status, "pending"),
+          gte(qrGuestAccessRequests.expiresAt, now),
+        ),
+      )
+      .returning();
+    if (!request) throw new ConflictException("Solicitação não encontrada ou expirada");
+    await this.audit(context, "qr.presence_approved", "qr_guest_access_request", request.id, {});
+    return { id: request.id, status: request.status };
+  }
+
+  async listPresenceApprovals(
+    context: TenantContext,
+    status: "pending" | "approved" | "rejected" | "claimed" | "expired" = "pending",
+  ) {
+    const branchId = requireBranch(context);
+    return this.database.db
+      .select({
+        id: qrGuestAccessRequests.id,
+        status: qrGuestAccessRequests.status,
+        requestedAt: qrGuestAccessRequests.createdAt,
+        expiresAt: qrGuestAccessRequests.expiresAt,
+        tableId: diningTables.id,
+        tableCode: diningTables.code,
+        tableName: diningTables.name,
+      })
+      .from(qrGuestAccessRequests)
+      .innerJoin(
+        tableServiceSessions,
+        eq(tableServiceSessions.id, qrGuestAccessRequests.tableServiceSessionId),
+      )
+      .innerJoin(diningTables, eq(diningTables.id, tableServiceSessions.tableId))
+      .where(
+        and(
+          eq(qrGuestAccessRequests.tenantId, context.tenantId),
+          eq(qrGuestAccessRequests.branchId, branchId),
+          eq(qrGuestAccessRequests.status, status),
+        ),
+      )
+      .orderBy(desc(qrGuestAccessRequests.createdAt));
+  }
+
+  async claimPresenceApproval(token: string, requestId: string, claimKey: string) {
+    const resolved = await this.resolveToken(token);
+    return this.database.db.transaction(async (tx) => {
+      const now = new Date();
+      const [request] = await tx
+        .select()
+        .from(qrGuestAccessRequests)
+        .innerJoin(
+          tableServiceSessions,
+          eq(tableServiceSessions.id, qrGuestAccessRequests.tableServiceSessionId),
+        )
+        .where(
+          and(
+            eq(qrGuestAccessRequests.tenantId, resolved.tenant.id),
+            eq(qrGuestAccessRequests.branchId, resolved.table.branchId),
+            eq(qrGuestAccessRequests.id, requestId),
+            eq(qrGuestAccessRequests.claimKeyHash, sha256(claimKey)),
+            eq(tableServiceSessions.tableId, resolved.table.id),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .limit(1);
+      if (!request) throw new NotFoundException("Solicitação de confirmação não encontrada");
+      const access = request.qr_guest_access_requests;
+      const session = request.table_service_sessions;
+      if (access.expiresAt <= now) {
+        await tx
+          .update(qrGuestAccessRequests)
+          .set({ status: "expired", updatedAt: now })
+          .where(eq(qrGuestAccessRequests.id, access.id));
+        return { status: "expired" as const };
+      }
+      if (access.status === "pending") return { status: "pending" as const };
+      if (access.status !== "approved") return { status: access.status };
+      const rawToken = randomBytes(32).toString("base64url");
+      const expiresAt = new Date(now.getTime() + session.guestSessionTtlMinutes * 60_000);
+      await tx.insert(qrGuestSessions).values({
+        tenantId: resolved.tenant.id,
+        branchId: resolved.table.branchId,
+        tableServiceSessionId: session.id,
+        tokenHash: sha256(rawToken),
+        validationMethod: "approval",
+        approvedByUserId: access.approvedByUserId,
+        expiresAt,
+        lastUsedAt: now,
+      });
+      await tx
+        .update(qrGuestAccessRequests)
+        .set({ status: "claimed", claimedAt: now, updatedAt: now })
+        .where(eq(qrGuestAccessRequests.id, access.id));
+      return {
+        status: "approved" as const,
+        token: rawToken,
+        expiresAt: expiresAt.toISOString(),
+        maxAgeSeconds: Math.max(1, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)),
+      };
+    });
   }
 
   async recordCommercialAttribution(token: string, destination: "giromesa" | "doseclub") {
@@ -787,11 +1403,15 @@ export class QrService {
     return { recorded: true, day, source: "qr_organic", destination };
   }
 
-  async getPublicOrder(token: string) {
+  async getPublicOrder(token: string, guestToken?: string) {
     const resolved = await this.resolveToken(token);
     const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
+    const guest = await this.requireGuestSession(resolved, guestToken);
     this.assertCapability(settings, "view_tab");
     this.assertActive(resolved.table.status);
+    if (!guest.orderId) {
+      return { order: null };
+    }
     const [order] = await this.database.db
       .select()
       .from(orders)
@@ -799,7 +1419,7 @@ export class QrService {
         and(
           eq(orders.tenantId, resolved.tenant.id),
           eq(orders.branchId, resolved.table.branchId),
-          eq(orders.tableId, resolved.table.id),
+          eq(orders.id, guest.orderId),
           inArray(orders.status, activeOrderStatuses),
         ),
       )
@@ -818,7 +1438,15 @@ export class QrService {
           status: orderItems.status,
         })
         .from(orderItems)
-        .where(and(eq(orderItems.tenantId, resolved.tenant.id), eq(orderItems.orderId, order.id)))
+        .where(
+          and(
+            eq(orderItems.tenantId, resolved.tenant.id),
+            eq(orderItems.orderId, order.id),
+            ...(sessionVisibilityIsOwn(guest.tabVisibility)
+              ? [eq(orderItems.qrGuestSessionId, guest.id)]
+              : []),
+          ),
+        )
         .orderBy(asc(orderItems.createdAt)),
       this.database.db
         .select({
@@ -845,22 +1473,56 @@ export class QrService {
         totalCents: order.totalCents,
         receivedCents,
         remainingCents: Math.max(order.totalCents - receivedCents, 0),
-        payments: paymentRows.map((payment) => ({
-          amountCents: payment.amountCents,
-          method: payment.method,
-          status: payment.status,
-        })),
         timeline,
       },
     };
   }
 
-  async createPublicOrder(token: string, idempotencyKey: string, input: PublicOrderInput) {
+  async getPublicRealtimeScope(token: string, guestToken?: string) {
     const resolved = await this.resolveToken(token);
     const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
-    this.assertCapability(settings, "order");
+    const guest = await this.requireGuestSession(resolved, guestToken);
+    this.assertCapability(settings, "view_tab");
     this.assertActive(resolved.table.status);
-    return this.database.db.transaction(async (tx) => {
+    return {
+      tenantId: resolved.tenant.id,
+      branchId: resolved.table.branchId,
+      tableId: resolved.table.id,
+      orderId: guest.orderId,
+      sessionId: guest.tableServiceSessionId,
+    };
+  }
+
+  async createAgeConfirmation(token: string, guestToken?: string) {
+    const resolved = await this.resolveToken(token);
+    await this.requireGuestSession(resolved, guestToken);
+    const expiresAt = Date.now() + 8 * 60 * 60 * 1_000;
+    const confirmationToken = this.signAgeConfirmation({
+      kind: "age_confirmation",
+      tenantId: resolved.tenant.id,
+      branchId: resolved.table.branchId,
+      tableId: resolved.table.id,
+      version: resolved.table.qrTokenVersion,
+      expiresAt,
+    });
+    return { token: confirmationToken, expiresAt: new Date(expiresAt).toISOString() };
+  }
+
+  async createPublicOrder(
+    token: string,
+    idempotencyKey: string,
+    input: PublicOrderInput,
+    guestToken?: string,
+  ) {
+    const resolved = await this.resolveToken(token);
+    const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
+    const guest = await this.requireGuestSession(resolved, guestToken);
+    this.assertCapability(settings, "order");
+    if (guest.mode !== "self_service") {
+      throw new ForbiddenException("Pedidos pelo QR não estão habilitados para esta mesa");
+    }
+    this.assertActive(resolved.table.status);
+    const response = await this.database.db.transaction<PublicOrderReceipt>(async (tx) => {
       const replay = await reserveIdempotency(tx, {
         tenantId: resolved.tenant.id,
         tableId: resolved.table.id,
@@ -869,7 +1531,7 @@ export class QrService {
         input,
       });
       if (replay) {
-        return replay;
+        return replay as PublicOrderReceipt;
       }
       const productIds = [...new Set(input.items.map((item) => item.productId))];
       const productRows = await tx
@@ -884,12 +1546,27 @@ export class QrService {
           ),
         );
       const productById = new Map(productRows.map((product) => [product.id, product]));
-      let [order] = await tx
+      for (const item of input.items) {
+        const product = productById.get(item.productId);
+        if (!product?.channels.includes("qr")) {
+          throw new NotFoundException("Product not found or unavailable for QR");
+        }
+      }
+      if (productRows.some((product) => product.isAlcoholic)) {
+        this.assertAgeConfirmation(input.ageConfirmationToken, {
+          tenantId: resolved.tenant.id,
+          branchId: resolved.table.branchId,
+          tableId: resolved.table.id,
+          version: resolved.table.qrTokenVersion,
+        });
+      }
+      const [order] = await tx
         .select()
         .from(orders)
         .where(
           and(
             eq(orders.tenantId, resolved.tenant.id),
+            eq(orders.id, guest.orderId ?? "00000000-0000-0000-0000-000000000000"),
             eq(orders.branchId, resolved.table.branchId),
             eq(orders.tableId, resolved.table.id),
             inArray(orders.status, activeOrderStatuses),
@@ -898,21 +1575,7 @@ export class QrService {
         .orderBy(desc(orders.openedAt), desc(orders.createdAt))
         .limit(1);
       if (!order) {
-        [order] = await tx
-          .insert(orders)
-          .values({
-            tenantId: resolved.tenant.id,
-            branchId: resolved.table.branchId,
-            tableId: resolved.table.id,
-            guestLabel: input.guestLabel ?? null,
-            channel: "qr",
-            status: "opened",
-            openedAt: new Date(),
-          })
-          .returning();
-      }
-      if (!order) {
-        throw new ConflictException("Unable to open table order");
+        throw new ConflictException("O atendimento desta mesa não está mais disponível");
       }
       let addedSubtotalCents = 0;
       for (const item of input.items) {
@@ -962,6 +1625,9 @@ export class QrService {
           totalCents,
           notes: item.notes,
           modifiers: options.map((option) => ({ optionId: option.id })),
+          sourceChannel: "qr",
+          tableServiceSessionId: guest.tableServiceSessionId,
+          qrGuestSessionId: guest.id,
         });
       }
       const [updatedOrder] = await tx
@@ -980,6 +1646,7 @@ export class QrService {
         status: updatedOrder?.status ?? order.status,
         requiresReview: settings.reviewBeforeKds,
         itemCount: input.items.length,
+        dispatchStatus: settings.reviewBeforeKds ? ("review" as const) : ("pending" as const),
       };
       await completeIdempotency(tx, resolved.table.id, "create_order", idempotencyKey, response);
       await tx.insert(auditLogs).values({
@@ -993,16 +1660,63 @@ export class QrService {
       });
       return response;
     });
+    if (settings.reviewBeforeKds) {
+      return response;
+    }
+
+    let dispatchStatus: PublicOrderReceipt["dispatchStatus"];
+    try {
+      if (!this.ordersService) {
+        throw new Error("QR automatic dispatch service is unavailable");
+      }
+      await this.ordersService.autoSendQrOrder(
+        {
+          tenantId: resolved.tenant.id,
+          branchId: resolved.table.branchId,
+          requestId: `qr-auto-${sha256(idempotencyKey).slice(0, 16)}`,
+          permissions: [],
+        },
+        response.orderId,
+      );
+      dispatchStatus = "sent";
+    } catch (error) {
+      // The accepted public order must never be rolled back after its durable receipt.
+      // Keep it pending for the team and make the operational attention visible in audit.
+      await this.database.db.insert(auditLogs).values({
+        tenantId: resolved.tenant.id,
+        branchId: resolved.table.branchId,
+        requestId: `qr-auto-${sha256(idempotencyKey).slice(0, 16)}`,
+        action: "qr.order_auto_dispatch_attention",
+        entityType: "order",
+        entityId: response.orderId,
+        metadata: {
+          error: error instanceof Error ? error.message.slice(0, 300) : "unknown",
+        },
+      });
+      dispatchStatus = "attention";
+    }
+
+    const completedReceipt: PublicOrderReceipt = { ...response, dispatchStatus };
+    await this.database.db.transaction((tx) =>
+      completeIdempotency(tx, resolved.table.id, "create_order", idempotencyKey, completedReceipt),
+    );
+    return completedReceipt;
   }
 
   async createServiceRequest(
     token: string,
     idempotencyKey: string,
     input: PublicServiceRequestInput,
+    guestToken?: string,
   ) {
     const resolved = await this.resolveToken(token);
     const settings = await this.settingsForBranch(resolved.tenant.id, resolved.table.branchId);
-    const capability = input.type === "request_pre_bill" ? "request_pre_bill" : "call_waiter";
+    const guest = await this.requireGuestSession(resolved, guestToken);
+    const capability = ["request_pre_bill", "split_intent", "payment_preference"].includes(
+      input.type,
+    )
+      ? "request_pre_bill"
+      : "call_waiter";
     this.assertCapability(settings, capability);
     this.assertActive(resolved.table.status);
     return this.database.db.transaction(async (tx) => {
@@ -1032,18 +1746,20 @@ export class QrService {
       if (recent[0]) {
         throw new ConflictException("A similar request is already being handled");
       }
-      const [order] = await tx
-        .select({ id: orders.id })
-        .from(orders)
-        .where(
-          and(
-            eq(orders.tenantId, resolved.tenant.id),
-            eq(orders.tableId, resolved.table.id),
-            inArray(orders.status, activeOrderStatuses),
-          ),
-        )
-        .orderBy(desc(orders.createdAt))
-        .limit(1);
+      const [order] = guest.orderId
+        ? await tx
+            .select({ id: orders.id })
+            .from(orders)
+            .where(
+              and(
+                eq(orders.tenantId, resolved.tenant.id),
+                eq(orders.id, guest.orderId),
+                eq(orders.tableId, resolved.table.id),
+                inArray(orders.status, activeOrderStatuses),
+              ),
+            )
+            .limit(1)
+        : [];
       const [request] = await tx
         .insert(serviceRequests)
         .values({
@@ -1053,7 +1769,15 @@ export class QrService {
           orderId: order?.id,
           type: input.type,
           message: input.message,
+          metadata:
+            input.type === "split_intent"
+              ? { split: input.split }
+              : input.type === "payment_preference"
+                ? { payment: input.payment }
+                : {},
           requesterKeyHash: sha256(idempotencyKey),
+          tableServiceSessionId: guest.tableServiceSessionId,
+          qrGuestSessionId: guest.id,
         })
         .returning();
       if (!request) {
@@ -1074,14 +1798,20 @@ export class QrService {
         action: `qr.${input.type}`,
         entityType: "service_request",
         entityId: request.id,
-        metadata: { tableCode: resolved.table.code },
+        metadata: {
+          tableId: resolved.table.id,
+          orderId: order?.id ?? null,
+          sessionId: guest.tableServiceSessionId,
+          requestType: input.type,
+        },
       });
       return response;
     });
   }
 
-  async getPublicServiceRequest(token: string, requestId: string) {
+  async getPublicServiceRequest(token: string, requestId: string, guestToken?: string) {
     const resolved = await this.resolveToken(token);
+    const guest = await this.requireGuestSession(resolved, guestToken);
     this.assertActive(resolved.table.status);
     const [request] = await this.database.db
       .select({
@@ -1089,6 +1819,7 @@ export class QrService {
         type: serviceRequests.type,
         status: serviceRequests.status,
         message: serviceRequests.message,
+        metadata: serviceRequests.metadata,
         acknowledgedAt: serviceRequests.acknowledgedAt,
         resolvedAt: serviceRequests.resolvedAt,
         createdAt: serviceRequests.createdAt,
@@ -1100,6 +1831,9 @@ export class QrService {
           eq(serviceRequests.branchId, resolved.table.branchId),
           eq(serviceRequests.tableId, resolved.table.id),
           eq(serviceRequests.id, requestId),
+          eq(serviceRequests.qrGuestSessionId, guest.id),
+          eq(serviceRequests.tableServiceSessionId, guest.tableServiceSessionId),
+          ...(guest.orderId ? [eq(serviceRequests.orderId, guest.orderId)] : []),
         ),
       )
       .limit(1);
@@ -1118,7 +1852,7 @@ export class QrService {
     if (status) {
       conditions.push(eq(serviceRequests.status, status));
     }
-    return this.database.db
+    const rows = await this.database.db
       .select({
         id: serviceRequests.id,
         tableId: serviceRequests.tableId,
@@ -1128,6 +1862,9 @@ export class QrService {
         type: serviceRequests.type,
         status: serviceRequests.status,
         message: serviceRequests.message,
+        metadata: serviceRequests.metadata,
+        assignedWaiterUserId: tableWaiterAssignments.waiterUserId,
+        assignedWaiterName: users.name,
         acknowledgedAt: serviceRequests.acknowledgedAt,
         resolvedAt: serviceRequests.resolvedAt,
         createdAt: serviceRequests.createdAt,
@@ -1140,8 +1877,29 @@ export class QrService {
           eq(diningTables.id, serviceRequests.tableId),
         ),
       )
+      .leftJoin(
+        tableWaiterAssignments,
+        and(
+          eq(tableWaiterAssignments.tenantId, context.tenantId),
+          eq(tableWaiterAssignments.branchId, requireBranch(context)),
+          eq(tableWaiterAssignments.tableId, serviceRequests.tableId),
+          sql`${tableWaiterAssignments.endedAt} is null`,
+        ),
+      )
+      .leftJoin(users, eq(users.id, tableWaiterAssignments.waiterUserId))
       .where(and(...conditions))
       .orderBy(desc(serviceRequests.createdAt));
+    return rows.map((request) => {
+      const elapsedMs = Date.now() - request.createdAt.getTime();
+      const slaSeconds = request.type === "request_pre_bill" ? 300 : 180;
+      return {
+        ...request,
+        assignedWaiterName: request.assignedWaiterName ?? null,
+        slaDueAt: new Date(request.createdAt.getTime() + slaSeconds * 1_000).toISOString(),
+        attention:
+          request.status === "pending" && elapsedMs >= slaSeconds * 1_000 ? "escalated" : "normal",
+      };
+    });
   }
 
   async acknowledge(context: TenantContext, id: string) {
@@ -1162,6 +1920,39 @@ export class QrService {
     }
     const branchId = requireBranch(context);
     const now = new Date();
+    const [target] = await this.database.db
+      .select({ tableId: serviceRequests.tableId })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.tenantId, context.tenantId),
+          eq(serviceRequests.branchId, branchId),
+          eq(serviceRequests.id, id),
+        ),
+      )
+      .limit(1);
+    if (!target) throw new NotFoundException("Service request not found");
+    const [assignment] = await this.database.db
+      .select({ waiterUserId: tableWaiterAssignments.waiterUserId })
+      .from(tableWaiterAssignments)
+      .where(
+        and(
+          eq(tableWaiterAssignments.tenantId, context.tenantId),
+          eq(tableWaiterAssignments.branchId, branchId),
+          eq(tableWaiterAssignments.tableId, target.tableId),
+          sql`${tableWaiterAssignments.endedAt} is null`,
+        ),
+      )
+      .limit(1);
+    if (
+      assignment &&
+      assignment.waiterUserId !== context.userId &&
+      !context.permissions.includes("tenant:manage")
+    ) {
+      throw new ForbiddenException(
+        "Esta solicitaÃ§Ã£o foi direcionada ao garÃ§om responsÃ¡vel pela mesa",
+      );
+    }
     const [request] = await this.database.db
       .update(serviceRequests)
       .set(
@@ -1219,6 +2010,57 @@ export class QrService {
     return `${encoded}.${signature}`;
   }
 
+  private signAgeConfirmation(payload: AgeConfirmationPayload) {
+    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const signature = createHmac("sha256", loadEnv().QR_SIGNING_SECRET)
+      .update(encoded)
+      .digest("base64url");
+    return `${encoded}.${signature}`;
+  }
+
+  private assertAgeConfirmation(token: string | undefined, expected: TokenPayload) {
+    if (!token) {
+      throw new ForbiddenException("Age confirmation is required for alcoholic products");
+    }
+    const [encoded, signature, extra] = token.split(".");
+    if (!encoded || !signature || extra) {
+      throw new ForbiddenException("Age confirmation is invalid or expired");
+    }
+    const expectedSignature = createHmac("sha256", loadEnv().QR_SIGNING_SECRET)
+      .update(encoded)
+      .digest();
+    let supplied: Buffer;
+    try {
+      supplied = Buffer.from(signature, "base64url");
+    } catch {
+      throw new ForbiddenException("Age confirmation is invalid or expired");
+    }
+    if (
+      expectedSignature.length !== supplied.length ||
+      !timingSafeEqual(expectedSignature, supplied)
+    ) {
+      throw new ForbiddenException("Age confirmation is invalid or expired");
+    }
+    try {
+      const value = JSON.parse(
+        Buffer.from(encoded, "base64url").toString("utf8"),
+      ) as AgeConfirmationPayload;
+      if (
+        value.kind !== "age_confirmation" ||
+        value.tenantId !== expected.tenantId ||
+        value.branchId !== expected.branchId ||
+        value.tableId !== expected.tableId ||
+        value.version !== expected.version ||
+        !Number.isInteger(value.expiresAt) ||
+        value.expiresAt <= Date.now()
+      ) {
+        throw new Error("invalid");
+      }
+    } catch {
+      throw new ForbiddenException("Age confirmation is invalid or expired");
+    }
+  }
+
   private verify(token: string): TokenPayload {
     const [encoded, signature, extra] = token.split(".");
     if (!encoded || !signature || extra) {
@@ -1251,8 +2093,8 @@ export class QrService {
     }
   }
 
-  private async settingsForBranch(tenantId: string, branchId: string) {
-    await this.activateScheduledExperience(tenantId, branchId);
+  private async settingsForBranch(tenantId: string, branchId: string, activateScheduled = true) {
+    if (activateScheduled) await this.activateScheduledExperience(tenantId, branchId);
     const [settings] = await this.database.db
       .select()
       .from(qrBranchSettings)
@@ -1397,6 +2239,96 @@ export class QrService {
     }
   }
 
+  private async requireGuestSession(
+    resolved: { tenant: typeof tenants.$inferSelect; table: typeof diningTables.$inferSelect },
+    token: string | undefined,
+  ): Promise<PublicGuestSession> {
+    if (!token) throw new ForbiddenException("Confirme que você está nesta mesa para continuar");
+    const now = new Date();
+    const [row] = await this.database.db
+      .select({ guest: qrGuestSessions, service: tableServiceSessions })
+      .from(qrGuestSessions)
+      .innerJoin(
+        tableServiceSessions,
+        eq(tableServiceSessions.id, qrGuestSessions.tableServiceSessionId),
+      )
+      .where(
+        and(
+          eq(qrGuestSessions.tokenHash, sha256(token)),
+          eq(qrGuestSessions.tenantId, resolved.tenant.id),
+          eq(qrGuestSessions.branchId, resolved.table.branchId),
+          eq(qrGuestSessions.status, "active"),
+          gte(qrGuestSessions.expiresAt, now),
+          eq(tableServiceSessions.tableId, resolved.table.id),
+          eq(tableServiceSessions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new ForbiddenException("A confirmação desta mesa expirou");
+    await this.database.db
+      .update(qrGuestSessions)
+      .set({ lastUsedAt: now, updatedAt: now })
+      .where(eq(qrGuestSessions.id, row.guest.id));
+    return {
+      id: row.guest.id,
+      tableServiceSessionId: row.guest.tableServiceSessionId,
+      expiresAt: row.guest.expiresAt,
+      mode: row.service.mode,
+      tabVisibility: row.service.tabVisibility,
+      orderId: row.service.orderId,
+    };
+  }
+
+  private async revokeBranchServiceSessions(
+    context: TenantContext,
+    branchId: string,
+    reason: string,
+  ) {
+    const rows = await this.database.db.transaction(async (tx) => {
+      const sessions = await tx
+        .update(tableServiceSessions)
+        .set({
+          status: "revoked",
+          revokedAt: new Date(),
+          revokedByUserId: context.userId ?? null,
+          revokeReason: reason,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(tableServiceSessions.tenantId, context.tenantId),
+            eq(tableServiceSessions.branchId, branchId),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .returning({ id: tableServiceSessions.id });
+      if (sessions.length) {
+        await tx
+          .update(qrGuestSessions)
+          .set({
+            status: "revoked",
+            revokedAt: new Date(),
+            revokedByUserId: context.userId ?? null,
+            updatedAt: new Date(),
+          })
+          .where(
+            inArray(
+              qrGuestSessions.tableServiceSessionId,
+              sessions.map((session) => session.id),
+            ),
+          );
+      }
+      return sessions;
+    });
+    return rows.length;
+  }
+
+  private presenceCodeDigest(code: string) {
+    return createHmac("sha256", loadEnv().QR_SIGNING_SECRET)
+      .update(`qr-presence:${code}`)
+      .digest("hex");
+  }
+
   private assertActive(status: typeof diningTables.$inferSelect.status) {
     if (!isTableActive(status)) {
       throw new ConflictException("Table service must be activated by the team first");
@@ -1466,6 +2398,12 @@ export function sanitizeQrExperienceAssetUrl(value: unknown): string | null | un
 function defaultSettings(branchId: string): QrBranchSettings {
   return {
     branchId,
+    mode: "waiter_assisted",
+    presenceMethods: ["code"],
+    tabVisibility: "shared",
+    presenceCodeTtlMinutes: 30,
+    guestSessionTtlMinutes: 720,
+    trustedNetworkCidrs: [],
     capabilities: defaultCapabilities,
     reviewBeforeKds: false,
     template: "classic",
@@ -1561,6 +2499,12 @@ function mapExperienceRevision(
 function mapSettings(row: typeof qrBranchSettings.$inferSelect): QrBranchSettings {
   return {
     branchId: row.branchId,
+    mode: row.mode,
+    presenceMethods: row.presenceMethods,
+    tabVisibility: row.tabVisibility,
+    presenceCodeTtlMinutes: row.presenceCodeTtlMinutes,
+    guestSessionTtlMinutes: row.guestSessionTtlMinutes,
+    trustedNetworkCidrs: row.trustedNetworkCidrs,
     capabilities: row.capabilities,
     reviewBeforeKds: row.reviewBeforeKds,
     template: isQrTemplate(row.template) ? row.template : "classic",
@@ -1572,6 +2516,27 @@ function mapSettings(row: typeof qrBranchSettings.$inferSelect): QrBranchSetting
 
 function isTableActive(status: typeof diningTables.$inferSelect.status) {
   return !["free", "reserved", "blocked"].includes(status);
+}
+
+function sessionVisibilityIsOwn(value: PublicGuestSession["tabVisibility"]) {
+  return value === "own_items";
+}
+
+function ipv4InCidr(ip: string, cidr: string) {
+  const [network, prefixRaw] = cidr.split("/");
+  const prefix = Number(prefixRaw);
+  if (!network || !Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
+  const asNumber = (value: string) => {
+    const parts = value.replace(/^::ffff:/, "").split(".");
+    if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255))
+      return null;
+    return parts.reduce((accumulator, part) => accumulator * 256 + Number(part), 0);
+  };
+  const candidate = asNumber(ip);
+  const base = asNumber(network);
+  if (candidate === null || base === null) return false;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return (candidate & mask) === (base & mask);
 }
 
 function sha256(value: string) {

@@ -94,13 +94,24 @@ test.describe("POS: open PDV, add products, process payment", () => {
     const freeTable = tableList.find((t) => t.code === "M02") ?? tableList[0];
 
     const opened = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "table", branchId: context.branchId, tableId: freeTable.id, peopleCount: 3 },
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: freeTable.id,
+        peopleCount: 3,
+        idempotencyKey: `e2e-pos-open-${Date.now()}`,
+      },
     });
     expect(opened.ok()).toBe(true);
     const order = await opened.json();
 
     const item = await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: productList[0].id, quantity: 2, notes: "POS E2E" },
+      data: {
+        productId: productList[0].id,
+        quantity: 2,
+        notes: "POS E2E",
+        idempotencyKey: `e2e-pos-item-${Date.now()}`,
+      },
     });
     expect(item.ok()).toBe(true);
     const orderItem = await item.json();
@@ -140,12 +151,22 @@ test.describe("POS: open PDV, add products, process payment", () => {
     const table = tableList.find((t) => t.code === "M04") ?? tableList[0];
 
     const opened = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 1 },
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: table.id,
+        peopleCount: 1,
+        idempotencyKey: `e2e-receipt-open-${Date.now()}`,
+      },
     });
     const order = await opened.json();
 
     const item = await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: productList[0].id, quantity: 1 },
+      data: {
+        productId: productList[0].id,
+        quantity: 1,
+        idempotencyKey: `e2e-receipt-item-${Date.now()}`,
+      },
     });
     const orderItem = await item.json();
 

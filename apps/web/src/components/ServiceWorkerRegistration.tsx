@@ -9,12 +9,6 @@ export function ServiceWorkerRegistration() {
       return;
     }
 
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "SYNC_STARTED") {
-        console.info("Background sync started");
-      }
-    };
-
     serviceWorker
       .register("/sw.js")
       .then((registration) => {
@@ -36,10 +30,7 @@ export function ServiceWorkerRegistration() {
         console.warn("Service worker indisponível; o sistema continuará online.", error);
       });
 
-    serviceWorker.addEventListener?.("message", handleMessage);
-    return () => {
-      serviceWorker.removeEventListener?.("message", handleMessage);
-    };
+    return undefined;
   }, []);
 
   return null;

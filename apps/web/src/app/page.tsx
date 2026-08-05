@@ -66,6 +66,7 @@ const modules = [
 
 const plans = [
   {
+    code: "starter",
     name: "Starter",
     price: "R$ 149",
     body: "Para casas começando a organizar PDV, mesas e caixa.",
@@ -73,6 +74,7 @@ const plans = [
     featured: false,
   },
   {
+    code: "professional",
     name: "Professional",
     price: "R$ 299",
     body: "Para operação completa com salão, KDS, estoque e relatórios.",
@@ -80,6 +82,7 @@ const plans = [
     featured: true,
   },
   {
+    code: "premium",
     name: "Premium",
     price: "R$ 499",
     body: "Para multiunidade e operação com acompanhamento prioritário.",
@@ -174,9 +177,9 @@ export default function HomePage() {
             </a>
             <a
               className="landing-button landing-button-primary landing-button-small"
-              href="/teste-gratis"
+              href="/contato?produto=giromesa&origin=header"
             >
-              Começar teste grátis <ArrowRight size={16} />
+              Solicitar acesso piloto <ArrowRight size={16} />
             </a>
           </div>
 
@@ -192,8 +195,11 @@ export default function HomePage() {
               <a href="#ecossistema">DoseClub</a>
               <a href="/manual">Manual</a>
               <a href="/login">Entrar</a>
-              <a className="landing-button landing-button-primary" href="/teste-gratis">
-                Começar teste grátis
+              <a
+                className="landing-button landing-button-primary"
+                href="/contato?produto=giromesa&origin=mobile_nav"
+              >
+                Solicitar acesso piloto
               </a>
             </nav>
           </details>
@@ -215,8 +221,11 @@ export default function HomePage() {
                 inteligente e prática para a equipe do seu bar ou restaurante.
               </p>
               <div className="landing-hero-actions">
-                <a className="landing-button landing-button-primary" href="/teste-gratis">
-                  Testar grátis por 7 dias <ArrowRight size={18} />
+                <a
+                  className="landing-button landing-button-primary"
+                  href="/contato?produto=giromesa&origin=hero"
+                >
+                  Solicitar acesso ao piloto <ArrowRight size={18} />
                 </a>
                 <a className="landing-button landing-button-secondary" href="/m/bar-aurora-demo">
                   <QrCode size={18} /> Explorar cardápio QR
@@ -295,7 +304,11 @@ export default function HomePage() {
                   <Icon size={28} strokeWidth={1.6} />
                   <h3>{title}</h3>
                   <p>{body}</p>
-                  <a href={"href" in module ? module.href : "/teste-gratis"}>
+                  <a
+                    href={
+                      "href" in module ? module.href : "/contato?produto=giromesa&origin=module"
+                    }
+                  >
                     {"cta" in module ? module.cta : "Ativar no meu ambiente"}
                     <ArrowRight size={15} />
                   </a>
@@ -361,16 +374,16 @@ export default function HomePage() {
         <section className="landing-pricing" id="planos">
           <div className="landing-container">
             <header className="landing-section-heading landing-section-heading-centered">
-              <span className="landing-section-kicker">Teste grátis sem cartão</span>
-              <h2>Planos claros antes da ativação.</h2>
+              <span className="landing-section-kicker">Programa piloto por convite</span>
+              <h2>Planos claros para uma implantação acompanhada.</h2>
               <p>
-                Você testa por 7 dias e só escolhe a continuidade quando a operação fizer sentido.
+                A ativação é alinhada com a operação antes do primeiro turno. Valores e recursos são
+                confirmados no momento da contratação.
               </p>
             </header>
             <div className="landing-plan-grid">
               {plans.map((plan) => (
                 <article className={plan.featured ? "is-featured" : ""} key={plan.name}>
-                  {plan.featured ? <span className="landing-plan-label">Mais indicado</span> : null}
                   <h3>{plan.name}</h3>
                   <div className="landing-price">
                     <strong>{plan.price}</strong>
@@ -388,9 +401,9 @@ export default function HomePage() {
                     className={`landing-button ${
                       plan.featured ? "landing-button-primary" : "landing-button-secondary"
                     }`}
-                    href="/teste-gratis"
+                    href={`/contato?produto=giromesa&plan=${plan.code}&origin=pricing`}
                   >
-                    Testar este plano
+                    Solicitar este plano
                   </a>
                 </article>
               ))}
@@ -436,11 +449,14 @@ export default function HomePage() {
             <span className="landing-section-kicker">Próximo passo</span>
             <h2>Pronto para acelerar sua operação?</h2>
             <p>
-              Comece sem cartão e valide mesas, pedidos, caixa, relatórios e equipe em um ambiente
-              próprio.
+              Solicite acesso ao programa piloto para validar mesas, pedidos, caixa, relatórios e
+              equipe em um ambiente acompanhado.
             </p>
-            <a className="landing-button landing-button-primary" href="/teste-gratis">
-              Começar teste grátis agora <ArrowRight size={20} />
+            <a
+              className="landing-button landing-button-primary"
+              href="/contato?produto=giromesa&origin=final_cta"
+            >
+              Solicitar acesso piloto <ArrowRight size={20} />
             </a>
           </div>
         </section>

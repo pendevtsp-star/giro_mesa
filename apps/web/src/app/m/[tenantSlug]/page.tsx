@@ -4,58 +4,11 @@ import { Clock, Leaf, Plus, Search, Sparkles, Utensils } from "lucide-react";
 import { use, useEffect, useMemo, useState } from "react";
 import { formatMoney, getPublicMenu, type PublicMenuResponse } from "../../../lib/giromesa-api";
 
-const fallbackMenu: PublicMenuResponse = {
-  tenant: {
-    id: "demo",
-    name: "Bar Aurora",
-    slug: "bar-aurora-demo",
-    branding: {
-      displayName: "Bar Aurora",
-      logoUrl: null,
-      themeMode: "light",
-      accentPreset: "emerald",
-    },
-  },
-  categories: [
-    { id: "all", branchId: null, name: "Todos", sortOrder: 0, isActive: true },
-    { id: "bebidas", branchId: null, name: "Bebidas", sortOrder: 1, isActive: true },
-  ],
-  products: [
-    {
-      id: "demo-burger",
-      name: "Burger Classico",
-      description: "Blend da casa, queijo prato, molho especial e pao brioche.",
-      categoryId: "all",
-      priceCents: 3200,
-      imageUrl: null,
-      isAvailable: true,
-      channels: ["qr"],
-      isClubEligible: false,
-      bottleVolumeMl: null,
-      defaultDoseMl: 50,
-      spiritType: null,
-    },
-    {
-      id: "demo-whisky",
-      name: "Single Malt 12 anos",
-      description: "Rotulo elegivel ao Dose Club, com dose padrao de 50ml.",
-      categoryId: "bebidas",
-      priceCents: 42000,
-      imageUrl: null,
-      isAvailable: true,
-      channels: ["qr"],
-      isClubEligible: true,
-      bottleVolumeMl: 1000,
-      defaultDoseMl: 50,
-      spiritType: "whisky",
-    },
-  ],
-};
-
 export default function MenuPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = use(params);
-  const [menu, setMenu] = useState<PublicMenuResponse>(fallbackMenu);
+  const [menu, setMenu] = useState<PublicMenuResponse | null>(null);
   const [isLoadingMenu, setIsLoadingMenu] = useState(true);
+  const [menuError, setMenuError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState("all");
   const [visibleCount, setVisibleCount] = useState(20);
@@ -63,6 +16,7 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
   useEffect(() => {
     let ignore = false;
     setIsLoadingMenu(true);
+    setMenuError(null);
     getPublicMenu(tenantSlug)
       .then((response) => {
         if (!ignore) {
@@ -73,7 +27,10 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
       })
       .catch(() => {
         if (!ignore) {
-          setMenu(fallbackMenu);
+          setMenu(null);
+          setMenuError(
+            "Não foi possível carregar este cardápio. Verifique a conexão e tente novamente.",
+          );
           setIsLoadingMenu(false);
         }
       });
@@ -86,18 +43,18 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
   const categories = useMemo(
     () => [
       { id: "all", name: "Todos" },
-      ...menu.categories.filter((category) => category.id !== "all"),
+      ...(menu?.categories ?? []).filter((category) => category.id !== "all"),
     ],
-    [menu.categories],
+    [menu?.categories],
   );
-  const filteredProducts = menu.products.filter((product) => {
+  const filteredProducts = (menu?.products ?? []).filter((product) => {
     const matchesCategory = categoryId === "all" || product.categoryId === categoryId;
     const haystack = `${product.name} ${product.description ?? ""}`.toLowerCase();
     return matchesCategory && haystack.includes(query.toLowerCase());
   });
   const pagedProducts = filteredProducts.slice(0, visibleCount);
   const hasMore = filteredProducts.length > visibleCount;
-  const branding = menu.tenant.branding ?? fallbackMenu.tenant.branding;
+  const branding = menu?.tenant.branding;
   const brandInitial = branding?.displayName.slice(0, 1).toUpperCase() || "G";
 
   return (
@@ -119,7 +76,7 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
         <span className="eyebrow">
           <Utensils size={18} /> Cardápio digital
         </span>
-        <h1>{branding?.displayName ?? menu.tenant.name}</h1>
+        <h1>{branding?.displayName ?? tenantSlug.replaceAll("-", " ")}</h1>
         <p>Pratos da casa, bebidas geladas e rótulos elegíveis ao Dose Club.</p>
       </header>
 
@@ -155,6 +112,19 @@ export default function MenuPage({ params }: { params: Promise<{ tenantSlug: str
       </section>
 
       <section className="menu-list">
+        {menuError ? (
+          <div className="empty-state" role="alert">
+            <strong>Cardápio indisponível</strong>
+            <p>{menuError}</p>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => window.location.reload()}
+            >
+              Tentar novamente
+            </button>
+          </div>
+        ) : null}
         {pagedProducts.map((product) => (
           <article className="menu-item" key={product.id}>
             <div className="menu-thumb" aria-hidden="true">

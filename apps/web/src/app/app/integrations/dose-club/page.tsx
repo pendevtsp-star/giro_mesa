@@ -12,13 +12,20 @@ import {
 import { useEffect, useState } from "react";
 import {
   ApiError,
+  activateClubWhiskyIntegration,
   type ClubWhiskyIntegrationConfig,
   configureClubWhiskyIntegration,
   createDoseClubHandoff,
   getClubWhiskyConfig,
   getEcosystemEntitlements,
   getSession,
+  recordClubWhiskyHealth,
+  revokeClubWhiskyIntegration,
 } from "../../../../lib/giromesa-api";
+import {
+  availableIntegrationLifecycleActions,
+  integrationStateDetails,
+} from "../../../../lib/integration-state";
 
 type IntegrationForm = {
   branchId: string;
@@ -39,6 +46,8 @@ export default function DoseClubIntegrationPage() {
   const [status, setStatus] = useState("Carregando configuração.");
   const [isBusy, setIsBusy] = useState(false);
   const [canAccessDoseClub, setCanAccessDoseClub] = useState(false);
+  const integrationState = integrationStateDetails(config?.status);
+  const lifecycleActions = availableIntegrationLifecycleActions(integrationState.state);
 
   useEffect(() => {
     let ignore = false;
@@ -130,6 +139,46 @@ export default function DoseClubIntegrationPage() {
       window.location.assign(handoff.targetUrl);
     } catch (error) {
       setStatus(readError(error, "Não foi possível iniciar o acesso ao Dose Club."));
+      setIsBusy(false);
+    }
+  }
+
+  async function transitionLifecycle(action: "activate" | "healthy" | "degraded" | "revoke") {
+    if (config?.lifecycleVersion === undefined) return;
+    const promptLabel =
+      action === "activate"
+        ? "Informe a evidência da homologação conjunta:"
+        : action === "revoke"
+          ? "Informe o motivo da revogação:"
+          : "Informe o resultado verificável do health check:";
+    const detail = window.prompt(promptLabel)?.trim();
+    if (!detail) return;
+    if (action === "revoke" && !window.confirm("A revogação bloqueia imediatamente o conector.")) {
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const next =
+        action === "activate"
+          ? await activateClubWhiskyIntegration({
+              expectedVersion: config.lifecycleVersion,
+              evidence: detail,
+            })
+          : action === "revoke"
+            ? await revokeClubWhiskyIntegration({
+                expectedVersion: config.lifecycleVersion,
+                reason: detail,
+              })
+            : await recordClubWhiskyHealth({
+                expectedVersion: config.lifecycleVersion,
+                healthy: action === "healthy",
+                detail,
+              });
+      setConfig((current) => ({ ...current, ...next }) as ClubWhiskyIntegrationConfig);
+      setStatus(`Lifecycle atualizado para ${integrationStateDetails(next.status).label}.`);
+    } catch (error) {
+      setStatus(readError(error, "Não foi possível atualizar o lifecycle da integração."));
+    } finally {
       setIsBusy(false);
     }
   }
@@ -229,8 +278,51 @@ export default function DoseClubIntegrationPage() {
             <span
               className={`gm-badge ${config?.status === "active" ? "gm-badge-good" : "gm-badge-warn"}`}
             >
-              {config?.status ?? "carregando"}
+              {integrationState.label}
             </span>
+          </div>
+
+          <div className="ticket-actions">
+            {lifecycleActions.some((action) => action === "activate") ? (
+              <button
+                className="button primary"
+                type="button"
+                disabled={isBusy}
+                onClick={() => void transitionLifecycle("activate")}
+              >
+                Aprovar homologação
+              </button>
+            ) : null}
+            {lifecycleActions.some((action) => action === "health") ? (
+              <>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void transitionLifecycle("healthy")}
+                >
+                  Health aprovado
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void transitionLifecycle("degraded")}
+                >
+                  Marcar degradada
+                </button>
+              </>
+            ) : null}
+            {lifecycleActions.some((action) => action === "revoke") ? (
+              <button
+                className="button secondary"
+                type="button"
+                disabled={isBusy}
+                onClick={() => void transitionLifecycle("revoke")}
+              >
+                Revogar integração
+              </button>
+            ) : null}
           </div>
 
           <div className="billing-steps">
@@ -291,6 +383,13 @@ export default function DoseClubIntegrationPage() {
             Contrato {config?.contractVersion ?? "2026-07-30"} · autoridade de estoque{" "}
             {config?.inventoryAuthority ?? "giromesa"}
           </small>
+          <small>Responsável: {config?.owner ?? "Administrador do tenant"}</small>
+          <small>Dependência: {config?.dependency ?? "Homologação Dose Club"}</small>
+          <small>Contingência: {config?.contingency ?? integrationState.contingency}</small>
+          <small>
+            Lifecycle v{config?.lifecycleVersion ?? 0} · motivo {config?.lifecycleReason ?? "n/a"}
+          </small>
+          <small>Último health: {config?.lastHealthAt ?? "ainda não executado"}</small>
         </aside>
       </section>
     </main>

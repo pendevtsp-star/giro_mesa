@@ -1,8 +1,9 @@
 import { BadRequestException, Controller, Headers, Inject, Query, Sse } from "@nestjs/common";
-import { distinctUntilChanged, from, interval, map, startWith, switchMap } from "rxjs";
+import { from, map, switchMap } from "rxjs";
 import type { HeaderRecord } from "../../common/http";
 import { requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
+import { OperationalRealtimeService } from "./operational-realtime.service";
 import { PosService } from "./pos.service";
 
 @Controller("realtime")
@@ -10,6 +11,8 @@ export class RealtimeController {
   constructor(
     @Inject(PosService) private readonly posService: PosService,
     @Inject(AuthService) private readonly authService: AuthService,
+    @Inject(OperationalRealtimeService)
+    private readonly realtime: OperationalRealtimeService,
   ) {}
 
   @Sse("events")
@@ -19,19 +22,17 @@ export class RealtimeController {
     }
 
     return from(this.resolveContext(headers)).pipe(
-      switchMap((context) =>
-        interval(5000).pipe(
-          startWith(0),
-          switchMap(() => from(this.posService.getOperationalEventSnapshot(context, branchId))),
-          distinctUntilChanged((previous, current) => previous.signature === current.signature),
-          map((snapshot) => ({
-            id: snapshot.signature,
-            type: "operation.changed",
-            retry: 5000,
-            data: snapshot,
-          })),
-        ),
-      ),
+      switchMap(async (context) => {
+        await this.posService.listOperationalEvents(context, branchId, 0, 1);
+        return context;
+      }),
+      switchMap((context) => this.realtime.stream(context.tenantId, branchId)),
+      map((batch) => ({
+        id: String(batch.toVersion),
+        type: "operation.delta",
+        retry: 1_000,
+        data: batch,
+      })),
     );
   }
 

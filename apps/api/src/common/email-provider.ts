@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { safeFetch, UnsafeOutboundUrlError } from "@giromesa/config";
 import nodemailer from "nodemailer";
+import { sanitizeErrorMessage } from "./sensitive-data";
 
 export type EmailMessage = {
   tenantId?: string;
@@ -90,6 +92,8 @@ export class SmtpEmailProvider implements EmailProvider {
 }
 
 export class ResendEmailProvider implements EmailProvider {
+  constructor(private readonly request: typeof safeFetch = safeFetch) {}
+
   async send(message: EmailMessage): Promise<EmailDelivery> {
     const apiKey = requiredEnv("RESEND_API_KEY");
     const from = requiredEnv("EMAIL_FROM");
@@ -99,7 +103,7 @@ export class ResendEmailProvider implements EmailProvider {
 
     for (let attempt = 1; attempt <= RESEND_RETRY_ATTEMPTS; attempt++) {
       try {
-        const response = await fetch(endpoint, {
+        const response = await this.request(endpoint, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -137,6 +141,9 @@ export class ResendEmailProvider implements EmailProvider {
         if (error instanceof ResendPermanentError) {
           throw error;
         }
+        if (error instanceof UnsafeOutboundUrlError) {
+          throw new ResendPermanentError(error.message);
+        }
         lastError = error;
       }
 
@@ -156,10 +163,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
+  return sanitizeErrorMessage(error);
 }
 
 export function createEmailProvider() {
@@ -215,7 +219,13 @@ function parseResendResponse(rawBody: string): { id?: string; message?: string }
 }
 
 function isPlaceholderSmtpHost(host: string | undefined) {
-  return !host || host === "smtp.example.com" || host.endsWith(".example.com");
+  return (
+    !host ||
+    host === "smtp.example.com" ||
+    host.endsWith(".example.com") ||
+    host.endsWith(".invalid") ||
+    host.endsWith(".test")
+  );
 }
 
 function requiredEnv(name: string) {

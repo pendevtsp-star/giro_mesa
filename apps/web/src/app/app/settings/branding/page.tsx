@@ -11,7 +11,7 @@ import {
 } from "../../../../lib/giromesa-api";
 
 const fallbackBranding: TenantBranding = {
-  displayName: "Bar Aurora",
+  displayName: "Seu estabelecimento",
   logoUrl: null,
   themeMode: "light",
   accentPreset: "emerald",
@@ -47,7 +47,9 @@ export default function BrandingSettingsPage() {
       })
       .catch(() => {
         if (!ignore) {
-          setStatus("Prévia ilustrativa disponível enquanto a identidade não é carregada.");
+          setStatus(
+            "Não foi possível carregar a identidade. Tente novamente antes de salvar alterações.",
+          );
         }
       });
 

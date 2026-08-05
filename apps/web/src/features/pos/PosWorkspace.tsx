@@ -1,3 +1,4 @@
+import { Dialog } from "@giromesa/ui";
 import {
   Banknote,
   ChefHat,
@@ -8,7 +9,6 @@ import {
   Printer,
   ReceiptText,
   UserRound,
-  X,
 } from "lucide-react";
 import { demoTicketLines, paymentMethodOptions } from "../../lib/fixtures/app-dashboard-demo";
 import { readQuantity } from "../../lib/formatters/app-dashboard";
@@ -379,62 +379,45 @@ export function ModifierSelectorDialog({
   onConfirm,
 }: ModifierSelectorDialogProps) {
   return (
-    <div className="modifier-modal-backdrop" role="presentation">
-      <section
-        className="modifier-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Opções de ${product.name}`}
-      >
-        <div className="panel-title">
-          <div>
-            <span className="section-kicker">Personalize o item</span>
-            <h2>{product.name}</h2>
-          </div>
-          <button className="icon-button" onClick={onClose} type="button" title="Fechar">
-            <X size={18} />
-          </button>
-        </div>
-        {groups.map((group) => (
-          <fieldset className="modifier-choice-group" key={group.id}>
-            <legend>
-              {group.name} {group.isRequired ? "(obrigatório)" : ""}
-            </legend>
-            {group.options.map((option) => (
-              <label key={option.id}>
-                <input
-                  checked={selectedModifierIds.includes(option.id)}
-                  onChange={(event) =>
-                    onSelectedModifierIdsChange((current) =>
-                      event.target.checked
-                        ? [
-                            ...current.filter(
-                              (id) => !group.options.some((item) => item.id === id),
-                            ),
-                            option.id,
-                          ]
-                        : current.filter((id) => id !== option.id),
-                    )
-                  }
-                  type="checkbox"
-                />{" "}
-                <span>{option.name}</span>
-                <strong>
-                  {option.priceDeltaCents ? `+ ${formatMoney(option.priceDeltaCents)}` : "Incluído"}
-                </strong>
-              </label>
-            ))}
-          </fieldset>
-        ))}
-        <div className="modifier-modal-actions">
-          <button className="button secondary" onClick={onClose} type="button">
-            Cancelar
-          </button>
-          <button className="button primary" onClick={onConfirm} type="button">
-            Adicionar ao pedido
-          </button>
-        </div>
-      </section>
-    </div>
+    <Dialog className="modifier-modal" onClose={onClose} open title={`Opções de ${product.name}`}>
+      <span className="section-kicker">Personalize o item</span>
+      {groups.map((group) => (
+        <fieldset className="modifier-choice-group" key={group.id}>
+          <legend>
+            {group.name} {group.isRequired ? "(obrigatório)" : ""}
+          </legend>
+          {group.options.map((option) => (
+            <label key={option.id}>
+              <input
+                checked={selectedModifierIds.includes(option.id)}
+                onChange={(event) =>
+                  onSelectedModifierIdsChange((current) =>
+                    event.target.checked
+                      ? [
+                          ...current.filter((id) => !group.options.some((item) => item.id === id)),
+                          option.id,
+                        ]
+                      : current.filter((id) => id !== option.id),
+                  )
+                }
+                type="checkbox"
+              />{" "}
+              <span>{option.name}</span>
+              <strong>
+                {option.priceDeltaCents ? `+ ${formatMoney(option.priceDeltaCents)}` : "Incluído"}
+              </strong>
+            </label>
+          ))}
+        </fieldset>
+      ))}
+      <div className="modifier-modal-actions">
+        <button className="button secondary" onClick={onClose} type="button">
+          Cancelar
+        </button>
+        <button className="button primary" onClick={onConfirm} type="button">
+          Adicionar ao pedido
+        </button>
+      </div>
+    </Dialog>
   );
 }

@@ -4,16 +4,18 @@ import {
   branches,
   categories,
   fiscalDocuments,
+  fiscalOperations,
   fiscalSettings,
   operationalEvents,
   orderItems,
   orders,
+  outboxEvents,
   payments,
   products,
   tenants,
 } from "@giromesa/db";
 import { NotFoundException } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -33,6 +35,8 @@ const databaseUrl =
 async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(auditLogs).where(eq(auditLogs.tenantId, tenantId));
   await db.delete(operationalEvents).where(eq(operationalEvents.tenantId, tenantId));
+  await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));
+  await db.delete(fiscalOperations).where(eq(fiscalOperations.tenantId, tenantId));
   await db.delete(fiscalDocuments).where(eq(fiscalDocuments.tenantId, tenantId));
   await db.delete(fiscalSettings).where(eq(fiscalSettings.tenantId, tenantId));
   await db.delete(payments).where(eq(payments.tenantId, tenantId));
@@ -119,16 +123,23 @@ async function createFiscalFixture(db: Db, name: string) {
     status: "served",
   });
 
-  await db.insert(payments).values({
-    tenantId: tenant.id,
-    orderId: order.id,
-    provider: "manual",
-    method: "pix_manual",
-    status: "confirmed",
-    amountCents: 1800,
-    idempotencyKey: `${name}-fiscal-payment`,
-    confirmedAt: new Date(),
-  });
+  const [payment] = await db
+    .insert(payments)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      orderId: order.id,
+      provider: "manual",
+      method: "pix_manual",
+      status: "confirmed",
+      amountCents: 1800,
+      idempotencyKey: `${name}-fiscal-payment`,
+      confirmedAt: new Date(),
+    })
+    .returning();
+  if (!payment) {
+    throw new Error("Failed to create fiscal test payment");
+  }
 
   await db.insert(fiscalSettings).values({
     tenantId: tenant.id,
@@ -147,10 +158,11 @@ async function createFiscalFixture(db: Db, name: string) {
     nextNumber: 1,
     certificateSecretRef: "FISCAL_CERTIFICATE_A1",
     cscSecretRef: "FISCAL_CSC_TOKEN",
+    providerMetadata: { simulator: true, registeredAt: new Date().toISOString() },
     config: { test: true },
   });
 
-  return { tenant, branch, order };
+  return { tenant, branch, order, payment };
 }
 
 runIntegration("fiscal document database behavior", () => {
@@ -159,6 +171,8 @@ runIntegration("fiscal document database behavior", () => {
   let fiscalService: FiscalService;
   let tenantA: Awaited<ReturnType<typeof createFiscalFixture>>;
   let tenantB: Awaited<ReturnType<typeof createFiscalFixture>>;
+  let tenantPartialRefund: Awaited<ReturnType<typeof createFiscalFixture>>;
+  let tenantFullRefund: Awaited<ReturnType<typeof createFiscalFixture>>;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
@@ -166,6 +180,8 @@ runIntegration("fiscal document database behavior", () => {
     fiscalService = new FiscalService({ db } as DatabaseService);
     tenantA = await createFiscalFixture(db, "Tenant A");
     tenantB = await createFiscalFixture(db, "Tenant B");
+    tenantPartialRefund = await createFiscalFixture(db, "Tenant Partial Refund");
+    tenantFullRefund = await createFiscalFixture(db, "Tenant Full Refund");
   });
 
   afterAll(async () => {
@@ -174,6 +190,12 @@ runIntegration("fiscal document database behavior", () => {
     }
     if (tenantB?.tenant.id) {
       await cleanupTenant(db, tenantB.tenant.id);
+    }
+    if (tenantPartialRefund?.tenant.id) {
+      await cleanupTenant(db, tenantPartialRefund.tenant.id);
+    }
+    if (tenantFullRefund?.tenant.id) {
+      await cleanupTenant(db, tenantFullRefund.tenant.id);
     }
     await pool.end();
   });
@@ -230,5 +252,86 @@ runIntegration("fiscal document database behavior", () => {
         tenantB.order.id,
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("meters NFC-e per branch and month without enforcing or enabling billing", async () => {
+    const context = {
+      tenantId: tenantA.tenant.id,
+      branchId: tenantA.branch.id,
+      requestId: "fiscal-usage",
+      permissions: ["fiscal:read", "fiscal:configure"],
+    };
+    const now = new Date();
+    const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    await fiscalService.updateUsageSettings(context, {
+      branchId: tenantA.branch.id,
+      monthlyAllowance: 1,
+      alertAtPercent: 80,
+    });
+    await fiscalService.createPendingOrderDocument(context, tenantA.order.id);
+    const [document] = await db
+      .update(fiscalDocuments)
+      .set({ status: "authorized", issuedAt: now })
+      .where(
+        and(
+          eq(fiscalDocuments.tenantId, tenantA.tenant.id),
+          eq(fiscalDocuments.orderId, tenantA.order.id),
+        ),
+      )
+      .returning();
+    expect(document).toBeDefined();
+
+    const usage = await fiscalService.getUsage(context, tenantA.branch.id, period);
+    expect(usage).toMatchObject({
+      branchId: tenantA.branch.id,
+      period,
+      issuedDocuments: 1,
+      monthlyAllowance: 1,
+      remaining: 0,
+      exceededBy: 0,
+      alert: "approaching",
+      chargingEnabled: false,
+      enforcementEnabled: false,
+    });
+
+    const otherTenantUsage = await fiscalService.getUsage(
+      { ...context, tenantId: tenantB.tenant.id, branchId: tenantB.branch.id },
+      tenantB.branch.id,
+      period,
+    );
+    expect(otherTenantUsage.issuedDocuments).toBe(0);
+  });
+
+  it.each([
+    ["partial", () => tenantPartialRefund, 900],
+    ["full", () => tenantFullRefund, 1800],
+  ])("fails closed for a %s refund before issuing the original sale document", async (_label, fixture, amountCents) => {
+    const current = fixture();
+    await db.insert(payments).values({
+      tenantId: current.tenant.id,
+      branchId: current.branch.id,
+      orderId: current.order.id,
+      provider: "manual",
+      method: current.payment.method,
+      status: "refunded",
+      amountCents,
+      paymentType: "refund",
+      originalPaymentId: current.payment.id,
+      idempotencyKey: `${current.tenant.id}-refund-${amountCents}`,
+      confirmedAt: new Date(),
+    });
+
+    await expect(
+      fiscalService.createPendingOrderDocument(
+        {
+          tenantId: current.tenant.id,
+          branchId: current.branch.id,
+          requestId: `fiscal-refund-${amountCents}`,
+          permissions: ["fiscal:read", "fiscal:manage"],
+        },
+        current.order.id,
+      ),
+    ).rejects.toThrow(/net payment after refunds does not cover the original sale/i);
   });
 });

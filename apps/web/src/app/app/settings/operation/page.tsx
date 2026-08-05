@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApprovalPinDialog } from "../../../../features/approvals/ApprovalPinDialog";
 import {
   type ApprovalRequest,
+  activateOperationalDevice,
   type BranchOperationalSettings,
   type BusinessHourException,
   decideApprovalRequest,
@@ -26,7 +27,9 @@ import {
   getOperationPolicy,
   getSession,
   listApprovalRequests,
+  listKdsStations,
   listOperationalDevices,
+  listPrinterDevices,
   type OperationPolicy,
   registerOperationalDevice,
   replaceBusinessHours,
@@ -54,6 +57,8 @@ const kdsShortcutFields = [
   ["sound", "Som"],
   ["fullscreen", "Tela cheia"],
   ["advance", "Avançar ticket"],
+  ["return", "Retornar ticket"],
+  ["recall", "Rever última entrega"],
   ["up", "Selecionar acima"],
   ["down", "Selecionar abaixo"],
 ] as const;
@@ -64,6 +69,7 @@ export default function OperationSettingsPage() {
   const [discountPercent, setDiscountPercent] = useState("10");
   const [managerPin, setManagerPin] = useState("");
   const [decision, setDecision] = useState<Decision>(null);
+  const [deviceToken, setDeviceToken] = useState("");
   const [branchId, setBranchId] = useState("");
   const [weekly, setWeekly] = useState<WeeklyBusinessHour[]>([]);
   const [exceptions, setExceptions] = useState<BusinessHourException[]>([]);
@@ -82,14 +88,24 @@ export default function OperationSettingsPage() {
       status: string;
       kdsInput: string;
       theme: string;
+      initialMode: string;
+      stationId: string | null;
+      printerDeviceId: string | null;
+      allowModeSwitch: boolean;
     }>
   >([]);
   const [personalPin, setPersonalPin] = useState("");
+  const [stations, setStations] = useState<Array<{ id: string; name: string }>>([]);
+  const [printers, setPrinters] = useState<Array<{ id: string; name: string }>>([]);
   const [deviceForm, setDeviceForm] = useState({
     name: "",
     kind: "waiter",
     theme: "system",
     kdsInput: "hybrid",
+    initialMode: "table",
+    stationId: "",
+    printerDeviceId: "",
+    allowModeSwitch: false,
   });
 
   const load = useCallback(async () => {
@@ -106,12 +122,18 @@ export default function OperationSettingsPage() {
         getBusinessHours(session.branchId),
         getBranchOperationalSettings(session.branchId),
       ]);
-      const deviceRows = await listOperationalDevices(session.branchId);
+      const [deviceRows, stationRows, printerRows] = await Promise.all([
+        listOperationalDevices(session.branchId),
+        listKdsStations().catch(() => []),
+        listPrinterDevices(session.branchId).catch(() => []),
+      ]);
       setBranchId(session.branchId);
       setWeekly(hours.weekly);
       setExceptions(hours.exceptions);
       setBranchSettings(settings);
       setDevices(deviceRows);
+      setStations(stationRows.filter((station) => station.branchId === session.branchId));
+      setPrinters(printerRows.filter((printer) => printer.isActive));
     }
     setMessage(
       nextApprovals.length > 0
@@ -175,6 +197,7 @@ export default function OperationSettingsPage() {
         kdsShortcuts: branchSettings.kdsShortcuts,
         cleaningMode: branchSettings.cleaningMode,
         allowWaiterPayments: branchSettings.allowWaiterPayments,
+        waiterResponsibilityPolicy: branchSettings.waiterResponsibilityPolicy,
       });
       setBranchSettings(saved);
       setMessage("Preferências da filial salvas.");
@@ -267,11 +290,31 @@ export default function OperationSettingsPage() {
         name: deviceForm.name.trim(),
         kind: deviceForm.kind,
         theme: deviceForm.theme as "light" | "dark" | "system",
-        kdsInput: deviceForm.kdsInput as "touch" | "keyboard" | "hybrid",
+        kdsInput: deviceForm.kdsInput as "touch" | "keyboard" | "hybrid" | "printer",
+        initialMode: deviceForm.initialMode as
+          | "table"
+          | "counter"
+          | "bar"
+          | "cashier"
+          | "kds"
+          | "expedition",
+        ...(deviceForm.stationId ? { stationId: deviceForm.stationId } : {}),
+        ...(deviceForm.printerDeviceId ? { printerDeviceId: deviceForm.printerDeviceId } : {}),
+        allowModeSwitch: deviceForm.allowModeSwitch,
       });
       setDevices((current) => [...current, created]);
-      setDeviceForm({ name: "", kind: "waiter", theme: "system", kdsInput: "hybrid" });
-      setMessage("Dispositivo registrado. O token só é exibido uma vez.");
+      setDeviceToken(created.token);
+      setDeviceForm({
+        name: "",
+        kind: "waiter",
+        theme: "system",
+        kdsInput: "hybrid",
+        initialMode: "table",
+        stationId: "",
+        printerDeviceId: "",
+        allowModeSwitch: false,
+      });
+      setMessage("Dispositivo registrado. Ative-o abaixo; o token só é exibido uma vez.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Falha ao registrar dispositivo.");
     } finally {
@@ -669,6 +712,29 @@ export default function OperationSettingsPage() {
                   />
                   Permitir recebimento pelo garçom
                 </label>
+                <label>
+                  Responsabilidade pelas mesas
+                  <select
+                    value={branchSettings.waiterResponsibilityPolicy}
+                    onChange={(event) =>
+                      setBranchSettings({
+                        ...branchSettings,
+                        waiterResponsibilityPolicy: event.target
+                          .value as BranchOperationalSettings["waiterResponsibilityPolicy"],
+                      })
+                    }
+                  >
+                    <option value="strict">Cada mesa tem um responsável</option>
+                    <option value="collaborative">A equipe pode atender em conjunto</option>
+                  </select>
+                </label>
+                <p className="muted-copy">
+                  No modo responsável, outro garçom precisa pedir ajuda ou transferência. A autoria
+                  de cada lançamento é preservada nos dois modos.
+                </p>
+                <a className="button secondary" href="/app/team/organization">
+                  Organizar mesas da equipe
+                </a>
                 <button
                   className="button primary"
                   disabled={busy}
@@ -749,8 +815,10 @@ export default function OperationSettingsPage() {
                     }
                   >
                     <option value="waiter">Garçom</option>
+                    <option value="pos">PDV</option>
                     <option value="cashier">Caixa</option>
                     <option value="kds">KDS</option>
+                    <option value="expedition">Expedição</option>
                     <option value="salon">Salão</option>
                   </select>
                 </label>
@@ -765,9 +833,80 @@ export default function OperationSettingsPage() {
                     <option value="hybrid">Híbrida</option>
                     <option value="touch">Touch</option>
                     <option value="keyboard">Teclado</option>
+                    <option value="printer">Impressora</option>
                   </select>
                 </label>
               </div>
+              <div className="form-grid-compact">
+                <label>
+                  Abrir em
+                  <select
+                    value={deviceForm.initialMode}
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({ ...current, initialMode: event.target.value }))
+                    }
+                  >
+                    <option value="table">Mesa</option>
+                    <option value="counter">Balcão</option>
+                    <option value="bar">Bar</option>
+                    <option value="cashier">Caixa</option>
+                    <option value="kds">KDS</option>
+                    <option value="expedition">Expedição</option>
+                  </select>
+                </label>
+                <label>
+                  Estação
+                  <select
+                    value={deviceForm.stationId}
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({ ...current, stationId: event.target.value }))
+                    }
+                  >
+                    <option value="">Não vinculada</option>
+                    {stations.map((station) => (
+                      <option key={station.id} value={station.id}>
+                        {station.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Impressora de contingência
+                  <select
+                    value={deviceForm.printerDeviceId}
+                    onChange={(event) =>
+                      setDeviceForm((current) => ({
+                        ...current,
+                        printerDeviceId: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Não vinculada</option>
+                    {printers.map((printer) => (
+                      <option key={printer.id} value={printer.id}>
+                        {printer.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="check-line">
+                <input
+                  checked={deviceForm.allowModeSwitch}
+                  onChange={(event) =>
+                    setDeviceForm((current) => ({
+                      ...current,
+                      allowModeSwitch: event.target.checked,
+                    }))
+                  }
+                  type="checkbox"
+                />
+                Permitir troca de modo neste terminal
+              </label>
+              <p className="muted-copy">
+                KDS e expedição só são ativados com categoria, estação e rota térmica de
+                contingência.
+              </p>
               <button
                 className="button secondary compact"
                 type="button"
@@ -776,6 +915,34 @@ export default function OperationSettingsPage() {
               >
                 <Plus size={15} /> Registrar dispositivo
               </button>
+              <label>
+                Token de ativação deste terminal
+                <input
+                  value={deviceToken}
+                  onChange={(event) => setDeviceToken(event.target.value)}
+                  placeholder="Cole o token exibido no cadastro"
+                  autoComplete="off"
+                />
+              </label>
+              <button
+                className="button primary compact"
+                type="button"
+                disabled={busy || deviceToken.trim().length < 16}
+                onClick={() =>
+                  void activateOperationalDevice(deviceToken.trim())
+                    .then((device) => {
+                      setDeviceToken("");
+                      setMessage(`${device.name} ativado neste navegador.`);
+                    })
+                    .catch((error) =>
+                      setMessage(
+                        error instanceof Error ? error.message : "Falha ao ativar dispositivo.",
+                      ),
+                    )
+                }
+              >
+                <CheckCircle2 size={15} /> Ativar neste navegador
+              </button>
             </div>
             <div className="floor-entry-list">
               {devices.map((device) => (
@@ -783,7 +950,8 @@ export default function OperationSettingsPage() {
                   <div>
                     <strong>{device.name}</strong>
                     <small>
-                      {device.kind} · {device.kdsInput} ·{" "}
+                      {device.kind} · abre em {device.initialMode} · {device.kdsInput}
+                      {device.allowModeSwitch ? " · troca liberada" : ""} ·{" "}
                       {device.status === "active" ? "ativo" : "revogado"}
                     </small>
                   </div>

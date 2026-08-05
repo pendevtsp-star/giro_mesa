@@ -1,7 +1,8 @@
 import { auditLogs, deliveryOrders, orders } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { auditMetadata } from "../../common/sensitive-data";
 import { DatabaseService } from "../database/database.service";
 
 type CreateDeliveryInput = {
@@ -15,6 +16,7 @@ type CreateDeliveryInput = {
   riderName?: string | undefined;
   riderPhone?: string | undefined;
   notes?: string | undefined;
+  externalCorrelationKey?: string | undefined;
 };
 
 type DeliveryStatus =
@@ -42,6 +44,29 @@ export class DeliveryService {
         throw new NotFoundException("Order not found");
       }
 
+      if (input.channel === "ifood" && !input.externalCorrelationKey) {
+        throw new BadRequestException("Manual iFood entry requires an external correlation key");
+      }
+      const correlationPrefix = input.externalCorrelationKey
+        ? `[external:${input.channel}:${input.externalCorrelationKey}]`
+        : null;
+      if (correlationPrefix) {
+        const correlationLock = `${context.tenantId}:${input.channel}:${input.externalCorrelationKey}`;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${correlationLock}))`);
+        const [existing] = await tx
+          .select()
+          .from(deliveryOrders)
+          .where(
+            and(
+              eq(deliveryOrders.tenantId, context.tenantId),
+              eq(deliveryOrders.channel, input.channel),
+              sql`${deliveryOrders.notes} like ${`${correlationPrefix}%`}`,
+            ),
+          )
+          .limit(1);
+        if (existing) return { ...existing, duplicate: true };
+      }
+
       const [delivery] = await tx
         .insert(deliveryOrders)
         .values({
@@ -56,7 +81,9 @@ export class DeliveryService {
           estimatedMinutes: input.estimatedMinutes ?? null,
           riderName: input.riderName ?? null,
           riderPhone: input.riderPhone ?? null,
-          notes: input.notes ?? null,
+          notes: correlationPrefix
+            ? `${correlationPrefix} ${input.notes ?? ""}`.trim()
+            : (input.notes ?? null),
         })
         .returning();
 
@@ -72,10 +99,11 @@ export class DeliveryService {
         action: "delivery.created",
         entityType: "delivery_order",
         entityId: delivery.id,
-        metadata: {
+        metadata: auditMetadata({
           orderId: input.orderId,
           channel: input.channel,
-        },
+          externalCorrelationKey: input.externalCorrelationKey ?? null,
+        }),
       });
 
       return delivery;

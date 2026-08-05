@@ -1,5 +1,6 @@
 import {
   auditLogs,
+  branchInventorySettings,
   branchOperationalSettings,
   cashSessions,
   customers,
@@ -24,7 +25,7 @@ import {
 } from "@giromesa/db";
 import { activeOrderStatuses, type TenantContext } from "@giromesa/domain";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
 type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
@@ -91,6 +92,14 @@ export class OrderRepository {
         amountCents: payments.amountCents,
         method: payments.method,
         status: payments.status,
+        executionMode: payments.executionMode,
+        terminalDeviceId: payments.terminalDeviceId,
+        providerReference: payments.providerReference,
+        originalPaymentId: payments.originalPaymentId,
+        paymentType: payments.paymentType,
+        resultUnknownAt: payments.resultUnknownAt,
+        lastQueriedAt: payments.lastQueriedAt,
+        version: payments.version,
         registeredByUserId: payments.registeredByUserId,
         registeredVia: payments.registeredVia,
         cashHandoverStatus: payments.cashHandoverStatus,
@@ -146,7 +155,26 @@ export class OrderRepository {
     const [item] = await client
       .insert(orderItems)
       .values({ ...data, tenantId: context.tenantId })
+      .onConflictDoNothing({ target: [orderItems.tenantId, orderItems.idempotencyKey] })
       .returning();
+    return item ?? null;
+  }
+
+  async findOrderItemByIdempotencyKey(
+    context: TenantContext,
+    idempotencyKey: string,
+    client: OrderDbClient = this.database.db,
+  ) {
+    const [item] = await client
+      .select()
+      .from(orderItems)
+      .where(
+        and(
+          eq(orderItems.tenantId, context.tenantId),
+          eq(orderItems.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
     return item ?? null;
   }
 
@@ -442,11 +470,46 @@ export class OrderRepository {
     branchId: string,
     client: OrderDbClient = this.database.db,
   ) {
+    const [settings] = await client
+      .select({ consumptionLocationId: branchInventorySettings.consumptionLocationId })
+      .from(branchInventorySettings)
+      .where(
+        and(
+          eq(branchInventorySettings.tenantId, context.tenantId),
+          eq(branchInventorySettings.branchId, branchId),
+        ),
+      )
+      .limit(1);
+    if (settings?.consumptionLocationId) {
+      const [configured] = await client
+        .select()
+        .from(stockLocations)
+        .where(
+          and(
+            eq(stockLocations.tenantId, context.tenantId),
+            eq(stockLocations.branchId, branchId),
+            eq(stockLocations.id, settings.consumptionLocationId),
+            sql`${stockLocations.type} <> 'transit'`,
+            isNull(stockLocations.archivedAt),
+          ),
+        )
+        .limit(1);
+      if (configured) return configured;
+    }
     const [location] = await client
       .select()
       .from(stockLocations)
       .where(
-        and(eq(stockLocations.tenantId, context.tenantId), eq(stockLocations.branchId, branchId)),
+        and(
+          eq(stockLocations.tenantId, context.tenantId),
+          eq(stockLocations.branchId, branchId),
+          sql`${stockLocations.type} <> 'transit'`,
+          isNull(stockLocations.archivedAt),
+        ),
+      )
+      .orderBy(
+        sql`case when ${stockLocations.type} in ('stock', 'main') then 0 else 1 end`,
+        stockLocations.createdAt,
       )
       .limit(1);
     return location ?? null;

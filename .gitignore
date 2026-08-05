@@ -6,6 +6,7 @@ node_modules/
 dist/
 .next/
 **/.next-e2e/
+**/.next-visual*/
 .turbo/
 **/.turbo/
 coverage/
@@ -64,3 +65,4 @@ Thumbs.db
 .vscode/settings.json
 .vscode/launch.json
 .vscode/extensions.json
+.trivyignore.generated

@@ -236,6 +236,8 @@ export class TenantsService {
             "reports:read",
             "delivery:manage",
             "approvals:manage",
+            "staff_finance:manage",
+            "staff_finance:read_self",
           ],
         })
         .returning();

@@ -6,6 +6,7 @@ import { DatabaseService } from "../database/database.service";
 import type {
   ApprovalRecord,
   ApprovalsRepository,
+  ApprovalTransaction,
   OperationPolicyRecord,
 } from "./approvals.service";
 
@@ -91,8 +92,9 @@ export class DatabaseApprovalsRepository implements ApprovalsRepository {
     return row ? toApprovalRecord(row) : null;
   }
 
-  async createApproval(context: TenantContext, approval: ApprovalRecord) {
-    const [created] = await this.database.db
+  async createApproval(context: TenantContext, approval: ApprovalRecord, tx?: ApprovalTransaction) {
+    const executor = tx ?? this.database.db;
+    const [created] = await executor
       .insert(approvalRequests)
       .values({
         id: approval.id,
@@ -159,8 +161,9 @@ export class DatabaseApprovalsRepository implements ApprovalsRepository {
     action: string,
     entity: { id: string; branchId: string | null },
     metadata: Record<string, unknown> = {},
+    tx?: ApprovalTransaction,
   ) {
-    await this.database.db.insert(auditLogs).values({
+    await (tx ?? this.database.db).insert(auditLogs).values({
       tenantId: context.tenantId,
       branchId: entity.branchId,
       userId: context.userId,

@@ -2,7 +2,9 @@ import { loadEnv } from "@giromesa/config";
 import {
   auditLogs,
   branches,
+  commercialInterests,
   invitations,
+  legalAcceptances,
   mfaRecoveryCodes,
   oauthAccounts,
   passwordResetTokens,
@@ -34,7 +36,7 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import QRCode from "qrcode";
-import { createEmailProvider } from "../../common/email-provider";
+import { sendEmail } from "../../common/email-delivery";
 import {
   buildGoogleAuthorizationUrl,
   exchangeGoogleCode,
@@ -118,6 +120,22 @@ export type AcceptInvitationInput = {
   token: string;
   name?: string | undefined;
   password: string;
+};
+
+export type CommercialInterestInput = {
+  product: "giromesa";
+  planCode?: "starter" | "professional" | "premium" | undefined;
+  origin: string;
+  establishmentName: string;
+  contactName: string;
+  email: string;
+  phone?: string | undefined;
+  message?: string | undefined;
+};
+
+export type LegalAcceptanceInput = {
+  documentType: "terms" | "privacy";
+  origin: string;
 };
 
 export type ChangePasswordInput = {
@@ -675,6 +693,8 @@ export class AuthService {
             "reports:read",
             "delivery:manage",
             "approvals:manage",
+            "staff_finance:manage",
+            "staff_finance:read_self",
           ],
         })
         .returning();
@@ -748,7 +768,7 @@ export class AuthService {
       accentPreset: "emerald",
     };
     try {
-      await createEmailProvider().send({
+      await sendEmail(this.database, {
         tenantId: created.tenant.id,
         to: created.owner.email,
         subject: `Bem-vindo ao ${created.tenant.name} no GiroMesa`,
@@ -1350,7 +1370,7 @@ export class AuthService {
 
     const acceptUrl = this.publicAppUrl(`/invite/${token}`);
     const branding = await this.emailBranding(context.tenantId);
-    const emailDelivery = await createEmailProvider().send({
+    const emailDelivery = await sendEmail(this.database, {
       tenantId: context.tenantId,
       to: invitation.email,
       subject: `Convite para acessar ${branding.displayName}`,
@@ -1410,7 +1430,7 @@ export class AuthService {
 
     const acceptUrl = this.publicAppUrl(`/invite/${token}`);
     const branding = await this.emailBranding(context.tenantId);
-    const emailDelivery = await createEmailProvider().send({
+    const emailDelivery = await sendEmail(this.database, {
       tenantId: context.tenantId,
       to: invitation.email,
       subject: `Novo convite para ${branding.displayName}`,
@@ -1488,27 +1508,28 @@ export class AuthService {
   async acceptInvitation(input: AcceptInvitationInput, headers: HeaderRecord) {
     assertStrongPassword(input.password);
     const tokenHash = hashOpaqueToken(input.token);
-    const [invitation] = await this.database.db
-      .select()
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.tokenHash, tokenHash),
-          isNull(invitations.acceptedAt),
-          gt(invitations.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
-
-    if (!invitation) {
-      throw new UnauthorizedException("Invalid invitation");
-    }
-
     const passwordHash = await hashPassword(input.password);
-    const normalizedEmail = invitation.email.toLowerCase();
-    const name = input.name?.trim() || normalizedEmail.split("@")[0] || "Novo usuario";
 
     const session = await this.database.db.transaction(async (tx) => {
+      const now = new Date();
+      const [invitation] = await tx
+        .update(invitations)
+        .set({ acceptedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(invitations.tokenHash, tokenHash),
+            isNull(invitations.acceptedAt),
+            gt(invitations.expiresAt, now),
+          ),
+        )
+        .returning();
+
+      if (!invitation) {
+        throw new UnauthorizedException("Invalid invitation");
+      }
+
+      const normalizedEmail = invitation.email.toLowerCase();
+      const name = input.name?.trim() || normalizedEmail.split("@")[0] || "Novo usuario";
       const [existingUser] = await tx
         .select()
         .from(users)
@@ -1557,11 +1578,6 @@ export class AuthService {
         }
       }
 
-      await tx
-        .update(invitations)
-        .set({ acceptedAt: new Date(), updatedAt: new Date() })
-        .where(eq(invitations.id, invitation.id));
-
       await tx.insert(auditLogs).values({
         tenantId: invitation.tenantId,
         userId: user.id,
@@ -1605,6 +1621,162 @@ export class AuthService {
         isPlatformUser: session.user.isPlatformUser,
         permissions: access.permissions,
       } satisfies SessionUser,
+    };
+  }
+
+  async createCommercialInterest(input: CommercialInterestInput) {
+    if (input.planCode && !giromesaPlanCatalog[input.planCode]) {
+      throw new BadRequestException("Invalid plan");
+    }
+
+    const [interest] = await this.database.db
+      .insert(commercialInterests)
+      .values({
+        product: input.product,
+        planCode: input.planCode ?? null,
+        origin: input.origin.trim().toLowerCase(),
+        establishmentName: input.establishmentName.trim(),
+        contactName: input.contactName.trim(),
+        email: input.email.trim().toLowerCase(),
+        phone: input.phone?.trim() || null,
+        message: input.message?.trim() || null,
+      })
+      .returning({ id: commercialInterests.id, createdAt: commercialInterests.createdAt });
+
+    if (!interest) {
+      throw new Error("Failed to register commercial interest");
+    }
+    return interest;
+  }
+
+  async recordLegalAcceptance(
+    context: TenantContext,
+    input: LegalAcceptanceInput,
+    headers: HeaderRecord,
+  ) {
+    if (!context.userId) {
+      throw new UnauthorizedException("A user session is required to accept legal documents");
+    }
+    const userId = context.userId;
+    const env = loadEnv();
+    const document =
+      input.documentType === "terms"
+        ? { version: env.LEGAL_TERMS_VERSION, hash: env.LEGAL_TERMS_SHA256 }
+        : { version: env.LEGAL_PRIVACY_VERSION, hash: env.LEGAL_PRIVACY_SHA256 };
+
+    if (!document.version || !document.hash) {
+      throw new BadRequestException("Legal document is not published");
+    }
+
+    const values = {
+      tenantId: context.tenantId,
+      userId,
+      documentType: input.documentType,
+      documentVersion: document.version,
+      documentHash: document.hash,
+      origin: input.origin.trim().toLowerCase(),
+      ipAddress: firstHeader(headers["x-forwarded-for"]),
+      userAgent: firstHeader(headers["user-agent"]),
+    };
+    const [created] = await this.database.db
+      .insert(legalAcceptances)
+      .values(values)
+      .onConflictDoNothing()
+      .returning();
+
+    if (created) {
+      return created;
+    }
+
+    const [existing] = await this.database.db
+      .select()
+      .from(legalAcceptances)
+      .where(
+        and(
+          eq(legalAcceptances.tenantId, context.tenantId),
+          eq(legalAcceptances.userId, userId),
+          eq(legalAcceptances.documentType, input.documentType),
+          eq(legalAcceptances.documentVersion, document.version),
+          eq(legalAcceptances.documentHash, document.hash),
+        ),
+      )
+      .limit(1);
+
+    if (!existing) {
+      throw new Error("Failed to record legal acceptance");
+    }
+    return existing;
+  }
+
+  async getLegalAcceptanceStatus(context: TenantContext) {
+    if (!context.userId) {
+      throw new UnauthorizedException("A user session is required to read legal acceptances");
+    }
+    const userId = context.userId;
+    const env = loadEnv();
+    const documents = [
+      {
+        documentType: "terms" as const,
+        version: env.LEGAL_TERMS_VERSION,
+        hash: env.LEGAL_TERMS_SHA256,
+      },
+      {
+        documentType: "privacy" as const,
+        version: env.LEGAL_PRIVACY_VERSION,
+        hash: env.LEGAL_PRIVACY_SHA256,
+      },
+    ];
+    const publishedDocuments = documents.filter(
+      (document): document is typeof document & { version: string; hash: string } =>
+        Boolean(document.version && document.hash),
+    );
+
+    if (publishedDocuments.length === 0) {
+      return {
+        required: true,
+        complete: false,
+        configurationComplete: false,
+        documents: documents.map((document) => ({
+          documentType: document.documentType,
+          published: false,
+          accepted: false,
+        })),
+      };
+    }
+
+    const rows = await this.database.db
+      .select({
+        documentType: legalAcceptances.documentType,
+        documentVersion: legalAcceptances.documentVersion,
+        documentHash: legalAcceptances.documentHash,
+      })
+      .from(legalAcceptances)
+      .where(
+        and(eq(legalAcceptances.tenantId, context.tenantId), eq(legalAcceptances.userId, userId)),
+      );
+    const statusDocuments = documents.map((document) => {
+      const published = Boolean(document.version && document.hash);
+      return {
+        documentType: document.documentType,
+        published,
+        ...(document.version ? { version: document.version } : {}),
+        accepted:
+          published &&
+          rows.some(
+            (row) =>
+              row.documentType === document.documentType &&
+              row.documentVersion === document.version &&
+              row.documentHash === document.hash,
+          ),
+      };
+    });
+    const configurationComplete = publishedDocuments.length === documents.length;
+
+    return {
+      required: true,
+      configurationComplete,
+      complete: configurationComplete && statusDocuments.every((document) => document.accepted),
+      documents: statusDocuments,
     };
   }
 
@@ -1735,7 +1907,7 @@ export class AuthService {
 
       const resetUrl = this.publicAppUrl(`/reset/${token}`);
       const branding = await this.emailBranding(user.tenantId);
-      const emailDelivery = await createEmailProvider().send({
+      const emailDelivery = await sendEmail(this.database, {
         tenantId: user.tenantId,
         to: user.email,
         subject: `Reset de senha - ${branding.displayName}`,

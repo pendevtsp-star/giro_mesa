@@ -6,10 +6,13 @@ import {
   webhookEvents,
 } from "@giromesa/db";
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { emailSuppressionKey } from "../../common/email-delivery";
+import { sanitizeSensitiveData } from "../../common/sensitive-data";
 import { createWhatsAppProvider } from "../../common/whatsapp-provider";
 import { DatabaseService } from "../database/database.service";
 import { IfoodProvider } from "./ifood-provider";
+import { normalizeResendDeliveryEvent } from "./resend-events";
 
 export type WebhookInput = {
   provider: string;
@@ -17,6 +20,8 @@ export type WebhookInput = {
   tenantId?: string | undefined;
   payload: Record<string, unknown>;
 };
+
+export const WEBHOOK_PROCESSING_LEASE_MS = 5 * 60_000;
 
 @Injectable()
 export class WebhooksService {
@@ -28,33 +33,90 @@ export class WebhooksService {
   ) {}
 
   async accept(input: WebhookInput) {
-    const [event] = await this.database.db
-      .insert(webhookEvents)
-      .values({
-        provider: input.provider,
-        externalEventId: input.externalEventId,
-        tenantId: input.tenantId,
-        payload: input.payload,
-        status: "received",
-      })
-      .onConflictDoNothing()
-      .returning();
+    const persistedPayload = this.preparePayloadForPersistence(input.provider, input.payload);
+    const staleProcessingBefore = new Date(Date.now() - WEBHOOK_PROCESSING_LEASE_MS);
+    const claim = await this.database.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(webhookEvents)
+        .values({
+          provider: input.provider,
+          externalEventId: input.externalEventId,
+          tenantId: input.tenantId,
+          payload: persistedPayload,
+          status: "received",
+        })
+        .onConflictDoNothing()
+        .returning();
+      const [candidate] = inserted
+        ? [inserted]
+        : await tx
+            .select()
+            .from(webhookEvents)
+            .where(
+              and(
+                eq(webhookEvents.provider, input.provider),
+                eq(webhookEvents.externalEventId, input.externalEventId),
+              ),
+            )
+            .limit(1);
+      if (!candidate) throw new Error("Persisted webhook event could not be loaded");
+      const [claimed] = await tx
+        .update(webhookEvents)
+        .set({ status: "processing", errorMessage: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(webhookEvents.id, candidate.id),
+            or(
+              inArray(webhookEvents.status, ["received", "failed"]),
+              and(
+                eq(webhookEvents.status, "processing"),
+                lte(webhookEvents.updatedAt, staleProcessingBefore),
+              ),
+            ),
+          ),
+        )
+        .returning();
+      return { event: claimed ?? candidate, claimed: Boolean(claimed), duplicate: !inserted };
+    });
 
-    if (event && input.provider === "asaas") {
-      await this.processAsaasEvent(event.id, input.payload);
+    const event = claim.event;
+    if (!claim.claimed) return this.acceptedResponse(input, true);
+
+    try {
+      await this.processClaimedEvent(event.id, input.provider, event.payload);
+    } catch (error) {
+      await this.database.db
+        .update(webhookEvents)
+        .set({
+          status: "failed",
+          errorMessage: String(
+            sanitizeSensitiveData(error instanceof Error ? error.message : error),
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(webhookEvents.id, event.id));
+      throw error;
     }
 
-    if (event && input.provider === "meta_whatsapp") {
-      await this.processMetaWhatsAppEvent(event.id, input.payload);
-    }
+    return this.acceptedResponse(input, claim.duplicate);
+  }
 
-    if (event && input.provider === "ifood") {
-      await this.processIfoodEvent(event.id, input.payload);
-    }
+  private async processClaimedEvent(
+    eventId: string,
+    provider: string,
+    payload: Record<string, unknown>,
+  ) {
+    if (provider === "asaas") await this.processAsaasEvent(eventId, payload);
+    else if (provider === "meta_whatsapp") await this.processMetaWhatsAppEvent(eventId, payload);
+    else if (provider === "ifood") await this.processIfoodEvent(eventId, payload);
+    else if (provider === "resend") await this.processResendEvent(eventId, payload);
+    else await this.markWebhookProcessed(eventId, "processed");
+  }
 
+  private acceptedResponse(input: WebhookInput, duplicate: boolean) {
     return {
       accepted: true,
-      duplicate: !event,
+      duplicate,
       provider: input.provider,
       externalEventId: input.externalEventId,
       queue:
@@ -79,12 +141,15 @@ export class WebhooksService {
     }
 
     for (const message of incomingMessages) {
-      console.log("whatsapp incoming message", {
-        webhookEventId,
-        from: message.from,
-        type: message.type,
-        messageId: message.messageId,
-      });
+      this.logger.log(
+        "whatsapp incoming message",
+        sanitizeSensitiveData({
+          webhookEventId,
+          from: message.from,
+          type: message.type,
+          messageId: message.messageId,
+        }),
+      );
     }
 
     await this.markWebhookProcessed(webhookEventId, "processed");
@@ -200,12 +265,74 @@ export class WebhooksService {
     await this.markWebhookProcessed(webhookEventId, "processed");
   }
 
-  private async markWebhookProcessed(webhookEventId: string, status: "processed" | "ignored") {
+  private async processResendEvent(webhookEventId: string, payload: Record<string, unknown>) {
+    const rawEvent = normalizeResendDeliveryEvent(payload);
+    const eventType = rawEvent?.type ?? readPersistedResendEventType(payload);
+    const status =
+      rawEvent?.status ??
+      (payload.status === "processed" || payload.status === "suppressed" ? payload.status : null);
+    const suppressionKey = rawEvent?.recipient
+      ? emailSuppressionKey(rawEvent.recipient)
+      : typeof payload.suppressionKey === "string"
+        ? payload.suppressionKey
+        : null;
+    if (!eventType || !status || (status === "suppressed" && !suppressionKey)) {
+      await this.markWebhookProcessed(webhookEventId, "ignored");
+      return;
+    }
+
+    // The signed Resend ingress stays disabled until its provider contract is versioned.
+    // This path is intentionally usable only by the local simulator through accept().
+    await this.database.db.transaction(async (tx) => {
+      if (suppressionKey) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${suppressionKey}))`);
+      }
+      await tx
+        .update(webhookEvents)
+        .set({
+          status,
+          payload: {
+            eventType,
+            suppressionKey,
+            scope: "recipient",
+          },
+          processedAt: new Date(),
+          errorMessage: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(webhookEvents.id, webhookEventId));
+    });
+  }
+
+  private preparePayloadForPersistence(provider: string, payload: Record<string, unknown>) {
+    if (provider !== "resend") return payload;
+    const event = normalizeResendDeliveryEvent(payload);
+    if (!event) {
+      return {
+        eventType: typeof payload.type === "string" ? payload.type : "unknown",
+        status: "ignored",
+        scope: "recipient",
+        suppressionKey: null,
+      };
+    }
+    return {
+      eventType: event.type,
+      status: event.status,
+      scope: "recipient",
+      suppressionKey: event.recipient ? emailSuppressionKey(event.recipient) : null,
+    };
+  }
+
+  private async markWebhookProcessed(
+    webhookEventId: string,
+    status: "processed" | "ignored" | "suppressed",
+  ) {
     await this.database.db
       .update(webhookEvents)
       .set({
         status,
         processedAt: new Date(),
+        errorMessage: null,
         updatedAt: new Date(),
       })
       .where(eq(webhookEvents.id, webhookEventId));
@@ -230,6 +357,16 @@ export class WebhooksService {
     }
     return null;
   }
+}
+
+function readPersistedResendEventType(payload: Record<string, unknown>) {
+  const eventType = payload.eventType;
+  return eventType === "email.delivered" ||
+    eventType === "email.bounced" ||
+    eventType === "email.complained" ||
+    eventType === "email.suppressed"
+    ? eventType
+    : null;
 }
 
 function readReferenceTenantSlug(reference: string | null) {

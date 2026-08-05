@@ -5,7 +5,7 @@ const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/
 export const apiBaseUrl = typeof window === "undefined" ? (configuredApiBaseUrl ?? "") : "";
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   headers?: Record<string, string>;
   keepalive?: boolean;
@@ -49,6 +49,7 @@ export type Product = {
   imageUrl?: string | null;
   isActive?: boolean;
   isAvailable: boolean;
+  isAlcoholic: boolean;
   isClubEligible?: boolean;
   bottleVolumeMl?: number | null;
   defaultDoseMl?: number;
@@ -77,6 +78,7 @@ export type DiningTable = {
   name: string;
   seats: number;
   status: string;
+  version?: number;
   shape?: "rounded" | "square" | "circle" | "booth";
   areaId?: string | null;
   archivedAt?: string | null;
@@ -97,6 +99,11 @@ export type QrCapability =
 
 export type QrBranchSettings = {
   branchId: string;
+  mode: "disabled" | "menu_only" | "waiter_assisted" | "self_service";
+  presenceMethods: Array<"code" | "approval" | "network">;
+  tabVisibility: "shared" | "own_items";
+  presenceCodeTtlMinutes: number;
+  guestSessionTtlMinutes: number;
   capabilities: QrCapability[];
   reviewBeforeKds: boolean;
   template: "classic" | "minimal" | "premium" | "gastronomia" | "bar_noturno" | "cafe" | "doseclub";
@@ -178,14 +185,29 @@ export type ServiceRequest = {
   type: "call_waiter" | "request_pre_bill" | "need_help";
   status: "pending" | "acknowledged" | "resolved" | "canceled";
   message: string | null;
+  assignedWaiterUserId: string | null;
+  assignedWaiterName: string | null;
+  slaDueAt: string;
+  attention: "normal" | "escalated";
   acknowledgedAt: string | null;
   resolvedAt: string | null;
   createdAt: string;
 };
 
+export type QrPresenceApproval = {
+  id: string;
+  status: "pending" | "approved" | "rejected" | "claimed" | "expired";
+  requestedAt: string;
+  expiresAt: string;
+  tableId: string;
+  tableCode: string;
+  tableName: string;
+};
+
 export type KdsTicket = {
   id: string;
   branchId: string;
+  stationId: string;
   stationName: string;
   orderId: string;
   tableCode: string | null;
@@ -494,6 +516,113 @@ export type FiscalDocument = {
   orderTotalCents: number | null;
 };
 
+export type FiscalOnboarding = {
+  branchId: string;
+  status:
+    | "not_started"
+    | "company_data"
+    | "accountant_review"
+    | "provider_validation"
+    | "homologation"
+    | "ready_for_production"
+    | "action_required";
+  settings: null | {
+    id: string;
+    version: number;
+    legalName: string | null;
+    tradeName: string | null;
+    document: string | null;
+    stateRegistration: string | null;
+    municipalRegistration: string | null;
+    taxRegime: string;
+    uf: string | null;
+    cityCode: string | null;
+    cityName: string | null;
+    series: string;
+    defaultModel: "nfce" | "nfe" | "nfse";
+    environment: "homologation" | "production";
+    status: string;
+    lastHealthStatus: string | null;
+  };
+  credentials: Array<{
+    id: string;
+    environment: "homologation" | "production";
+    status: string;
+    tokenLastFour: string | null;
+    rotatedAt: string | null;
+  }>;
+  invitations: Array<{
+    id: string;
+    email: string;
+    status: string;
+    expiresAt: string;
+    revokedAt: string | null;
+    createdAt: string;
+  }>;
+  production: { globalEnabled: boolean; branchEnabled: boolean };
+};
+
+export type BranchPaymentSettingsResponse = {
+  settings: {
+    id?: string;
+    branchId: string;
+    profile: "external_terminal" | "smartpos" | "tef" | "hybrid";
+    preferredMode: "manual" | "smartpos" | "tef";
+    allowManualFallback: boolean;
+    reconciliationMode: "manual" | "import" | "automatic";
+    provider?: string | null;
+    status: "disabled" | "active";
+    version: number;
+  };
+  availability: {
+    manual: boolean;
+    import: boolean;
+    smartpos: boolean;
+    tef: boolean;
+    automaticReconciliation: boolean;
+  };
+};
+
+export type BranchPaymentSettingsUpdate = Omit<
+  BranchPaymentSettingsResponse["settings"],
+  "id" | "branchId" | "version"
+> & {
+  expectedVersion: number;
+};
+
+export type PaymentTerminal = {
+  id: string;
+  branchId: string;
+  name: string;
+  status: string;
+  provider: string | null;
+  providerTerminalId?: string | null;
+  capabilities: Record<string, unknown>;
+  pairedAt: string | null;
+  lastSeenAt?: string | null;
+  version?: number;
+  localPairingCode?: string;
+};
+
+export type PaymentReconciliationEntry = {
+  id: string;
+  branchId: string;
+  importId: string;
+  paymentId: string | null;
+  externalKey: string;
+  providerReference: string | null;
+  nsu: string | null;
+  authorizationCode: string | null;
+  grossCents: number;
+  feeCents: number;
+  netCents: number;
+  settledAt: string | null;
+  status: "unmatched" | "matched" | "divergent" | "resolved";
+  resolution: Record<string, unknown>;
+  version: number;
+  createdAt: string;
+};
+
 export type InventorySummaryItem = {
   id: string;
   name: string;
@@ -603,9 +732,67 @@ export type BranchOperationalSettings = {
   branchId: string;
   cleaningMode: "manual" | "automatic";
   allowWaiterPayments: boolean;
+  waiterResponsibilityPolicy: "strict" | "collaborative";
   defaultTheme: "light" | "dark" | "system";
   defaultKdsInputMode: "touch" | "keyboard" | "hybrid" | "printer";
   kdsShortcuts: Record<string, string>;
+};
+
+export type WaiterAssignment = {
+  id: string;
+  branchId: string;
+  shiftId: string;
+  tableId: string;
+  waiterUserId: string;
+  source: "manager" | "area" | "first_service" | "transfer";
+  assignedAt: string;
+  endedAt: string | null;
+  version: number;
+};
+
+export type WaiterAssignmentList = {
+  shift: { id: string; status: string } | null;
+  assignments: Array<{
+    assignment: WaiterAssignment;
+    tableCode: string;
+    tableName: string;
+    waiterName: string;
+    waiterIsActive?: boolean;
+    needsRedistribution?: boolean;
+  }>;
+};
+
+export type OperationalDelta = {
+  version: number;
+  type: string;
+  aggregate: { kind: "branch" | "table" | "order" | "station"; id: string };
+  refs: {
+    branchId: string;
+    tableId?: string;
+    orderId?: string;
+    stationId?: string;
+    sessionId?: string;
+  };
+  occurredAt: string;
+  data: Record<string, string | number | boolean | null>;
+};
+
+export type OperationalDeltaBatch = {
+  branchId: string;
+  fromVersion: number;
+  toVersion: number;
+  deltas: OperationalDelta[];
+};
+
+export type WaiterHelpRequest = {
+  id: string;
+  status: string;
+  reason: string;
+  requestedAt: string;
+  requestedByUserId: string;
+  tableId: string;
+  tableCode: string;
+  tableName: string;
 };
 
 export type DashboardSummary = {
@@ -780,11 +967,76 @@ export type InventoryMovement = {
   id: string;
   inventoryItemId: string;
   inventoryItemName: string;
-  type: "purchase_receipt" | "loss" | "inventory_count" | "manual_adjustment";
+  type:
+    | "purchase_receipt"
+    | "loss"
+    | "inventory_count"
+    | "manual_adjustment"
+    | "sale"
+    | "transfer_dispatch"
+    | "transfer_receipt"
+    | "transfer_divergence"
+    | "transfer_reversal"
+    | "returnable_consumption"
+    | "returnable_supplier_exchange"
+    | "returnable_breakage"
+    | "returnable_loss";
   quantity: string;
   unitCostCents: number;
   reason: string | null;
   createdAt: string;
+};
+
+export type StockLocation = {
+  id: string;
+  branchId: string;
+  name: string;
+  type: "salon" | "production" | "stock" | "transit" | "main";
+  archivedAt: string | null;
+};
+
+export type InventoryTransfer = {
+  id: string;
+  branchId: string;
+  originLocationId: string;
+  destinationLocationId: string;
+  transitLocationId: string | null;
+  reason: string;
+  status: "draft" | "awaiting_receipt" | "completed" | "cancelled";
+  mode: "immediate" | "awaiting_receipt";
+  version: number;
+  reversedAt: string | null;
+  createdAt: string;
+  lines: Array<{
+    id: string;
+    inventoryItemId: string;
+    quantitySent: string;
+    quantityReceived: string | null;
+    divergenceReason: string | null;
+  }>;
+};
+
+export type InventorySettings = {
+  transferMode: "immediate" | "awaiting_receipt";
+  managerApprovalThreshold: string;
+  consumptionLocationId: string | null;
+};
+
+export type InventoryLocationBalance = {
+  locationId: string;
+  locationName: string;
+  locationType: string;
+  inventoryItemId: string | null;
+  inventoryItemName: string | null;
+  unit: string | null;
+  quantity: string;
+};
+
+export type ReturnableMapping = {
+  id: string;
+  productId: string;
+  fullInventoryItemId: string;
+  emptyInventoryItemId: string;
 };
 
 export type Supplier = {
@@ -918,6 +1170,15 @@ export type PlatformTenantDetail = PlatformTenant & {
       createdAt: string;
       createdBy: string | null;
     }>;
+    access: {
+      mode: "read_only" | "elevated";
+      expiresAt: string | null;
+      reason: string;
+      grantId: string | null;
+      branchId: string | null;
+      resource: "operations" | "integrations" | "audit";
+      actions: Array<"read" | "mutate">;
+    };
   };
 };
 
@@ -937,6 +1198,15 @@ export type PlatformTenantSupportResponse = {
       createdAt: string;
       createdBy: string | null;
     }>;
+    access: {
+      mode: "read_only" | "elevated";
+      expiresAt: string | null;
+      reason: string;
+      grantId: string | null;
+      branchId: string | null;
+      resource: "operations" | "integrations" | "audit";
+      actions: Array<"read" | "mutate">;
+    };
   };
 };
 
@@ -1051,6 +1321,7 @@ export type PublicMenuResponse = {
       | "priceCents"
       | "imageUrl"
       | "isAvailable"
+      | "isAlcoholic"
       | "channels"
       | "isClubEligible"
       | "bottleVolumeMl"
@@ -1111,6 +1382,15 @@ export type PublicQrResponse = {
     active?: boolean;
   };
   capabilities?: QrCapability[];
+  mode?: QrBranchSettings["mode"];
+  service?: {
+    active: boolean;
+    presenceRequired: boolean;
+    presenceMethods: QrBranchSettings["presenceMethods"];
+    codeExpiresAt?: string;
+    guestValidated: boolean;
+    guestExpiresAt?: string;
+  };
   reviewBeforeKds?: boolean;
   qrSettings?: PublicQrSettings;
   partnerAttribution?: PublicPartnerAttribution;
@@ -1130,6 +1410,8 @@ export type SecurePublicQrContext = {
     active: boolean;
   };
   capabilities: QrCapability[];
+  mode: QrBranchSettings["mode"];
+  service: NonNullable<PublicQrResponse["service"]>;
   reviewBeforeKds: boolean;
   qrSettings?: PublicQrSettings;
   partnerAttribution?: PublicPartnerAttribution;
@@ -1142,6 +1424,8 @@ export type SecurePublicQrContext = {
     priceCents: number;
     imageUrl: string | null;
     channels: string[];
+    isAlcoholic: boolean;
+    spiritType?: string | null;
     recommended?: boolean;
   }>;
 };
@@ -1275,7 +1559,7 @@ export type PrinterConnectorConfigureResponse = PrinterConnectorConfig & {
 export type ClubWhiskyIntegrationConfig = {
   id?: string;
   provider: "club_whisky";
-  status: string;
+  status: "not_configured" | "homologation" | "active" | "degraded" | "revoked";
   branchId?: string | null;
   remoteClientId?: string | null;
   scopes: string[];
@@ -1286,6 +1570,12 @@ export type ClubWhiskyIntegrationConfig = {
   apiKeyCreatedAt?: string | null;
   hasApiKey: boolean;
   lastSyncAt?: string | null;
+  owner?: string;
+  dependency?: string;
+  contingency?: string;
+  lifecycleVersion?: number;
+  lifecycleReason?: string;
+  lastHealthAt?: string | null;
 };
 
 export type ClubWhiskyConfigureResponse = ClubWhiskyIntegrationConfig & {
@@ -1363,6 +1653,26 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   return payload as T;
+}
+
+export function replayOperationalMutation(input: {
+  idempotencyKey: string;
+  method: "POST" | "PATCH" | "DELETE";
+  path: string;
+  payload: Record<string, unknown>;
+}) {
+  if (
+    !input.path.startsWith("/api/v1/pos/") &&
+    !input.path.startsWith("/api/v1/floor/") &&
+    !input.path.startsWith("/api/v1/qr/")
+  ) {
+    throw new Error("Operational replay path is not allowed.");
+  }
+  return apiRequest<Record<string, unknown>>(input.path, {
+    method: input.method,
+    body: input.payload,
+    headers: { "x-idempotency-key": input.idempotencyKey },
+  });
 }
 
 async function buildRequestInit(path: string, method: string, options: RequestOptions) {
@@ -1480,6 +1790,52 @@ export async function startTrial(input: {
   });
 }
 
+export function createCommercialInterest(input: {
+  product: "giromesa";
+  planCode?: "starter" | "professional" | "premium";
+  origin: string;
+  establishmentName: string;
+  contactName: string;
+  email: string;
+  phone?: string;
+  message?: string;
+}) {
+  return apiRequest<{ id: string; createdAt: string }>("/api/v1/auth/commercial-interests", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function recordLegalAcceptance(input: {
+  documentType: "terms" | "privacy";
+  accepted: true;
+  origin: string;
+}) {
+  return apiRequest<{
+    id: string;
+    documentType: "terms" | "privacy";
+    documentVersion: string;
+    documentHash: string;
+    acceptedAt: string;
+  }>("/api/v1/auth/legal-acceptances", { method: "POST", body: input });
+}
+
+export type LegalAcceptanceStatus = {
+  required: boolean;
+  complete: boolean;
+  configurationComplete: boolean;
+  documents: Array<{
+    documentType: "terms" | "privacy";
+    published: boolean;
+    version?: string;
+    accepted: boolean;
+  }>;
+};
+
+export function getLegalAcceptanceStatus() {
+  return apiRequest<LegalAcceptanceStatus>("/api/v1/auth/legal-acceptances/status");
+}
+
 export async function requestSubscriptionActivation(input: {
   planCode: "starter" | "professional" | "premium";
   paymentMethod?: "pix" | "credit_card" | "boleto" | "commercial_contact";
@@ -1506,6 +1862,7 @@ async function csrfTokenForRequest(path: string, method: string) {
     method === "GET" ||
     path === "/api/v1/auth/login" ||
     path === "/api/v1/auth/trial" ||
+    path === "/api/v1/auth/commercial-interests" ||
     path.startsWith("/api/v1/catalog/public/")
   ) {
     return null;
@@ -1604,6 +1961,17 @@ export function createQrExperienceDraft(
   });
 }
 
+export function previewQrExperience(
+  input: Partial<Omit<GuestExperienceRevision["config"], "branchId">>,
+) {
+  return apiRequest<{
+    preview: true;
+    persisted: false;
+    branchId: string;
+    config: GuestExperienceRevision["config"];
+  }>("/api/v1/qr/experience/preview", { method: "POST", body: input });
+}
+
 export function scheduleQrExperience(revisionId: string, scheduledAt: string) {
   return apiRequest<GuestExperienceRevision>(
     `/api/v1/qr/experience/${encodeURIComponent(revisionId)}/schedule`,
@@ -1636,6 +2004,34 @@ export async function listQrTables() {
 export function rotateQrTable(tableId: string) {
   return apiRequest<{ tableId: string; version: number; publicUrl: string }>(
     `/api/v1/qr/tables/${encodeURIComponent(tableId)}/rotate`,
+    { method: "POST" },
+  );
+}
+
+export function activateQrTableService(tableId: string) {
+  return apiRequest<{ sessionId: string; code: string; expiresAt: string }>(
+    `/api/v1/qr/tables/${encodeURIComponent(tableId)}/service-session`,
+    { method: "POST" },
+  );
+}
+
+export function revokeQrTableService(tableId: string, reason: string) {
+  return apiRequest<{ revoked: boolean }>(
+    `/api/v1/qr/tables/${encodeURIComponent(tableId)}/service-session/revoke`,
+    { method: "POST", body: { reason } },
+  );
+}
+
+export async function listQrPresenceApprovals() {
+  const response = await apiRequest<{ data: QrPresenceApproval[] }>(
+    "/api/v1/qr/presence-approvals?status=pending",
+  );
+  return response.data;
+}
+
+export function approveQrPresenceApproval(requestId: string) {
+  return apiRequest<{ id: string; status: "approved" }>(
+    `/api/v1/qr/presence-approvals/${encodeURIComponent(requestId)}/approve`,
     { method: "POST" },
   );
 }
@@ -1860,6 +2256,7 @@ export function createProduct(input: {
   costCents?: number;
   imageUrl?: string;
   isAvailable?: boolean;
+  isAlcoholic: boolean;
   isClubEligible?: boolean;
   bottleVolumeMl?: number;
   defaultDoseMl?: number;
@@ -1936,6 +2333,40 @@ export function getSecurePublicQrContext(token: string) {
   );
 }
 
+export function validateSecurePublicPresenceCode(token: string, code: string) {
+  return apiRequest<{ expiresAt: string; validationMethod: "code" }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/presence/code`,
+    { method: "POST", body: { code } },
+  );
+}
+
+export function requestSecurePublicPresenceApproval(token: string) {
+  return apiRequest<{ requestId: string; claimKey: string; expiresAt: string }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/presence/approval`,
+    { method: "POST", body: {} },
+  );
+}
+
+export function claimSecurePublicPresenceApproval(
+  token: string,
+  requestId: string,
+  claimKey: string,
+) {
+  return apiRequest<
+    { status: "pending" | "expired" | "rejected" } | { status: "approved"; expiresAt: string }
+  >(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/presence/approval/${encodeURIComponent(requestId)}/claim`,
+    { method: "POST", body: { claimKey } },
+  );
+}
+
+export function validateSecurePublicPresenceNetwork(token: string) {
+  return apiRequest<{ expiresAt: string; validationMethod: "network" }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/presence/network`,
+    { method: "POST", body: {} },
+  );
+}
+
 export function getSecurePublicOrder(token: string) {
   return apiRequest<SecurePublicOrderSummary>(
     `/api/v1/qr/public/${encodeURIComponent(token)}/order`,
@@ -1946,11 +2377,25 @@ export function buildSecurePublicOrderEventsUrl(token: string) {
   return `${apiBaseUrl}/api/v1/qr/public/${encodeURIComponent(token)}/events`;
 }
 
+export function buildSecurePublicOrderDeltaEventsUrl(token: string) {
+  return `${apiBaseUrl}/api/v1/qr/public/${encodeURIComponent(token)}/events/delta`;
+}
+
+export function classifyOperationalDeltaBatch(
+  currentVersion: number,
+  batch: OperationalDeltaBatch,
+): "accepted" | "stale" | "gap" {
+  if (batch.toVersion <= currentVersion) return "stale";
+  if (currentVersion > 0 && batch.fromVersion > currentVersion + 1) return "gap";
+  return "accepted";
+}
+
 export function createSecurePublicOrder(
   token: string,
   idempotencyKey: string,
   input: {
     guestLabel?: string;
+    ageConfirmationToken?: string;
     items: {
       productId: string;
       quantity: number;
@@ -1971,13 +2416,31 @@ export function createSecurePublicOrder(
   });
 }
 
+export function createSecureAgeConfirmation(token: string) {
+  return apiRequest<{ token: string; expiresAt: string }>(
+    `/api/v1/qr/public/${encodeURIComponent(token)}/age-confirmation`,
+    { method: "POST", body: { confirmed: true } },
+  );
+}
+
 export function createSecureServiceRequest(
   token: string,
   idempotencyKey: string,
-  input: {
-    type: "call_waiter" | "request_pre_bill" | "need_help";
-    message?: string;
-  },
+  input:
+    | { type: "call_waiter" | "request_pre_bill" | "need_help"; message?: string }
+    | {
+        type: "split_intent";
+        message?: string;
+        split: { mode: "equal" | "by_item" | "custom"; people?: number };
+      }
+    | {
+        type: "payment_preference";
+        message?: string;
+        payment: {
+          method: "cash" | "pix" | "credit_card" | "debit_card" | "other";
+          splitMode?: "single" | "equal" | "by_item" | "custom";
+        };
+      },
 ) {
   return apiRequest<{ id: string; status: string; type: string }>(
     `/api/v1/qr/public/${encodeURIComponent(token)}/service-requests`,
@@ -1999,9 +2462,10 @@ export function recordSecureQrAttribution(token: string, destination: "giromesa"
 export function getSecureServiceRequest(token: string, requestId: string) {
   return apiRequest<{
     id: string;
-    type: "call_waiter" | "request_pre_bill" | "need_help";
+    type: "call_waiter" | "request_pre_bill" | "need_help" | "split_intent" | "payment_preference";
     status: "pending" | "acknowledged" | "resolved" | "canceled";
     message: string | null;
+    metadata: Record<string, unknown>;
     acknowledgedAt: string | null;
     resolvedAt: string | null;
     createdAt: string;
@@ -2032,8 +2496,9 @@ export function buildRealtimeEventsUrl(branchId: string) {
   return `${apiBaseUrl}/api/v1/realtime/events?branchId=${encodeURIComponent(branchId)}`;
 }
 
-export async function listKdsTickets() {
-  const result = await apiRequest<{ data: KdsTicket[] }>("/api/v1/kds/tickets");
+export async function listKdsTickets(input: { stationId?: string } = {}) {
+  const query = input.stationId ? `?stationId=${encodeURIComponent(input.stationId)}` : "";
+  const result = await apiRequest<{ data: KdsTicket[] }>(`/api/v1/kds/tickets${query}`);
   return result.data;
 }
 
@@ -2186,11 +2651,19 @@ export function updateKdsTicketItem(
   );
 }
 
+export function recallLastDeliveredKdsTicket(stationId: string) {
+  return apiRequest<KdsTicket & { audit: "kds.delivery_recalled" }>("/api/v1/kds/tickets/recall", {
+    method: "POST",
+    body: { stationId },
+  });
+}
+
 export function openOrder(
   branchId: string,
   tableId?: string,
   peopleCount = 2,
   customerId?: string,
+  idempotencyKey = `open-order:${globalThis.crypto.randomUUID()}`,
 ) {
   return apiRequest<OpenOrderResponse>("/api/v1/pos/orders/open", {
     method: "POST",
@@ -2200,6 +2673,7 @@ export function openOrder(
       tableId,
       ...(customerId ? { customerId } : {}),
       peopleCount,
+      idempotencyKey,
     },
   });
 }
@@ -2246,7 +2720,11 @@ export function registerOperationalDevice(input: {
   name: string;
   kind: string;
   theme: "light" | "dark" | "system";
-  kdsInput: "touch" | "keyboard" | "hybrid";
+  kdsInput: "touch" | "keyboard" | "hybrid" | "printer";
+  initialMode: "table" | "counter" | "bar" | "cashier" | "kds" | "expedition";
+  stationId?: string;
+  printerDeviceId?: string;
+  allowModeSwitch: boolean;
 }) {
   return apiRequest<{
     id: string;
@@ -2256,11 +2734,43 @@ export function registerOperationalDevice(input: {
     status: string;
     theme: string;
     kdsInput: string;
+    initialMode: string;
+    stationId: string | null;
+    printerDeviceId: string | null;
+    allowModeSwitch: boolean;
     token: string;
   }>("/api/v1/pos/devices", {
     method: "POST",
     body: input,
   });
+}
+
+export type OperationalDeviceProfile = {
+  id: string;
+  branchId: string;
+  name: string;
+  kind: string;
+  initialMode: "table" | "counter" | "bar" | "cashier" | "kds" | "expedition";
+  stationId: string | null;
+  printerDeviceId: string | null;
+  allowModeSwitch: boolean;
+  theme: "light" | "dark" | "system";
+  kdsInput: "touch" | "keyboard" | "hybrid" | "printer";
+};
+
+export function activateOperationalDevice(token: string) {
+  return apiRequest<OperationalDeviceProfile>("/api/v1/pos/devices/activate", {
+    method: "POST",
+    body: { token },
+  });
+}
+
+export function getCurrentOperationalDevice() {
+  return apiRequest<OperationalDeviceProfile | null>("/api/v1/pos/devices/current");
+}
+
+export function deactivateOperationalDevice() {
+  return apiRequest<{ active: false }>("/api/v1/pos/devices/deactivate", { method: "POST" });
 }
 
 export async function listOperationalDevices(branchId?: string) {
@@ -2274,6 +2784,10 @@ export async function listOperationalDevices(branchId?: string) {
       status: string;
       theme: string;
       kdsInput: string;
+      initialMode: string;
+      stationId: string | null;
+      printerDeviceId: string | null;
+      allowModeSwitch: boolean;
       lastSeenAt: string | null;
       createdAt: string;
     }>;
@@ -2294,6 +2808,7 @@ export function addOrderItem(
   modifiers: Array<{ optionId: string }> = [],
   notes = "Lançado pelo painel GiroMesa",
   quantity = 1,
+  idempotencyKey: string,
 ) {
   return apiRequest<OrderItemResponse>(`/api/v1/pos/orders/${orderId}/items`, {
     method: "POST",
@@ -2302,6 +2817,7 @@ export function addOrderItem(
       quantity,
       notes,
       modifiers,
+      idempotencyKey,
     },
   });
 }
@@ -2398,6 +2914,12 @@ export function registerManualPayment(
     idempotencyKey?: string;
     registeredVia?: "waiter" | "cashier";
     reference?: string;
+    allocations?: Array<{
+      orderItemId?: string;
+      seatLabel?: string;
+      amountCents: number;
+      idempotencyKey: string;
+    }>;
   },
 ) {
   return apiRequest<PaymentResponse>(`/api/v1/pos/orders/${orderId}/payments`, {
@@ -2409,6 +2931,7 @@ export function registerManualPayment(
         input?.idempotencyKey ?? `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       registeredVia: input?.registeredVia ?? "cashier",
       ...(input?.reference ? { reference: input.reference } : {}),
+      ...(input?.allocations?.length ? { allocations: input.allocations } : {}),
     },
   });
 }
@@ -2666,6 +3189,7 @@ export function updateBranchOperationalSettings(
       BranchOperationalSettings,
       | "cleaningMode"
       | "allowWaiterPayments"
+      | "waiterResponsibilityPolicy"
       | "defaultTheme"
       | "defaultKdsInputMode"
       | "kdsShortcuts"
@@ -2676,6 +3200,121 @@ export function updateBranchOperationalSettings(
     `/api/v1/pos/branches/${encodeURIComponent(branchId)}/operational-settings`,
     { method: "PATCH", body: input },
   );
+}
+
+export async function listWaiterAssignments(branchId: string) {
+  const result = await apiRequest<{ data: WaiterAssignmentList }>(
+    `/api/v1/pos/waiter-assignments?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return result.data;
+}
+
+export async function assignWaiterTable(input: {
+  branchId: string;
+  tableId: string;
+  waiterUserId: string;
+  reason?: string;
+  expectedVersion?: number;
+}) {
+  const result = await apiRequest<{ data: WaiterAssignment }>("/api/v1/pos/waiter-assignments", {
+    method: "POST",
+    body: input,
+  });
+  return result.data;
+}
+
+export async function assignWaiterTablesBatch(input: {
+  branchId: string;
+  waiterUserId: string;
+  areaId?: string;
+  tableIds?: string[];
+  expectedVersions?: Record<string, number>;
+  reason: string;
+}) {
+  const result = await apiRequest<{
+    data: { shiftId: string; assignments: WaiterAssignment[]; count: number };
+  }>("/api/v1/pos/waiter-assignments/batch", { method: "POST", body: input });
+  return result.data;
+}
+
+export async function copyPreviousWaiterShift(branchId: string) {
+  const result = await apiRequest<{
+    data: {
+      shiftId: string;
+      copied: WaiterAssignment[];
+      skipped: string[];
+      sourceShiftId: string | null;
+    };
+  }>("/api/v1/pos/waiter-assignments/copy-previous-shift", {
+    method: "POST",
+    body: { branchId },
+  });
+  return result.data;
+}
+
+export async function redistributeInactiveWaiterAssignments(input: {
+  branchId: string;
+  waiterUserId: string;
+  tableIds?: string[];
+  expectedVersions?: Record<string, number>;
+  reason: string;
+}) {
+  const result = await apiRequest<{
+    data: { shiftId: string; assignments: WaiterAssignment[]; count: number };
+  }>("/api/v1/pos/waiter-assignments/redistribute-inactive", {
+    method: "POST",
+    body: input,
+  });
+  return result.data;
+}
+
+export async function claimWaiterTable(branchId: string, tableId: string) {
+  const result = await apiRequest<{
+    data: { assignment: WaiterAssignment; claimed: boolean };
+  }>("/api/v1/pos/waiter-assignments/claim", { method: "POST", body: { branchId, tableId } });
+  return result.data;
+}
+
+export async function transferWaiterTable(input: {
+  branchId: string;
+  tableId: string;
+  waiterUserId: string;
+  reason: string;
+}) {
+  const result = await apiRequest<{ data: WaiterAssignment }>(
+    "/api/v1/pos/waiter-assignments/transfer",
+    {
+      method: "POST",
+      body: input,
+    },
+  );
+  return result.data;
+}
+
+export async function requestWaiterHelp(input: {
+  branchId: string;
+  tableId: string;
+  reason: string;
+}) {
+  const result = await apiRequest<{
+    data: { id: string; status: string; replayed: boolean };
+  }>("/api/v1/pos/waiter-assignments/help", { method: "POST", body: input });
+  return result.data;
+}
+
+export async function listWaiterHelpRequests(branchId: string) {
+  const result = await apiRequest<{ data: WaiterHelpRequest[] }>(
+    `/api/v1/pos/waiter-assignments/help?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return result.data;
+}
+
+export async function grantWaiterHelp(requestId: string, managerPin: string) {
+  const result = await apiRequest<{ data: { id: string; status: string } }>(
+    `/api/v1/pos/waiter-assignments/help/${encodeURIComponent(requestId)}/grant`,
+    { method: "POST", body: { managerPin } },
+  );
+  return result.data;
 }
 
 export function openShift(branchId: string, notes?: string) {
@@ -2831,16 +3470,225 @@ export function issueFiscalDocument(orderId: string) {
   );
 }
 
-export function cancelFiscalDocument(documentId: string) {
-  return apiRequest<FiscalDocument>(`/api/v1/fiscal/documents/${documentId}/cancel`, {
-    method: "POST",
-  });
+export function cancelFiscalDocument(documentId: string, reason: string, idempotencyKey: string) {
+  return apiRequest<{ documentId: string; status: string; operationId: string; queued: true }>(
+    `/api/v1/fiscal/documents/${documentId}/cancel`,
+    {
+      method: "POST",
+      body: { reason, idempotencyKey },
+    },
+  );
 }
 
 export function retryFiscalDocument(documentId: string) {
   return apiRequest<FiscalDocument>(`/api/v1/fiscal/documents/${documentId}/retry`, {
     method: "POST",
   });
+}
+
+export function getFiscalOnboarding(branchId: string) {
+  return apiRequest<FiscalOnboarding>(
+    `/api/v1/fiscal/onboarding?branchId=${encodeURIComponent(branchId)}`,
+  );
+}
+
+export function startFiscalOnboarding(branchId: string) {
+  return apiRequest<FiscalOnboarding>("/api/v1/fiscal/onboarding/start", {
+    method: "POST",
+    body: { branchId },
+  });
+}
+
+export function updateFiscalCompany(input: {
+  branchId: string;
+  legalName: string;
+  tradeName?: string;
+  document: string;
+  stateRegistration: string;
+  municipalRegistration?: string;
+  taxRegime: string;
+  uf: string;
+  cityCode: string;
+  cityName: string;
+  expectedVersion: number;
+}) {
+  return apiRequest("/api/v1/fiscal/onboarding/company", { method: "PATCH", body: input });
+}
+
+export function updateFiscalTaxProfile(input: {
+  branchId: string;
+  expectedVersion: number;
+  cscId?: string;
+  series: string;
+  defaultModel: "nfce" | "nfe" | "nfse";
+  defaults: Record<string, unknown>;
+}) {
+  return apiRequest("/api/v1/fiscal/onboarding/tax-profile", { method: "PATCH", body: input });
+}
+
+export function registerFiscalSimulator(branchId: string) {
+  return apiRequest("/api/v1/fiscal/onboarding/provider/register", {
+    method: "POST",
+    body: { branchId },
+  });
+}
+
+export function runFiscalHomologation(branchId: string) {
+  return apiRequest<{ allPassed: boolean; results: Array<{ scenario: string; status: string }> }>(
+    "/api/v1/fiscal/onboarding/homologation-tests",
+    { method: "POST", body: { branchId } },
+  );
+}
+
+export function inviteFiscalAccountant(branchId: string, email: string) {
+  return apiRequest<{ id: string; deliveryStatus: string }>(
+    "/api/v1/fiscal/onboarding/accountant-invitations",
+    { method: "POST", body: { branchId, email, expiresInHours: 48 } },
+  );
+}
+
+export function revokeFiscalAccountantInvitation(invitationId: string) {
+  return apiRequest<{ id: string; status: string; revokedAt: string }>(
+    `/api/v1/fiscal/onboarding/accountant-invitations/${encodeURIComponent(invitationId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function saveFiscalCredential(input: {
+  branchId: string;
+  environment: "homologation" | "production";
+  token: string;
+}) {
+  return apiRequest<{ id: string; tokenLastFour: string; status: string }>(
+    "/api/v1/fiscal/credentials",
+    { method: "POST", body: input },
+  );
+}
+
+export function revokeFiscalCredential(credentialId: string) {
+  return apiRequest<{ id: string; status: string; revokedAt: string }>(
+    `/api/v1/fiscal/credentials/${encodeURIComponent(credentialId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function uploadFiscalCertificate(input: {
+  branchId: string;
+  name: string;
+  password: string;
+  data: string;
+  filename: string;
+}) {
+  return apiRequest<{
+    branchId: string;
+    fingerprint: string;
+    providerStatus: string;
+    retained: false;
+  }>("/api/v1/fiscal/certificates", { method: "POST", body: { ...input, type: "a1" } });
+}
+
+export function enableFiscalProduction(
+  branchId: string,
+  input: { reason: string; mfaCode: string; expectedVersion: number },
+) {
+  return apiRequest(`/api/v1/fiscal/branches/${encodeURIComponent(branchId)}/production/enable`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function disableFiscalProduction(branchId: string, reason: string) {
+  return apiRequest(`/api/v1/fiscal/branches/${encodeURIComponent(branchId)}/production/disable`, {
+    method: "POST",
+    body: { reason },
+  });
+}
+
+export function getBranchPaymentSettings(branchId: string) {
+  return apiRequest<BranchPaymentSettingsResponse>(
+    `/api/v1/pos/branches/${encodeURIComponent(branchId)}/payment-settings`,
+  );
+}
+
+export function updateBranchPaymentSettings(branchId: string, input: BranchPaymentSettingsUpdate) {
+  return apiRequest<BranchPaymentSettingsResponse["settings"]>(
+    `/api/v1/pos/branches/${encodeURIComponent(branchId)}/payment-settings`,
+    { method: "PATCH", body: input },
+  );
+}
+
+export async function listPaymentTerminals(branchId: string) {
+  const result = await apiRequest<{ data: PaymentTerminal[] }>(
+    `/api/v1/pos/payment-terminals?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return result.data;
+}
+
+export function createPaymentTerminal(input: {
+  branchId: string;
+  name: string;
+  provider?: string;
+  providerTerminalId?: string;
+  capabilities: Record<string, unknown>;
+}) {
+  return apiRequest<PaymentTerminal>("/api/v1/pos/payment-terminals", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function revokePaymentTerminal(terminalId: string) {
+  return apiRequest<{ id: string; status: string; revokedAt: string }>(
+    `/api/v1/pos/payment-terminals/${encodeURIComponent(terminalId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function listPaymentReconciliationEntries(
+  branchId: string,
+  status?: PaymentReconciliationEntry["status"],
+) {
+  const query = new URLSearchParams({ branchId });
+  if (status) query.set("status", status);
+  const result = await apiRequest<{ data: PaymentReconciliationEntry[] }>(
+    `/api/v1/finance/payment-reconciliation/entries?${query.toString()}`,
+  );
+  return result.data;
+}
+
+export function importPaymentReconciliation(input: {
+  branchId: string;
+  csv: string;
+  source?: string;
+}) {
+  return apiRequest<{
+    summary: { rows: number; matched: number; divergent: number; unmatched: number };
+    duplicate: boolean;
+  }>("/api/v1/finance/payment-reconciliation/imports", { method: "POST", body: input });
+}
+
+export function resolvePaymentReconciliation(
+  entryId: string,
+  input: {
+    expectedVersion: number;
+    resolution: "accepted" | "ignored" | "chargeback";
+    reason: string;
+  },
+) {
+  return apiRequest<PaymentReconciliationEntry>(
+    `/api/v1/finance/payment-reconciliation/entries/${entryId}/resolve`,
+    { method: "POST", body: input },
+  );
+}
+
+export function matchPaymentReconciliation(
+  entryId: string,
+  input: { paymentId: string; expectedVersion: number; reason: string },
+) {
+  return apiRequest<PaymentReconciliationEntry>(
+    `/api/v1/finance/payment-reconciliation/entries/${entryId}/match`,
+    { method: "POST", body: input },
+  );
 }
 
 export async function listInventorySummary(branchId: string) {
@@ -2875,6 +3723,7 @@ export function adjustInventoryStock(input: {
   inventoryItemId: string;
   type?: InventoryMovement["type"];
   supplierId?: string;
+  stockLocationId?: string;
   quantity: string;
   unitCostCents?: number;
   reason: string;
@@ -2916,6 +3765,145 @@ export async function listInventoryMovements(branchId: string, limit = 50) {
     `/api/v1/inventory/movements?branchId=${encodeURIComponent(branchId)}&limit=${limit}`,
   );
   return result.data;
+}
+
+export async function listStockLocations(branchId: string) {
+  const result = await apiRequest<{ data: StockLocation[] }>(
+    `/api/v1/inventory/locations?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return result.data;
+}
+
+export async function listInventoryLocationBalances(branchId: string) {
+  const result = await apiRequest<{ data: InventoryLocationBalance[] }>(
+    `/api/v1/inventory/location-balances?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return result.data;
+}
+
+export function createStockLocation(input: {
+  branchId: string;
+  name: string;
+  type: "salon" | "production" | "stock";
+}) {
+  return apiRequest<StockLocation>("/api/v1/inventory/locations", { method: "POST", body: input });
+}
+
+export function renameStockLocation(locationId: string, name: string) {
+  return apiRequest<StockLocation>(`/api/v1/inventory/locations/${locationId}`, {
+    method: "PATCH",
+    body: { name },
+  });
+}
+
+export function archiveStockLocation(locationId: string) {
+  return apiRequest<StockLocation>(`/api/v1/inventory/locations/${locationId}/archive`, {
+    method: "POST",
+  });
+}
+
+export function createInventoryTransfer(input: {
+  branchId: string;
+  originLocationId: string;
+  destinationLocationId: string;
+  reason: string;
+  idempotencyKey: string;
+  lines: Array<{ inventoryItemId: string; quantity: string }>;
+}) {
+  return apiRequest<InventoryTransfer>("/api/v1/inventory/transfers", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function listInventoryTransfers(branchId: string) {
+  const result = await apiRequest<{ data: InventoryTransfer[] }>(
+    `/api/v1/inventory/transfers?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return result.data;
+}
+
+export function receiveInventoryTransfer(
+  transferId: string,
+  input: {
+    expectedVersion: number;
+    lines: Array<{ id: string; quantityReceived: string; divergenceReason?: string }>;
+  },
+) {
+  return apiRequest<InventoryTransfer>(`/api/v1/inventory/transfers/${transferId}/receive`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function cancelInventoryTransfer(transferId: string, expectedVersion: number) {
+  return apiRequest<InventoryTransfer>(`/api/v1/inventory/transfers/${transferId}/cancel`, {
+    method: "POST",
+    body: { expectedVersion },
+  });
+}
+
+export function reverseInventoryTransfer(
+  transferId: string,
+  expectedVersion: number,
+  reason: string,
+) {
+  return apiRequest<InventoryTransfer>(`/api/v1/inventory/transfers/${transferId}/reverse`, {
+    method: "POST",
+    body: { expectedVersion, reason },
+  });
+}
+
+export function getInventorySettings(branchId: string) {
+  return apiRequest<InventorySettings>(
+    `/api/v1/inventory/settings?branchId=${encodeURIComponent(branchId)}`,
+  );
+}
+
+export function saveInventorySettings(input: {
+  branchId: string;
+  transferMode: InventorySettings["transferMode"];
+  managerApprovalThreshold: string;
+  consumptionLocationId: string;
+}) {
+  return apiRequest<InventorySettings>("/api/v1/inventory/settings", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function listReturnableMappings() {
+  const result = await apiRequest<{ data: ReturnableMapping[] }>(
+    "/api/v1/inventory/returnables/mappings",
+  );
+  return result.data;
+}
+
+export function upsertReturnableMapping(input: {
+  productId: string;
+  fullInventoryItemId: string;
+  emptyInventoryItemId: string;
+}) {
+  return apiRequest<ReturnableMapping>("/api/v1/inventory/returnables/mappings", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function recordReturnableEvent(input: {
+  branchId: string;
+  stockLocationId: string;
+  mappingId: string;
+  quantity: string;
+  type: "supplier_exchange" | "breakage" | "loss";
+  reason: string;
+  idempotencyKey: string;
+  supplierId?: string;
+}) {
+  return apiRequest<{ id: string; ok: true }>("/api/v1/inventory/returnables/events", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function listDeliveries(branchId: string, status?: DeliveryStatus) {
@@ -3064,6 +4052,37 @@ export function configureClubWhiskyIntegration(input?: {
   });
 }
 
+export function activateClubWhiskyIntegration(input: {
+  expectedVersion: number;
+  evidence: string;
+}) {
+  return apiRequest<ClubWhiskyIntegrationConfig>(
+    "/api/v1/integrations/club-whisky/lifecycle/activate",
+    {
+      method: "POST",
+      body: { ...input, contractVersion: "2026-07-30" },
+    },
+  );
+}
+
+export function recordClubWhiskyHealth(input: {
+  expectedVersion: number;
+  healthy: boolean;
+  detail: string;
+}) {
+  return apiRequest<ClubWhiskyIntegrationConfig>(
+    "/api/v1/integrations/club-whisky/lifecycle/health",
+    { method: "POST", body: input },
+  );
+}
+
+export function revokeClubWhiskyIntegration(input: { expectedVersion: number; reason: string }) {
+  return apiRequest<ClubWhiskyIntegrationConfig>(
+    "/api/v1/integrations/club-whisky/lifecycle/revoke",
+    { method: "POST", body: input },
+  );
+}
+
 export async function getEcosystemEntitlements() {
   const result = await apiRequest<{ data: EcosystemEntitlement[] }>(
     "/api/v1/ecosystem/entitlements",
@@ -3163,6 +4182,12 @@ export function updatePlatformTenantSupport(
     slaTier: "standard" | "priority" | "critical";
     nextFollowUpAt?: string | null;
     contactSummary?: string;
+    accessMode?: "read_only" | "elevated";
+    elevationExpiresAt?: string | null;
+    elevationReason?: string;
+    accessBranchId?: string | null;
+    accessResource?: "operations" | "integrations" | "audit";
+    accessActions?: Array<"read" | "mutate">;
   },
 ) {
   return apiRequest<PlatformTenantSupportResponse>(`/api/v1/platform/tenants/${tenantId}/support`, {

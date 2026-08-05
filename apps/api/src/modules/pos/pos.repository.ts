@@ -5,7 +5,9 @@ import {
   floorAreas,
   floorPlans,
   orders,
+  qrGuestSessions,
   reservations,
+  tableServiceSessions,
   users,
 } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
@@ -439,6 +441,7 @@ export class PosRepository {
             inArray(diningTables.id, uniqueTableIds),
           ),
         );
+      await this.revokeQrSessions(tx, context, uniqueTableIds, "tables_merged");
       await this.insertAuditLog(
         context,
         {
@@ -472,6 +475,17 @@ export class PosRepository {
       if (!table) throw new NotFoundException("Table not found");
       if (!table.groupId) throw new BadRequestException("Table is not part of a group");
       const groupId = table.groupId;
+      const groupTables = await tx
+        .select({ id: diningTables.id })
+        .from(diningTables)
+        .where(
+          and(
+            eq(diningTables.tenantId, context.tenantId),
+            eq(diningTables.branchId, table.branchId),
+            eq(diningTables.groupId, groupId),
+          ),
+        )
+        .for("update");
       await tx
         .update(diningTables)
         .set({
@@ -486,6 +500,12 @@ export class PosRepository {
             eq(diningTables.groupId, groupId),
           ),
         );
+      await this.revokeQrSessions(
+        tx,
+        context,
+        groupTables.map((entry) => entry.id),
+        "tables_separated",
+      );
       await this.insertAuditLog(
         context,
         {
@@ -509,5 +529,47 @@ export class PosRepository {
           ),
         );
     });
+  }
+
+  private async revokeQrSessions(
+    tx: TransactionClient,
+    context: TenantContext,
+    tableIds: string[],
+    reason: string,
+  ) {
+    if (!tableIds.length) return;
+    const now = new Date();
+    const sessions = await tx
+      .update(tableServiceSessions)
+      .set({
+        status: "revoked",
+        revokedAt: now,
+        revokedByUserId: context.userId ?? null,
+        revokeReason: reason,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(tableServiceSessions.tenantId, context.tenantId),
+          inArray(tableServiceSessions.tableId, tableIds),
+          eq(tableServiceSessions.status, "active"),
+        ),
+      )
+      .returning({ id: tableServiceSessions.id });
+    if (!sessions.length) return;
+    await tx
+      .update(qrGuestSessions)
+      .set({
+        status: "revoked",
+        revokedAt: now,
+        revokedByUserId: context.userId ?? null,
+        updatedAt: now,
+      })
+      .where(
+        inArray(
+          qrGuestSessions.tableServiceSessionId,
+          sessions.map((session) => session.id),
+        ),
+      );
   }
 }

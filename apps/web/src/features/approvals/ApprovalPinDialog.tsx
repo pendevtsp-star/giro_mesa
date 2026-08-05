@@ -1,6 +1,7 @@
 "use client";
 
-import { KeyRound, X } from "lucide-react";
+import { Dialog } from "@giromesa/ui";
+import { KeyRound } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 export function ApprovalPinDialog({
@@ -32,8 +33,6 @@ export function ApprovalPinDialog({
     }
   }, [open]);
 
-  if (!open) return null;
-
   function submit(event: FormEvent) {
     event.preventDefault();
     if (pin.length < 4) return;
@@ -41,71 +40,56 @@ export function ApprovalPinDialog({
   }
 
   return (
-    <div className="approval-dialog-backdrop">
-      <button
-        className="approval-dialog-dismiss"
-        type="button"
-        aria-label="Fechar aprovação"
-        onClick={onClose}
-      />
-      <section
-        className="approval-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="approval-dialog-title"
-      >
-        <button
-          className="approval-dialog-close"
-          type="button"
-          onClick={onClose}
-          aria-label="Fechar"
-        >
-          <X size={18} />
-        </button>
-        <span className="section-kicker">
-          <KeyRound size={15} /> Aprovação gerencial
-        </span>
-        <h2 id="approval-dialog-title">{title}</h2>
-        <p className="muted-copy">{description}</p>
-        <form className="settings-form" onSubmit={submit}>
-          <label>
-            PIN do gerente
-            <input
-              inputMode="numeric"
-              pattern="[0-9]*"
-              minLength={4}
-              maxLength={12}
-              type="password"
-              value={pin}
-              onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))}
-              autoComplete="off"
-              required
-            />
-          </label>
-          <label>
-            Observação da decisão
-            <textarea
-              maxLength={240}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Opcional"
-            />
-          </label>
-          {error ? (
-            <p className="danger-text" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="toolbar">
-            <button className="button ghost" type="button" onClick={onClose} disabled={busy}>
-              Voltar
-            </button>
-            <button className="button primary" type="submit" disabled={busy || pin.length < 4}>
-              {busy ? "Validando..." : confirmLabel}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+    <Dialog
+      className="approval-dialog"
+      dismissible={!busy}
+      onClose={onClose}
+      open={open}
+      title={title}
+    >
+      <span className="section-kicker">
+        <KeyRound aria-hidden="true" size={15} /> Aprovação gerencial
+      </span>
+      <p className="muted-copy">{description}</p>
+      <form className="settings-form" onSubmit={submit}>
+        <label>
+          PIN do gerente
+          <input
+            autoComplete="off"
+            data-dialog-initial-focus
+            inputMode="numeric"
+            maxLength={12}
+            minLength={4}
+            onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))}
+            pattern="[0-9]*"
+            required
+            type="password"
+            value={pin}
+          />
+        </label>
+        <label>
+          Observação da decisão
+          <textarea
+            maxLength={240}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Opcional"
+            value={reason}
+          />
+        </label>
+        {error ? (
+          <p className="danger-text" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="toolbar">
+          <button className="button ghost" disabled={busy} onClick={onClose} type="button">
+            Voltar
+          </button>
+          <button className="button primary" disabled={busy || pin.length < 4} type="submit">
+            {busy ? "Validando..." : confirmLabel}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

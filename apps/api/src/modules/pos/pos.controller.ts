@@ -4,20 +4,27 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   Inject,
+  Optional,
   Param,
   Patch,
   Post,
   Query,
+  Res,
+  ServiceUnavailableException,
   Sse,
 } from "@nestjs/common";
-import { distinctUntilChanged, from, interval, map, startWith, switchMap } from "rxjs";
+import type { FastifyReply } from "fastify";
+import { from, map, switchMap } from "rxjs";
 import { z } from "zod";
-import type { HeaderRecord } from "../../common/http";
+import { firstHeader, type HeaderRecord, parseCookies } from "../../common/http";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
+import { OperationalRealtimeService } from "./operational-realtime.service";
+import { PaymentSettingsService } from "./payment-settings.service";
 import { PosService } from "./pos.service";
 
 const openOrderSchema = z.object({
@@ -26,6 +33,7 @@ const openOrderSchema = z.object({
   tableId: z.string().optional(),
   customerId: z.string().optional(),
   peopleCount: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(8).max(180),
 });
 const assignCustomerSchema = z.object({ customerId: z.string().min(1) });
 
@@ -34,6 +42,7 @@ const addItemSchema = z.object({
   quantity: z.number().positive(),
   notes: z.string().optional(),
   modifiers: z.array(z.record(z.string(), z.unknown())).optional(),
+  idempotencyKey: z.string().min(8).max(180),
 });
 
 const paymentSchema = z.object({
@@ -42,6 +51,48 @@ const paymentSchema = z.object({
   idempotencyKey: z.string().min(8),
   registeredVia: z.enum(["waiter", "cashier"]).default("cashier"),
   reference: z.string().max(120).optional(),
+  executionMode: z.enum(["manual", "smartpos", "tef"]).default("manual"),
+  terminalDeviceId: z.string().uuid().optional(),
+  simulatorScenario: z.enum(["authorized", "denied", "unknown", "timeout"]).optional(),
+  managerOverride: z.boolean().optional(),
+  overrideReason: z.string().trim().min(8).max(240).optional(),
+  allocations: z
+    .array(
+      z
+        .object({
+          orderItemId: z.string().uuid().optional(),
+          seatLabel: z.string().trim().min(1).max(80).optional(),
+          amountCents: z.number().int().positive(),
+          idempotencyKey: z.string().min(8).max(180),
+        })
+        .refine((row) => Boolean(row.orderItemId) !== Boolean(row.seatLabel), {
+          message: "Informe item ou pessoa, nunca ambos",
+        }),
+    )
+    .max(100)
+    .optional(),
+});
+const paymentSettingsSchema = z.object({
+  profile: z.enum(["external_terminal", "smartpos", "tef", "hybrid"]),
+  preferredMode: z.enum(["manual", "smartpos", "tef"]),
+  allowManualFallback: z.boolean(),
+  reconciliationMode: z.enum(["manual", "import", "automatic"]),
+  provider: z.string().trim().min(2).max(40).optional(),
+  status: z.enum(["disabled", "active"]),
+  expectedVersion: z.number().int().positive(),
+});
+const terminalSchema = z.object({
+  branchId: z.string().uuid(),
+  name: z.string().trim().min(2).max(120),
+  provider: z.string().trim().min(2).max(40).optional(),
+  providerTerminalId: z.string().trim().min(2).max(160).optional(),
+  capabilities: z.record(z.string(), z.unknown()).default({}),
+});
+const paymentActionSchema = z.object({
+  idempotencyKey: z.string().min(8).max(180),
+  reason: z.string().trim().min(3).max(240).optional(),
+  amountCents: z.number().int().positive().optional(),
+  managerOverride: z.boolean().optional(),
 });
 
 const splitSchema = z.object({
@@ -73,6 +124,7 @@ const operationalSettingsSchema = z
     defaultTheme: z.enum(["light", "dark", "system"]).optional(),
     defaultKdsInputMode: z.enum(["touch", "keyboard", "hybrid", "printer"]).optional(),
     kdsShortcuts: z.record(z.string().min(1).max(20), z.string().min(1).max(20)).optional(),
+    waiterResponsibilityPolicy: z.enum(["strict", "collaborative"]).optional(),
   })
   .refine((input) => Object.keys(input).length > 0, "At least one setting is required");
 const preferencesSchema = z.object({
@@ -83,6 +135,10 @@ const preferencesSchema = z.object({
 const deviceSchema = preferencesSchema.extend({
   name: z.string().min(2).max(120),
   kind: z.enum(["pos", "salon", "waiter", "kds", "expedition", "cashier"]),
+  initialMode: z.enum(["table", "counter", "bar", "cashier", "kds", "expedition"]),
+  stationId: z.string().uuid().optional(),
+  printerDeviceId: z.string().uuid().optional(),
+  allowModeSwitch: z.boolean().default(false),
 });
 
 const cashOpenSchema = z.object({
@@ -127,6 +183,53 @@ const mergeTablesSchema = z.object({
   branchId: z.string().min(1),
   tableIds: z.array(z.string().min(1)).min(2).max(8),
 });
+const waiterAssignmentSchema = z.object({
+  branchId: z.string().uuid(),
+  tableId: z.string().uuid(),
+  waiterUserId: z.string().uuid(),
+  reason: z.string().trim().min(3).max(240).optional(),
+  source: z.enum(["manager", "area"]).optional(),
+  expectedVersion: z.number().int().nonnegative().optional(),
+});
+const assignmentVersionsSchema = z
+  .record(z.string().uuid(), z.number().int().nonnegative())
+  .refine((value) => Object.keys(value).length <= 200, "No more than 200 assignment versions");
+const waiterBatchAssignmentSchema = z
+  .object({
+    branchId: z.string().uuid(),
+    waiterUserId: z.string().uuid(),
+    areaId: z.string().uuid().optional(),
+    tableIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+    expectedVersions: assignmentVersionsSchema.optional(),
+    reason: z.string().trim().min(3).max(240),
+  })
+  .refine((input) => Boolean(input.areaId || input.tableIds?.length), {
+    message: "Informe um setor ou uma lista de mesas",
+  });
+const waiterCopyPreviousSchema = z.object({ branchId: z.string().uuid() });
+const waiterRedistributeSchema = z.object({
+  branchId: z.string().uuid(),
+  waiterUserId: z.string().uuid(),
+  tableIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+  expectedVersions: assignmentVersionsSchema.optional(),
+  reason: z.string().trim().min(3).max(240),
+});
+const waiterClaimSchema = z.object({ branchId: z.string().uuid(), tableId: z.string().uuid() });
+const waiterTransferSchema = z.object({
+  branchId: z.string().uuid(),
+  tableId: z.string().uuid(),
+  waiterUserId: z.string().uuid(),
+  reason: z.string().trim().min(3).max(240),
+  expectedVersion: z.number().int().nonnegative().optional(),
+});
+const waiterHelpSchema = z.object({
+  branchId: z.string().uuid(),
+  tableId: z.string().uuid(),
+  reason: z.string().trim().min(3).max(240),
+  idempotencyKey: z.string().min(8).max(180).optional(),
+  expectedAssignmentVersion: z.number().int().positive().optional(),
+});
+const waiterHelpGrantSchema = z.object({ managerPin: z.string().regex(/^\d{4,8}$/) });
 
 const qrOrderItemUpdateSchema = z.object({
   quantity: z.number().positive().max(99),
@@ -144,10 +247,12 @@ const qrOrderItemCancelSchema = z.object({
 const discountSchema = z.object({
   amountCents: z.number().int().positive(),
   reason: z.string().min(3).max(240),
+  idempotencyKey: z.string().min(8).max(180).optional(),
 });
 
 const itemCancellationSchema = z.object({
   reason: z.string().min(3).max(240),
+  idempotencyKey: z.string().min(8).max(180).optional(),
 });
 
 @Controller("pos")
@@ -157,13 +262,191 @@ export class PosController {
     private readonly posService: PosService,
     @Inject(AuthService)
     private readonly authService: AuthService,
+    @Optional()
+    @Inject(OperationalRealtimeService)
+    private readonly realtime?: OperationalRealtimeService,
+    @Inject(PaymentSettingsService)
+    private readonly paymentSettings?: PaymentSettingsService,
   ) {}
+
+  @Get("branches/:branchId/payment-settings")
+  async getPaymentSettings(@Headers() headers: HeaderRecord, @Param("branchId") branchId: string) {
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.paymentSettingsService().get(context, z.string().uuid().parse(branchId));
+  }
+
+  @Patch("branches/:branchId/payment-settings")
+  async updatePaymentSettings(
+    @Headers() headers: HeaderRecord,
+    @Param("branchId") branchId: string,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.paymentSettingsService().update(
+      context,
+      z.string().uuid().parse(branchId),
+      paymentSettingsSchema.parse(body),
+    );
+  }
+
+  @Get("payment-terminals")
+  async listPaymentTerminals(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return {
+      data: await this.paymentSettingsService().listTerminals(
+        context,
+        z.string().uuid().parse(branchId),
+      ),
+    };
+  }
+
+  @Post("payment-terminals")
+  async createPaymentTerminal(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.paymentSettingsService().createTerminal(context, terminalSchema.parse(body));
+  }
+
+  @Delete("payment-terminals/:terminalId")
+  async revokePaymentTerminal(
+    @Headers() headers: HeaderRecord,
+    @Param("terminalId") terminalId: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.paymentSettingsService().revokeTerminal(
+      context,
+      z.string().uuid().parse(terminalId),
+    );
+  }
 
   @Get("tables")
   async listTables(@Headers() headers: HeaderRecord, @Query("branchId") branchId: string) {
     const context = await this.contextWithPermission(headers);
     return {
       data: await this.posService.listTables(context, branchId),
+    };
+  }
+
+  @Get("waiter-assignments")
+  async listWaiterAssignments(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.listWaiterAssignments(context, z.string().uuid().parse(branchId)),
+    };
+  }
+
+  @Post("waiter-assignments")
+  async assignWaiter(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.assignWaiter(context, waiterAssignmentSchema.parse(body)),
+    };
+  }
+
+  @Post("waiter-assignments/batch")
+  async assignWaiterBatch(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.assignWaiterBatch(
+        context,
+        waiterBatchAssignmentSchema.parse(body),
+      ),
+    };
+  }
+
+  @Post("waiter-assignments/copy-previous-shift")
+  async copyPreviousWaiterShift(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    const { branchId } = waiterCopyPreviousSchema.parse(body);
+    return { data: await this.posService.copyPreviousWaiterShift(context, branchId) };
+  }
+
+  @Post("waiter-assignments/redistribute-inactive")
+  async redistributeInactiveWaiters(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.redistributeInactiveWaiterAssignments(
+        context,
+        waiterRedistributeSchema.parse(body),
+      ),
+    };
+  }
+
+  @Post("waiter-assignments/claim")
+  async claimWaiterAssignment(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.claimWaiterAssignment(context, waiterClaimSchema.parse(body)),
+    };
+  }
+
+  @Post("waiter-assignments/transfer")
+  async transferWaiterAssignment(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.transferWaiterAssignment(
+        context,
+        waiterTransferSchema.parse(body),
+      ),
+    };
+  }
+
+  @Post("waiter-assignments/help")
+  async requestWaiterHelp(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    const input = waiterHelpSchema.parse(body);
+    return {
+      data: await this.posService.requestWaiterHelp(context, {
+        ...input,
+        idempotencyKey:
+          input.idempotencyKey ?? optionalIdempotencyKey(headers) ?? context.requestId,
+      }),
+    };
+  }
+
+  @Get("waiter-assignments/help")
+  async listWaiterHelpRequests(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+  ) {
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    return {
+      data: await this.posService.listWaiterHelpRequests(
+        context,
+        z.string().uuid().parse(branchId),
+      ),
+    };
+  }
+
+  @Post("waiter-assignments/help/:requestId/grant")
+  async grantWaiterHelp(
+    @Headers() headers: HeaderRecord,
+    @Param("requestId") requestId: string,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:operate");
+    const { managerPin } = waiterHelpGrantSchema.parse(body);
+    return {
+      data: await this.posService.grantWaiterHelp(
+        context,
+        z.string().uuid().parse(requestId),
+        managerPin,
+      ),
     };
   }
 
@@ -272,19 +555,21 @@ export class PosController {
     if (!branchId) {
       throw new BadRequestException("branchId is required");
     }
+    if (!this.realtime) throw new ServiceUnavailableException("Realtime service is unavailable");
+    const realtime = this.realtime;
 
     return from(this.contextWithPermission(headers)).pipe(
-      switchMap((context) =>
-        interval(5000).pipe(
-          startWith(0),
-          switchMap(() => from(this.posService.getOperationalEventSnapshot(context, branchId))),
-          distinctUntilChanged((previous, current) => previous.signature === current.signature),
-          map((snapshot) => ({
-            type: "pos.changed",
-            data: snapshot,
-          })),
-        ),
-      ),
+      switchMap(async (context) => {
+        await this.posService.listOperationalEvents(context, branchId, 0, 1);
+        return context;
+      }),
+      switchMap((context) => realtime.stream(context.tenantId, branchId)),
+      map((batch) => ({
+        id: String(batch.toVersion),
+        type: "pos.delta",
+        retry: 1_000,
+        data: batch,
+      })),
     );
   }
 
@@ -304,6 +589,28 @@ export class PosController {
         z.coerce.number().int().min(1).max(200).parse(limit),
       ),
     };
+  }
+
+  @Get("operation-receipts")
+  async operationReceipt(
+    @Headers() headers: HeaderRecord,
+    @Query("branchId") branchId: string,
+    @Query("scope") scope: string,
+    @Query("idempotencyKey") idempotencyKey: string,
+  ) {
+    const context = await this.contextWithPermission(headers);
+    return this.posService.getOperationReceipt(context, {
+      branchId: z.string().uuid().parse(branchId),
+      scope: z
+        .enum([
+          "waiter.help_request",
+          "qr.table_service.activate",
+          "order.discount.request",
+          "order_item.cancel.request",
+        ])
+        .parse(scope),
+      idempotencyKey: z.string().min(8).max(180).parse(idempotencyKey),
+    });
   }
 
   @Get("session")
@@ -413,6 +720,37 @@ export class PosController {
     return { data: await this.posService.listOperationalDevices(context, branchId) };
   }
 
+  @Post("devices/activate")
+  async activateOperationalDevice(
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithOperationalDevicePermission(headers);
+    const token = z.object({ token: z.string().min(20).max(180) }).parse(body).token;
+    const profile = await this.posService.activateOperationalDevice(context, token);
+    reply.header("Set-Cookie", operationalDeviceCookie(token));
+    return profile;
+  }
+
+  @Get("devices/current")
+  async getCurrentOperationalDevice(@Headers() headers: HeaderRecord) {
+    const context = await this.contextWithOperationalDevicePermission(headers);
+    const token = parseCookies(firstHeader(headers.cookie)).get("gm_operational_device");
+    return this.posService.resolveOperationalDevice(context, token);
+  }
+
+  @Post("devices/deactivate")
+  async deactivateOperationalDevice(
+    @Headers() headers: HeaderRecord,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    await this.contextWithOperationalDevicePermission(headers);
+    reply.header("Set-Cookie", operationalDeviceCookie("", 0));
+    return { active: false as const };
+  }
+
   @Post("devices/:deviceId/revoke")
   async revokeOperationalDevice(
     @Headers() headers: HeaderRecord,
@@ -496,11 +834,11 @@ export class PosController {
   ) {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers, "pos:operate");
-    return this.posService.requestDiscount(
-      context,
-      z.string().uuid().parse(orderId),
-      discountSchema.parse(body),
-    );
+    const input = discountSchema.parse(body);
+    return this.posService.requestDiscount(context, z.string().uuid().parse(orderId), {
+      ...input,
+      idempotencyKey: input.idempotencyKey ?? optionalIdempotencyKey(headers) ?? context.requestId,
+    });
   }
 
   @Post("orders/:orderId/items/:itemId/cancel-requests")
@@ -512,11 +850,16 @@ export class PosController {
   ) {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers, "pos:operate");
+    const input = itemCancellationSchema.parse(body);
     return this.posService.requestItemCancellation(
       context,
       z.string().uuid().parse(orderId),
       z.string().uuid().parse(itemId),
-      itemCancellationSchema.parse(body),
+      {
+        ...input,
+        idempotencyKey:
+          input.idempotencyKey ?? optionalIdempotencyKey(headers) ?? context.requestId,
+      },
     );
   }
 
@@ -601,6 +944,68 @@ export class PosController {
     rejectTenantOverride(body);
     const context = await this.contextWithPermission(headers, "pos:payment_manage");
     return this.posService.registerPayment(context, orderId, paymentSchema.parse(body));
+  }
+
+  @Post("orders/:orderId/payment-intents")
+  async createPaymentIntent(
+    @Param("orderId") orderId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderRecord,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.posService.createPaymentIntent(context, orderId, paymentSchema.parse(body));
+  }
+
+  @Get("payments/:paymentId")
+  async getPayment(@Param("paymentId") paymentId: string, @Headers() headers: HeaderRecord) {
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.posService.getPayment(context, z.string().uuid().parse(paymentId));
+  }
+
+  @Post("payments/:paymentId/query")
+  async queryPayment(
+    @Param("paymentId") paymentId: string,
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.posService.queryPayment(
+      context,
+      z.string().uuid().parse(paymentId),
+      paymentActionSchema.parse(body),
+    );
+  }
+
+  @Post("payments/:paymentId/cancel")
+  async cancelPayment(
+    @Param("paymentId") paymentId: string,
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.posService.cancelPayment(
+      context,
+      z.string().uuid().parse(paymentId),
+      paymentActionSchema.parse(body),
+    );
+  }
+
+  @Post("payments/:paymentId/refund")
+  async refundOperationalPayment(
+    @Param("paymentId") paymentId: string,
+    @Headers() headers: HeaderRecord,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers, "pos:payment_manage");
+    return this.posService.refundPayment(
+      context,
+      z.string().uuid().parse(paymentId),
+      paymentActionSchema.parse(body),
+    );
   }
 
   @Get("orders/:orderId/payments")
@@ -736,4 +1141,36 @@ export class PosController {
     requirePermission(context, permission);
     return context;
   }
+
+  private paymentSettingsService() {
+    if (!this.paymentSettings) {
+      throw new ServiceUnavailableException("Payment configuration service is unavailable");
+    }
+    return this.paymentSettings;
+  }
+
+  private async contextWithOperationalDevicePermission(headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    if (
+      !context.permissions.includes("pos:operate") &&
+      !context.permissions.includes("kds:operate")
+    ) {
+      throw new ForbiddenException({
+        error: "forbidden",
+        requiredAnyPermission: ["pos:operate", "kds:operate"],
+      });
+    }
+    return context;
+  }
+}
+
+function operationalDeviceCookie(token: string, maxAgeSeconds = 365 * 24 * 60 * 60) {
+  const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
+  return `gm_operational_device=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+}
+
+function optionalIdempotencyKey(headers: HeaderRecord) {
+  const value = firstHeader(headers["x-idempotency-key"])?.trim();
+  if (!value) return undefined;
+  return z.string().min(8).max(180).parse(value);
 }

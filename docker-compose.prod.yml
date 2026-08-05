@@ -51,6 +51,18 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    command:
+      [
+        "postgres",
+        "-c",
+        "wal_level=replica",
+        "-c",
+        "archive_mode=on",
+        "-c",
+        "archive_timeout=60",
+        "-c",
+        "archive_command=/bin/sh /usr/local/bin/archive-wal.sh %p %f",
+      ]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-giromesa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -58,6 +70,8 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./backups:/backups
+      - ./backups/wal:/var/lib/postgresql/wal-archive
+      - ./scripts/archive-wal.sh:/usr/local/bin/archive-wal.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-giromesa} -d ${POSTGRES_DB:-giromesa}"]
       interval: 10s

@@ -32,12 +32,12 @@ env:
   SESSION_SECRET: ci-session-secret-change-in-production
   PASSWORD_PEPPER: ci-password-pepper-change-in-production
   MFA_SECRET_ENCRYPTION_KEY: ci-mfa-secret-change-in-production
-  SMTP_HOST: smtp.example.com
+  SMTP_HOST: smtp.giromesa.test
   SMTP_PORT: "587"
   SMTP_SECURE: "false"
   SMTP_USER: ci
   SMTP_PASSWORD: ci
-  EMAIL_FROM: no-reply@example.com
+  EMAIL_FROM: no-reply@giromesa.test
 
 jobs:
   codeql:

@@ -154,6 +154,7 @@ export function FloorWorkspace({
           <h3>Nova reserva</h3>
           <form className="floor-inline-form" onSubmit={submitReservation}>
             <input
+              aria-label="Nome do cliente da reserva"
               required
               placeholder="Nome do cliente"
               value={reservation.customerName}
@@ -162,6 +163,7 @@ export function FloorWorkspace({
               }
             />
             <input
+              aria-label="Telefone do cliente da reserva"
               placeholder="Telefone"
               value={reservation.customerPhone}
               onChange={(event) =>
@@ -336,12 +338,14 @@ export function FloorWorkspace({
           </h3>
           <form className="floor-inline-form" onSubmit={submitWaitlist}>
             <input
+              aria-label="Nome do cliente na fila de espera"
               required
               placeholder="Nome do cliente"
               value={waiting.customerName}
               onChange={(event) => setWaiting({ ...waiting, customerName: event.target.value })}
             />
             <input
+              aria-label="Telefone do cliente na fila de espera"
               placeholder="Telefone"
               value={waiting.customerPhone}
               onChange={(event) => setWaiting({ ...waiting, customerPhone: event.target.value })}

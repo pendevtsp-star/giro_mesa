@@ -1,7 +1,7 @@
 import { auditLogs, customers, orders } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
 
 type CustomerInput = {
@@ -41,6 +41,30 @@ export class CustomersService {
       .where(and(...where))
       .orderBy(desc(customers.createdAt))
       .limit(100);
+  }
+
+  async search(context: TenantContext, rawQuery: string, limit = 20) {
+    const query = `%${rawQuery.trim()}%`;
+    return this.database.db
+      .select({
+        id: customers.id,
+        name: customers.name,
+        phone: customers.phone,
+        email: customers.email,
+      })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.tenantId, context.tenantId),
+          or(
+            ilike(customers.name, query),
+            ilike(customers.phone, query),
+            ilike(customers.email, query),
+          ),
+        ),
+      )
+      .orderBy(asc(customers.name), asc(customers.id))
+      .limit(Math.min(Math.max(limit, 1), 50));
   }
 
   async create(context: TenantContext, input: CustomerInput) {

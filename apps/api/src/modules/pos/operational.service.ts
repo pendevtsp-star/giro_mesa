@@ -4,9 +4,12 @@ import {
   branchBusinessHourExceptions,
   branchBusinessHours,
   branchOperationalSettings,
+  kdsStations,
   operationalDevices,
   operationalEvents,
   operationalPins,
+  printerDevices,
+  printRoutes,
   userOperationalPreferences,
 } from "@giromesa/db";
 import type {
@@ -28,6 +31,8 @@ import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { hashPassword, verifyPassword } from "../../common/password";
 import { DatabaseService } from "../database/database.service";
 import { CashService } from "./cash.service";
+import { isProductionRouteCompatible } from "./device-routing";
+import { findOperationReceipt } from "./operation-receipts";
 import { OrdersService } from "./orders.service";
 import { PosRepository } from "./pos.repository";
 import { ShiftService } from "./shift.service";
@@ -38,6 +43,7 @@ type OperationalSettingsInput = {
   defaultTheme?: BranchOperationalSettings["defaultTheme"] | undefined;
   defaultKdsInputMode?: BranchOperationalSettings["defaultKdsInputMode"] | undefined;
   kdsShortcuts?: BranchOperationalSettings["kdsShortcuts"] | undefined;
+  waiterResponsibilityPolicy?: BranchOperationalSettings["waiterResponsibilityPolicy"] | undefined;
 };
 
 const defaultKdsShortcuts = {
@@ -45,6 +51,8 @@ const defaultKdsShortcuts = {
   sound: "s",
   fullscreen: "f",
   advance: " ",
+  return: "Backspace",
+  recall: "l",
   up: "ArrowUp",
   down: "ArrowDown",
 };
@@ -78,7 +86,8 @@ export class OperationalService {
           allowWaiterPayments: settings.allowWaiterPayments,
           defaultTheme: settings.defaultTheme,
           defaultKdsInputMode: settings.defaultKdsInputMode,
-          kdsShortcuts: settings.kdsShortcuts ?? defaultKdsShortcuts,
+          kdsShortcuts: { ...defaultKdsShortcuts, ...settings.kdsShortcuts },
+          waiterResponsibilityPolicy: settings.waiterResponsibilityPolicy,
         }
       : {
           branchId,
@@ -87,6 +96,7 @@ export class OperationalService {
           defaultTheme: "dark",
           defaultKdsInputMode: "hybrid",
           kdsShortcuts: defaultKdsShortcuts,
+          waiterResponsibilityPolicy: "collaborative",
         };
   }
 
@@ -261,10 +271,15 @@ export class OperationalService {
       kind: string;
       theme: ThemeMode;
       kdsInput: KdsInputMode;
+      initialMode: "table" | "counter" | "bar" | "cashier" | "kds" | "expedition";
+      stationId?: string | undefined;
+      printerDeviceId?: string | undefined;
+      allowModeSwitch: boolean;
     },
   ) {
     const userId = requireUserId(context);
     await this.posRepository.ensureBranchBelongsToTenant(context, input.branchId);
+    await this.assertDeviceRouting(context, input);
     const token = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const [device] = await this.database.db
@@ -274,6 +289,10 @@ export class OperationalService {
         branchId: input.branchId,
         name: input.name,
         kind: input.kind,
+        initialMode: input.initialMode,
+        stationId: input.stationId,
+        printerDeviceId: input.printerDeviceId,
+        allowModeSwitch: input.allowModeSwitch,
         tokenHash,
         theme: input.theme,
         kdsInput: input.kdsInput,
@@ -284,6 +303,10 @@ export class OperationalService {
         branchId: operationalDevices.branchId,
         name: operationalDevices.name,
         kind: operationalDevices.kind,
+        initialMode: operationalDevices.initialMode,
+        stationId: operationalDevices.stationId,
+        printerDeviceId: operationalDevices.printerDeviceId,
+        allowModeSwitch: operationalDevices.allowModeSwitch,
         status: operationalDevices.status,
         theme: operationalDevices.theme,
         kdsInput: operationalDevices.kdsInput,
@@ -296,7 +319,7 @@ export class OperationalService {
       action: "operational_device.registered",
       entityType: "operational_device",
       entityId: device.id,
-      metadata: { name: device.name, kind: device.kind },
+      metadata: { name: device.name, kind: device.kind, initialMode: device.initialMode },
     });
     return { ...device, token };
   }
@@ -310,6 +333,10 @@ export class OperationalService {
         branchId: operationalDevices.branchId,
         name: operationalDevices.name,
         kind: operationalDevices.kind,
+        initialMode: operationalDevices.initialMode,
+        stationId: operationalDevices.stationId,
+        printerDeviceId: operationalDevices.printerDeviceId,
+        allowModeSwitch: operationalDevices.allowModeSwitch,
         status: operationalDevices.status,
         theme: operationalDevices.theme,
         kdsInput: operationalDevices.kdsInput,
@@ -319,6 +346,171 @@ export class OperationalService {
       .from(operationalDevices)
       .where(and(...conditions))
       .orderBy(asc(operationalDevices.name));
+  }
+
+  async activateDevice(context: TenantContext, token: string) {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const [device] = await this.database.db
+      .select()
+      .from(operationalDevices)
+      .where(
+        and(
+          eq(operationalDevices.tenantId, context.tenantId),
+          eq(operationalDevices.tokenHash, tokenHash),
+          eq(operationalDevices.status, "active"),
+          context.branchId ? eq(operationalDevices.branchId, context.branchId) : undefined,
+        ),
+      )
+      .limit(1);
+    if (!device) throw new UnauthorizedException("Token de dispositivo inválido para esta filial");
+    await this.database.db
+      .update(operationalDevices)
+      .set({ lastSeenAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(operationalDevices.tenantId, context.tenantId),
+          eq(operationalDevices.id, device.id),
+        ),
+      );
+    await this.posRepository.insertAuditLog(context, {
+      branchId: device.branchId,
+      userId: context.userId,
+      requestId: context.requestId,
+      action: "operational_device.activated",
+      entityType: "operational_device",
+      entityId: device.id,
+      metadata: { name: device.name, initialMode: device.initialMode },
+    });
+    return deviceProfile(device);
+  }
+
+  async resolveDevice(context: TenantContext, token: string | undefined) {
+    if (!token) return null;
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const [device] = await this.database.db
+      .select()
+      .from(operationalDevices)
+      .where(
+        and(
+          eq(operationalDevices.tenantId, context.tenantId),
+          eq(operationalDevices.tokenHash, tokenHash),
+          eq(operationalDevices.status, "active"),
+          context.branchId ? eq(operationalDevices.branchId, context.branchId) : undefined,
+        ),
+      )
+      .limit(1);
+    if (!device) return null;
+    await this.database.db
+      .update(operationalDevices)
+      .set({ lastSeenAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(operationalDevices.tenantId, context.tenantId),
+          eq(operationalDevices.id, device.id),
+        ),
+      );
+    return deviceProfile(device);
+  }
+
+  private async assertDeviceRouting(
+    context: TenantContext,
+    input: {
+      branchId: string;
+      kind: string;
+      initialMode: string;
+      stationId?: string | undefined;
+      printerDeviceId?: string | undefined;
+    },
+  ) {
+    const requiresProductionProfile =
+      input.kind === "kds" ||
+      input.kind === "expedition" ||
+      input.initialMode === "kds" ||
+      input.initialMode === "expedition";
+    if (requiresProductionProfile && (!input.stationId || !input.printerDeviceId)) {
+      throw new BadRequestException("KDS e expedição exigem estação e impressora de contingência");
+    }
+    if (!input.stationId && !input.printerDeviceId) return;
+    if (!input.stationId || !input.printerDeviceId) {
+      throw new BadRequestException(
+        "Informe estação e impressora juntas para o perfil do dispositivo",
+      );
+    }
+
+    const [station, printer, route] = await Promise.all([
+      this.database.db
+        .select({
+          id: kdsStations.id,
+          isActive: kdsStations.isActive,
+          categories: kdsStations.productCategoryIds,
+        })
+        .from(kdsStations)
+        .where(
+          and(
+            eq(kdsStations.tenantId, context.tenantId),
+            eq(kdsStations.branchId, input.branchId),
+            eq(kdsStations.id, input.stationId),
+          ),
+        )
+        .limit(1),
+      this.database.db
+        .select({ id: printerDevices.id, isActive: printerDevices.isActive })
+        .from(printerDevices)
+        .where(
+          and(
+            eq(printerDevices.tenantId, context.tenantId),
+            eq(printerDevices.branchId, input.branchId),
+            eq(printerDevices.id, input.printerDeviceId),
+          ),
+        )
+        .limit(1),
+      this.database.db
+        .select({
+          id: printRoutes.id,
+          tenantId: printRoutes.tenantId,
+          branchId: printRoutes.branchId,
+          trigger: printRoutes.trigger,
+          targetType: printRoutes.targetType,
+          productCategoryIds: printRoutes.productCategoryIds,
+        })
+        .from(printRoutes)
+        .where(
+          and(
+            eq(printRoutes.tenantId, context.tenantId),
+            eq(printRoutes.branchId, input.branchId),
+            eq(printRoutes.stationId, input.stationId),
+            eq(printRoutes.printerDeviceId, input.printerDeviceId),
+            eq(printRoutes.isActive, true),
+          ),
+        )
+        .limit(1),
+    ]);
+    const selectedStation = station[0];
+    const selectedRoute = route[0];
+    if (!selectedStation?.isActive || !printer[0]?.isActive || !selectedRoute) {
+      throw new BadRequestException(
+        "Configure uma estação ativa e sua rota de impressão antes de ativar o dispositivo",
+      );
+    }
+    if (selectedStation.categories.length === 0) {
+      throw new BadRequestException(
+        "A estação precisa ter ao menos uma categoria de produto configurada",
+      );
+    }
+    if (
+      !isProductionRouteCompatible(
+        {
+          tenantId: context.tenantId,
+          branchId: input.branchId,
+          stationCategoryIds: selectedStation.categories,
+        },
+        selectedRoute,
+      )
+    ) {
+      throw new BadRequestException(
+        "A rota térmica precisa ser de produção e cobrir todas as categorias da estação",
+      );
+    }
   }
 
   async revokeDevice(context: TenantContext, deviceId: string) {
@@ -429,6 +621,17 @@ export class OperationalService {
       .limit(Math.min(Math.max(limit, 1), 200));
   }
 
+  async getReceipt(
+    context: TenantContext,
+    input: { branchId: string; scope: string; idempotencyKey: string },
+  ) {
+    await this.posRepository.ensureBranchBelongsToTenant(context, input.branchId);
+    return findOperationReceipt(this.database.db, {
+      tenantId: context.tenantId,
+      ...input,
+    });
+  }
+
   async getSession(
     context: TenantContext,
     input: { branchId: string; tableId?: string | undefined; orderId?: string | undefined },
@@ -466,4 +669,19 @@ export class OperationalService {
 function requireUserId(context: TenantContext) {
   if (!context.userId) throw new BadRequestException("Authenticated user is required");
   return context.userId;
+}
+
+function deviceProfile(device: typeof operationalDevices.$inferSelect) {
+  return {
+    id: device.id,
+    branchId: device.branchId,
+    name: device.name,
+    kind: device.kind,
+    initialMode: device.initialMode,
+    stationId: device.stationId,
+    printerDeviceId: device.printerDeviceId,
+    allowModeSwitch: device.allowModeSwitch,
+    theme: device.theme,
+    kdsInput: device.kdsInput,
+  };
 }

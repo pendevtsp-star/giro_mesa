@@ -2,6 +2,7 @@ import * as schema from "@giromesa/db";
 import {
   auditLogs,
   branches,
+  branchInventorySettings,
   categories,
   integrationAccounts,
   inventoryItems,
@@ -44,6 +45,7 @@ async function cleanupTenant(db: Db, tenantId: string) {
   await db.delete(webhookEvents).where(eq(webhookEvents.tenantId, tenantId));
   await db.delete(outboxEvents).where(eq(outboxEvents.tenantId, tenantId));
   await db.delete(stockMovements).where(eq(stockMovements.tenantId, tenantId));
+  await db.delete(branchInventorySettings).where(eq(branchInventorySettings.tenantId, tenantId));
   await db.delete(recipeItems).where(eq(recipeItems.tenantId, tenantId));
   await db.delete(recipes).where(eq(recipes.tenantId, tenantId));
   await db.delete(stockLocations).where(eq(stockLocations.tenantId, tenantId));
@@ -177,6 +179,14 @@ async function createTenantFixture(
     reason: "Integration test initial balance",
   });
 
+  await db.insert(branchInventorySettings).values({
+    tenantId: tenant.id,
+    branchId: mainBranch.id,
+    transferMode: "immediate",
+    managerApprovalThreshold: "10",
+    consumptionLocationId: stockLocation.id,
+  });
+
   const apiKey = createIntegrationApiKey("club_whisky");
 
   await db.insert(integrationAccounts).values({
@@ -184,7 +194,7 @@ async function createTenantFixture(
     provider: "club_whisky",
     status: "active",
     config: {
-      branchId: input.branchScoped ? mainBranch.id : undefined,
+      branchId: mainBranch.id,
       scopes: input.apiKeyScopes,
       webhookUrl: null,
       webhookSecretRef: "CLUB_WHISKY_WEBHOOK_SECRET",
@@ -201,8 +211,89 @@ async function createTenantFixture(
     otherBranch,
     product,
     inventoryItem,
+    stockLocation,
     apiKey: apiKey.token,
   };
+}
+
+async function createDoseInventoryFixture(
+  db: Db,
+  tenant: Awaited<ReturnType<typeof createTenantFixture>>,
+  suffix: string,
+  barQuantity: number,
+  depotQuantity = 0,
+) {
+  const [product] = await db
+    .insert(products)
+    .values({
+      tenantId: tenant.tenant.id,
+      name: `Dose ${suffix}`,
+      priceCents: 5000,
+      costCents: 2500,
+      isClubEligible: true,
+      bottleVolumeMl: 1000,
+      defaultDoseMl: 50,
+      spiritType: "whisky",
+      channels: ["pos"],
+    })
+    .returning();
+  const [inventoryItem] = await db
+    .insert(inventoryItems)
+    .values({
+      tenantId: tenant.tenant.id,
+      name: `Insumo ${suffix}`,
+      unit: "ml",
+      allowNegative: false,
+    })
+    .returning();
+  if (!product || !inventoryItem) throw new Error("dose inventory fixture failed");
+  const [recipe] = await db
+    .insert(recipes)
+    .values({ tenantId: tenant.tenant.id, productId: product.id, yieldQuantity: "1" })
+    .returning();
+  if (!recipe) throw new Error("dose recipe fixture failed");
+  await db.insert(recipeItems).values({
+    tenantId: tenant.tenant.id,
+    recipeId: recipe.id,
+    inventoryItemId: inventoryItem.id,
+    quantity: "50",
+    unit: "ml",
+  });
+  if (barQuantity) {
+    await db.insert(stockMovements).values({
+      tenantId: tenant.tenant.id,
+      branchId: tenant.mainBranch.id,
+      inventoryItemId: inventoryItem.id,
+      stockLocationId: tenant.stockLocation.id,
+      type: "initial_balance",
+      quantity: String(barQuantity),
+      reason: "Dose fixture bar balance",
+    });
+  }
+  let depotId: string | null = null;
+  if (depotQuantity) {
+    const [depot] = await db
+      .insert(stockLocations)
+      .values({
+        tenantId: tenant.tenant.id,
+        branchId: tenant.mainBranch.id,
+        name: `Depósito ${suffix}`,
+        type: "stock",
+      })
+      .returning();
+    if (!depot) throw new Error("dose depot fixture failed");
+    depotId = depot.id;
+    await db.insert(stockMovements).values({
+      tenantId: tenant.tenant.id,
+      branchId: tenant.mainBranch.id,
+      inventoryItemId: inventoryItem.id,
+      stockLocationId: depot.id,
+      type: "initial_balance",
+      quantity: String(depotQuantity),
+      reason: "Dose fixture depot balance",
+    });
+  }
+  return { product, inventoryItem, recipe, depotId };
 }
 
 runIntegration("club whisky integration database behavior", () => {
@@ -649,5 +740,207 @@ runIntegration("club whisky integration database behavior", () => {
       )
       .limit(1);
     expect(reversalAudit?.metadata).toMatchObject({ orderId: order.id });
+  });
+
+  it("uses only the configured consumption location balance", async () => {
+    const target = await createDoseInventoryFixture(db, tenantA, "setorial", 0, 100);
+    const context = await integrationAuthService.resolveContext(
+      { "x-giromesa-integration-key": tenantA.apiKey },
+      "club_whisky",
+      "club_consumption:write",
+    );
+
+    await expect(
+      clubWhiskyService.registerDoseConsumption(context, {
+        branchId: tenantA.mainBranch.id,
+        productId: target.product.id,
+        externalClubId: "club-setorial",
+        externalConsumptionId: "consumption-setorial",
+        doseMl: 50,
+        idempotencyKey: `club-setorial-${crypto.randomUUID()}`,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const [movement] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.inventoryItemId, target.inventoryItem.id),
+          eq(stockMovements.type, "club_dose_consumed"),
+        ),
+      );
+    expect(movement?.count).toBe(0);
+  });
+
+  it("serializes Dose Club consumption with inventory adjustment on the same sector", async () => {
+    const target = await createDoseInventoryFixture(db, tenantA, "lock-compartilhado", 100);
+    const clubContext = await integrationAuthService.resolveContext(
+      { "x-giromesa-integration-key": tenantA.apiKey },
+      "club_whisky",
+      "club_consumption:write",
+    );
+    const inventoryContext = {
+      tenantId: tenantA.tenant.id,
+      branchId: tenantA.mainBranch.id,
+      requestId: "club-inventory-lock",
+      permissions: ["inventory:manage"],
+    };
+
+    const results = await Promise.allSettled([
+      clubWhiskyService.registerDoseConsumption(clubContext, {
+        branchId: tenantA.mainBranch.id,
+        productId: target.product.id,
+        externalClubId: "club-lock",
+        externalConsumptionId: "consumption-lock",
+        doseMl: 80,
+        idempotencyKey: `club-lock-${crypto.randomUUID()}`,
+      }),
+      inventoryService.adjustStock(inventoryContext, {
+        branchId: tenantA.mainBranch.id,
+        inventoryItemId: target.inventoryItem.id,
+        stockLocationId: tenantA.stockLocation.id,
+        type: "loss",
+        quantity: "80",
+        reason: "Perda concorrente ao consumo Dose Club",
+      }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const [balance] = await db
+      .select({ quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)` })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.branchId, tenantA.mainBranch.id),
+          eq(stockMovements.inventoryItemId, target.inventoryItem.id),
+          eq(stockMovements.stockLocationId, tenantA.stockLocation.id),
+        ),
+      );
+    expect(Number(balance?.quantity)).toBe(20);
+  });
+
+  it("reverses the original ledger movement after consumption location and recipe change", async () => {
+    const target = await createDoseInventoryFixture(db, tenantA, "estorno-imutavel", 100);
+    const context = await integrationAuthService.resolveContext(
+      { "x-giromesa-integration-key": tenantA.apiKey },
+      "club_whisky",
+      "club_consumption:write",
+    );
+    const originalIdempotencyKey = `club-original-${crypto.randomUUID()}`;
+    await clubWhiskyService.registerDoseConsumption(context, {
+      branchId: tenantA.mainBranch.id,
+      productId: target.product.id,
+      externalClubId: "club-estorno-imutavel",
+      externalConsumptionId: "consumption-estorno-imutavel",
+      doseMl: 40,
+      idempotencyKey: originalIdempotencyKey,
+    });
+
+    const [newLocation] = await db
+      .insert(stockLocations)
+      .values({
+        tenantId: tenantA.tenant.id,
+        branchId: tenantA.mainBranch.id,
+        name: "Novo bar de consumo",
+        type: "bar",
+      })
+      .returning();
+    const [newItem] = await db
+      .insert(inventoryItems)
+      .values({
+        tenantId: tenantA.tenant.id,
+        name: "Novo insumo da receita",
+        unit: "ml",
+        allowNegative: false,
+      })
+      .returning();
+    if (!newLocation || !newItem) throw new Error("changed target fixture failed");
+    await db
+      .update(branchInventorySettings)
+      .set({ consumptionLocationId: newLocation.id, updatedAt: new Date() })
+      .where(
+        and(
+          eq(branchInventorySettings.tenantId, tenantA.tenant.id),
+          eq(branchInventorySettings.branchId, tenantA.mainBranch.id),
+        ),
+      );
+    await db
+      .update(recipeItems)
+      .set({ inventoryItemId: newItem.id })
+      .where(eq(recipeItems.recipeId, target.recipe.id));
+
+    const reversalInput = {
+      branchId: tenantA.mainBranch.id,
+      productId: target.product.id,
+      externalClubId: "club-estorno-imutavel",
+      externalConsumptionId: "consumption-estorno-imutavel",
+      externalReversalId: "reversal-estorno-imutavel",
+      originalIdempotencyKey,
+      doseMl: 40,
+      reason: "Estorno após mudança operacional",
+      idempotencyKey: `reversal-${crypto.randomUUID()}`,
+    };
+    const first = await clubWhiskyService.reverseDoseConsumption(context, reversalInput);
+    const replay = await clubWhiskyService.reverseDoseConsumption(context, reversalInput);
+
+    expect(first).toMatchObject({
+      duplicate: false,
+      inventoryItemId: target.inventoryItem.id,
+      stockQuantityEffect: 40,
+    });
+    expect(replay).toMatchObject({ duplicate: true });
+    const [originalMovement] = await db
+      .select({ id: stockMovements.id, stockLocationId: stockMovements.stockLocationId })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.inventoryItemId, target.inventoryItem.id),
+          eq(stockMovements.type, "club_dose_consumed"),
+        ),
+      )
+      .orderBy(stockMovements.createdAt)
+      .limit(1);
+    if (!originalMovement) throw new Error("original movement not found");
+    const refunds = await db
+      .select({
+        inventoryItemId: stockMovements.inventoryItemId,
+        stockLocationId: stockMovements.stockLocationId,
+        quantity: stockMovements.quantity,
+        sourceId: stockMovements.sourceId,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.type, "club_refund"),
+          eq(stockMovements.sourceId, originalMovement.id),
+        ),
+      );
+    expect(refunds).toEqual([
+      expect.objectContaining({
+        inventoryItemId: target.inventoryItem.id,
+        stockLocationId: tenantA.stockLocation.id,
+        quantity: "40.000",
+        sourceId: originalMovement.id,
+      }),
+    ]);
+    expect(originalMovement.stockLocationId).toBe(tenantA.stockLocation.id);
+    const [newTargetRefund] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.tenantId, tenantA.tenant.id),
+          eq(stockMovements.type, "club_refund"),
+          eq(stockMovements.inventoryItemId, newItem.id),
+          eq(stockMovements.stockLocationId, newLocation.id),
+        ),
+      );
+    expect(newTargetRefund?.count).toBe(0);
   });
 });

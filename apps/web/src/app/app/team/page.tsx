@@ -184,6 +184,12 @@ export default function TeamPage() {
           <h1>Usuários, convites e cargos</h1>
           <p>{status}</p>
         </div>
+        <a className="button secondary compact" href="/app/team/organization">
+          <Users size={16} /> Organizar mesas
+        </a>
+        <a className="button secondary compact" href="/app/team/settlements">
+          <ShieldCheck size={16} /> Fechamento da equipe
+        </a>
       </header>
 
       <section className="team-page-grid">

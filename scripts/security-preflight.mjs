@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 
 const requiredFiles = [
@@ -5,10 +6,16 @@ const requiredFiles = [
   "docs/legal/PRIVACY_POLICY.md",
   "docs/legal/TERMS_OF_USE.md",
   "apps/api/src/common/security.ts",
+  "apps/api/src/common/security-headers.ts",
   "apps/api/src/common/webhook-signature.ts",
   "apps/api/src/modules/integrations/webhooks.controller.ts",
   "apps/api/src/common/http.ts",
   "apps/api/src/main.ts",
+  "apps/api/src/common/csp.ts",
+  "apps/api/src/common/sanitized-logger.ts",
+  "apps/web/src/app/api/csp-report/route.ts",
+  "security/trivy-exceptions.json",
+  "scripts/workflow-gate.mjs",
 ];
 
 const requiredEnvKeys = [
@@ -74,12 +81,18 @@ const fileChecks = await Promise.all(
 );
 
 const missing = fileChecks.filter((entry) => !entry.exists).map((entry) => entry.file);
-const mainTs = await readFile("apps/api/src/main.ts", "utf8");
-const httpTs = await readFile("apps/api/src/common/http.ts", "utf8");
-const webhookControllerTs = await readFile(
-  "apps/api/src/modules/integrations/webhooks.controller.ts",
-  "utf8",
-);
+const behaviorTests = {
+  releaseWorkflows: runNodeScript("scripts/workflow-gate.mjs"),
+  apiHeaders: runBehaviorTests("@giromesa/api", ["src/common/security-headers.test.ts"]),
+  webCsp: runBehaviorTests("@giromesa/web", [
+    "src/app/api/csp-report/route.test.ts",
+    "src/lib/csp-config.test.mjs",
+  ]),
+  cookies: runBehaviorTests("@giromesa/api", ["src/common/http.test.ts"]),
+  webhooks: runBehaviorTests("@giromesa/api", [
+    "src/modules/integrations/webhooks.controller.test.ts",
+  ]),
+};
 const environment = readSimpleEnv(envExample);
 const appUrl = environment.APP_URL ?? "";
 const publicAppUrl = environment.PUBLIC_APP_URL ?? "";
@@ -94,31 +107,26 @@ const localhostHosts = [appUrl, publicAppUrl, apiUrl, nextPublicApiUrl, googleRe
 
 const checks = {
   headers: {
-    xContentTypeOptions: mainTs.includes('"x-content-type-options"'),
-    xFrameOptions: mainTs.includes('"x-frame-options"'),
-    contentSecurityPolicy: mainTs.includes('"content-security-policy"'),
-    referrerPolicy: mainTs.includes('"referrer-policy"'),
-    permissionsPolicy: mainTs.includes('"permissions-policy"'),
-    crossOriginOpenerPolicy: mainTs.includes('"cross-origin-opener-policy"'),
-    corsRestrictedInProduction: mainTs.includes(
-      'origin: env.NODE_ENV === "production" ? [env.APP_URL] : true',
-    ),
+    xContentTypeOptions: behaviorTests.apiHeaders,
+    xFrameOptions: behaviorTests.apiHeaders,
+    contentSecurityPolicy: behaviorTests.apiHeaders && behaviorTests.webCsp,
+    reportOnlyIsAdditional: behaviorTests.webCsp,
+    referrerPolicy: behaviorTests.apiHeaders,
+    permissionsPolicy: behaviorTests.apiHeaders,
+    crossOriginOpenerPolicy: behaviorTests.apiHeaders,
+    corsRestrictedInProduction: behaviorTests.apiHeaders,
   },
   cookies: {
-    httpOnly: httpTs.includes("HttpOnly"),
-    sameSite: httpTs.includes("SameSite=Lax"),
-    secureInProduction: httpTs.includes('process.env.NODE_ENV === "production" ? " Secure;" : ""'),
-    pathRoot: httpTs.includes("Path=/"),
+    httpOnly: behaviorTests.cookies,
+    sameSite: behaviorTests.cookies,
+    secureInProduction: behaviorTests.cookies,
+    pathRoot: behaviorTests.cookies,
   },
   webhooks: {
-    asaasSecretGuard:
-      webhookControllerTs.includes("ASAAS_WEBHOOK_SECRET") &&
-      webhookControllerTs.includes("Invalid webhook authentication"),
-    clubSecretRequired: webhookControllerTs.includes(
-      "Club Whisky webhook secret is not configured",
-    ),
-    clubSignatureValidation: webhookControllerTs.includes("verifyWebhookSignature"),
-    clubRateLimit: webhookControllerTs.includes('namespace: "club_whisky_webhook"'),
+    asaasSecretGuard: behaviorTests.webhooks,
+    clubSecretRequired: behaviorTests.webhooks,
+    clubSignatureValidation: behaviorTests.webhooks,
+    clubRateLimit: behaviorTests.webhooks,
   },
   environment: {
     nodeEnv,
@@ -142,6 +150,9 @@ const releaseWarnings = [];
 if (!checks.headers.contentSecurityPolicy) {
   releaseWarnings.push("Content-Security-Policy ausente em apps/api/src/main.ts");
 }
+if (!checks.headers.reportOnlyIsAdditional) {
+  releaseWarnings.push("CSP report-only da Web deve ser adicional à política bloqueante");
+}
 if (!checks.headers.crossOriginOpenerPolicy) {
   releaseWarnings.push("Cross-Origin-Opener-Policy ausente em apps/api/src/main.ts");
 }
@@ -153,6 +164,9 @@ if (!checks.cookies.pathRoot) {
 }
 if (!checks.webhooks.clubSignatureValidation) {
   releaseWarnings.push("Webhook do Dose Club sem validacao HMAC");
+}
+if (!behaviorTests.releaseWorkflows) {
+  releaseWarnings.push("Deploy nao depende dos gates bloqueantes de seguranca e cobertura");
 }
 if (!checks.environment.requiredEnvKeysPresent) {
   releaseWarnings.push(`.env.example sem chaves obrigatorias: ${missingEnvKeys.join(", ")}`);
@@ -178,6 +192,7 @@ const summary = {
   suspiciousEnvTokens: envWarnings,
   missingEnvKeys,
   requiredFiles: fileChecks,
+  behaviorTests,
   checks,
   releaseWarnings,
   releaseChecklist: [
@@ -194,9 +209,11 @@ console.log(JSON.stringify(summary, null, 2));
 if (
   envWarnings.length > 0 ||
   missing.length > 0 ||
+  !behaviorTests.releaseWorkflows ||
   !checks.headers.xContentTypeOptions ||
   !checks.headers.xFrameOptions ||
   !checks.headers.contentSecurityPolicy ||
+  !checks.headers.reportOnlyIsAdditional ||
   !checks.headers.crossOriginOpenerPolicy ||
   !checks.cookies.httpOnly ||
   !checks.cookies.sameSite ||
@@ -243,6 +260,30 @@ function readHost(value) {
   } catch {
     return "";
   }
+}
+
+function runBehaviorTests(workspace, files) {
+  const npmExecPath = process.env.npm_execpath;
+  if (!npmExecPath) {
+    return false;
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [npmExecPath, "--filter", workspace, "exec", "vitest", "run", ...files],
+    { encoding: "utf8", env: process.env, stdio: "pipe" },
+  );
+  return result.status === 0;
+}
+
+function runNodeScript(path) {
+  return (
+    spawnSync(process.execPath, [path], {
+      encoding: "utf8",
+      env: process.env,
+      stdio: "pipe",
+    }).status === 0
+  );
 }
 
 function readPort(value) {

@@ -47,6 +47,11 @@ jobs:
       - run: pnpm test
       - run: pnpm test:integration
       - run: pnpm build
-      - name: Audit dependencies
-        run: pnpm audit --audit-level moderate
-        continue-on-error: true
+      - name: Security behavior preflight
+        run: pnpm security:preflight
+      - name: Executable security cases
+        run: pnpm security:cases
+      - name: HIGH and CRITICAL dependency gate
+        run: pnpm security:high
+      - name: Secret snapshot and history gate
+        run: node scripts/secrets-scan-paths.mjs

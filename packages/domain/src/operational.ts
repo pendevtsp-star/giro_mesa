@@ -24,6 +24,7 @@ export type BranchOperationalSettings = {
   defaultTheme: ThemeMode;
   defaultKdsInputMode: KdsInputMode;
   kdsShortcuts: Record<string, string>;
+  waiterResponsibilityPolicy: "strict" | "collaborative";
 };
 
 export type BusinessHourInterval = {

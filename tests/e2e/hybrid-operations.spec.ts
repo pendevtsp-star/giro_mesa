@@ -57,12 +57,21 @@ test.describe("Hybrid operation", () => {
     expect(product?.id).toBeTruthy();
 
     const orderResponse = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "counter", branchId: context.branchId, peopleCount: 1 },
+      data: {
+        channel: "counter",
+        branchId: context.branchId,
+        peopleCount: 1,
+        idempotencyKey: `e2e-hybrid-open-${Date.now()}`,
+      },
     });
     expect(orderResponse.ok()).toBe(true);
     const order = (await orderResponse.json()) as { id: string };
     const itemResponse = await api.post(`/api/v1/pos/orders/${order.id}/items`, {
-      data: { productId: product?.id, quantity: 1 },
+      data: {
+        productId: product?.id,
+        quantity: 1,
+        idempotencyKey: `e2e-hybrid-item-${Date.now()}`,
+      },
     });
     expect(itemResponse.ok()).toBe(true);
     const item = (await itemResponse.json()) as { id: string; totalCents: number };
@@ -96,11 +105,20 @@ test.describe("Hybrid operation", () => {
     }
 
     const cashOrderResponse = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "counter", branchId: context.branchId, peopleCount: 1 },
+      data: {
+        channel: "counter",
+        branchId: context.branchId,
+        peopleCount: 1,
+        idempotencyKey: `e2e-cash-open-${Date.now()}`,
+      },
     });
     const cashOrder = (await cashOrderResponse.json()) as { id: string };
     const cashItemResponse = await api.post(`/api/v1/pos/orders/${cashOrder.id}/items`, {
-      data: { productId: product?.id, quantity: 1 },
+      data: {
+        productId: product?.id,
+        quantity: 1,
+        idempotencyKey: `e2e-cash-item-${Date.now()}`,
+      },
     });
     const cashItem = (await cashItemResponse.json()) as { totalCents: number };
     const cashPayment = await api.post(`/api/v1/pos/orders/${cashOrder.id}/payments`, {

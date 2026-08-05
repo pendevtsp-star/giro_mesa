@@ -1,3 +1,5 @@
+import { summarizeNetChargeAllocations } from "../../common/payment-ledger";
+
 type FiscalOrder = {
   id: string;
   branchId: string;
@@ -44,10 +46,13 @@ type FiscalItem = {
 };
 
 type FiscalPayment = {
+  id: string;
   method: string;
   amountCents: number;
   provider: string;
   status: string;
+  paymentType: string;
+  originalPaymentId: string | null;
 };
 
 type BuildNuvemFiscalNfcePayloadInput = {
@@ -78,9 +83,8 @@ export function buildNuvemFiscalNfcePayload(input: BuildNuvemFiscalNfcePayloadIn
   const ambiente = input.settings.environment === "production" ? "producao" : "homologacao";
   const issuerDocument = onlyDigits(input.settings.document);
   const totalProducts = input.items.reduce((sum, item) => sum + item.totalCents, 0);
-  const totalPaid = input.payments
-    .filter((payment) => payment.status === "confirmed")
-    .reduce((sum, payment) => sum + payment.amountCents, 0);
+  const netPayments = summarizeNetChargeAllocations(input.payments);
+  assertFiscalPaymentCoverage(netPayments.totalCents, input.order.totalCents);
 
   return {
     ...configPayload,
@@ -154,8 +158,8 @@ export function buildNuvemFiscalNfcePayload(input: BuildNuvemFiscalNfcePayloadIn
         },
       },
       pag: {
-        det_pag: buildPaymentDetails(input.payments, input.order.totalCents),
-        valor_troco: money(Math.max(totalPaid - input.order.totalCents, 0)),
+        det_pag: buildPaymentDetails(netPayments.allocations),
+        valor_troco: money(Math.max(netPayments.totalCents - input.order.totalCents, 0)),
       },
       inf_adic: {
         informacoes_complementares:
@@ -165,16 +169,20 @@ export function buildNuvemFiscalNfcePayload(input: BuildNuvemFiscalNfcePayloadIn
   };
 }
 
-function buildPaymentDetails(payments: FiscalPayment[], orderTotalCents: number) {
-  const confirmed = payments.filter((payment) => payment.status === "confirmed");
-  const source =
-    confirmed.length > 0 ? confirmed : [{ method: "invoiced", amountCents: orderTotalCents }];
-
-  return source.map((payment) => ({
+function buildPaymentDetails(allocations: Array<{ payment: FiscalPayment; amountCents: number }>) {
+  return allocations.map(({ payment, amountCents }) => ({
     indicador_pagamento: "vista",
     meio_pagamento: paymentMethodCodes[payment.method] ?? "99",
-    valor: money(payment.amountCents),
+    valor: money(amountCents),
   }));
+}
+
+function assertFiscalPaymentCoverage(netPaidCents: number, fiscalTotalCents: number) {
+  if (netPaidCents < fiscalTotalCents) {
+    throw new Error(
+      "Net payment total after refunds does not cover the original fiscal document total",
+    );
+  }
 }
 
 function readPresence(channel: string) {

@@ -88,6 +88,11 @@ html[data-theme="light"] .gm-badge-good {
   color: #216e26;
 }
 
+:root[data-theme="dark"] .tenant-mini-mark {
+  background: var(--surface);
+  color: var(--accent);
+}
+
 :root[data-theme="dark"] :is(.workspace-panel, .workspace-list-section) {
   border-color: var(--color-border);
   background: var(--color-surface);
@@ -186,8 +191,8 @@ html[data-theme="light"] .user-avatar-logo {
 
 .gm-theme-toggle button {
   display: grid;
-  width: 2rem;
-  height: 2rem;
+  width: var(--touch-target);
+  height: var(--touch-target);
   place-items: center;
   border: 0;
   border-radius: 999px;
@@ -205,7 +210,7 @@ html[data-theme="light"] .user-avatar-logo {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2rem;
+  min-height: var(--touch-target);
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -294,7 +299,7 @@ html[data-theme="light"] .user-avatar-logo {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2rem;
+  min-height: var(--touch-target);
   padding: 0.35rem 0.65rem;
   border-radius: 999px;
   font-size: 0.74rem;
@@ -318,6 +323,7 @@ html[data-theme="light"] .user-avatar-logo {
   gap: 0.35rem;
   min-width: 0;
   max-width: 13rem;
+  min-height: var(--touch-target);
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -357,7 +363,7 @@ html[data-theme="light"] .user-avatar-logo {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  min-height: 2.25rem;
+  min-height: var(--touch-target);
   padding: 0.35rem 0.6rem;
   border: 1px solid var(--color-border);
   border-radius: 0.65rem;
@@ -458,6 +464,113 @@ html[data-theme="light"] .user-avatar-logo {
   padding: 1rem;
 }
 
+.qr-age-dialog,
+.qr-modifier-dialog {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(46rem, calc(100dvh - 2rem));
+}
+
+.qr-age-dialog .gm-dialog-body,
+.qr-modifier-dialog .gm-dialog-body,
+.qr-modifier-content {
+  display: grid;
+  gap: 1rem;
+}
+
+:root[data-theme="dark"] .qr-age-dialog .section-kicker {
+  color: #facc15;
+}
+
+.qr-modifier-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.qr-modifier-summary :is(p, small) {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.qr-modifier-group {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.qr-modifier-group-heading {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--color-text);
+}
+
+.qr-modifier-group-heading span {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.qr-modifier-options {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.qr-modifier-option {
+  display: flex;
+  min-height: var(--touch-target);
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.8rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.qr-modifier-option small {
+  color: var(--color-text-muted);
+}
+
+.qr-modifier-option.is-selected {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface));
+}
+
+.delivery-cancel-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.delivery-cancel-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.delivery-cancel-form input {
+  min-height: var(--touch-target);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding-inline: 0.75rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
 .gm-operational-content {
   min-width: 0;
   min-height: 0;
@@ -544,6 +657,47 @@ html[data-theme="light"] .user-avatar-logo {
   min-width: 0;
 }
 
+.gm-admin-content .brand-mark:not(.brand-mark-logo) {
+  display: none;
+}
+
+.gm-shell-preferences {
+  position: relative;
+  z-index: 2;
+}
+
+.gm-shell-preferences-trigger {
+  display: none;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.gm-shell-preferences-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.gm-shell-preferences-drawer {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.gm-shell-preferences-drawer :is(.gm-branch-switcher, .gm-density-toggle) {
+  width: 100%;
+  max-width: none;
+}
+
+.gm-shell-preferences-drawer .gm-theme-toggle {
+  justify-content: space-between;
+}
+
 html[data-density="compact"] .gm-operational-header,
 html[data-density="compact"] .gm-admin-header {
   min-height: 4rem;
@@ -570,6 +724,28 @@ html[data-density="compact"] :is(.gm-admin-content, .gm-operational-content) {
   color: var(--color-text);
 }
 
+:root[data-theme="dark"] .app-state {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+:root[data-theme="dark"] .app-state strong {
+  color: var(--color-text);
+}
+
+:root[data-theme="dark"] .app-state p {
+  color: var(--color-text-muted);
+}
+
+:root[data-theme="dark"] .app-state-danger {
+  border-color: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 14%, var(--color-surface));
+}
+
+:root[data-theme="dark"] .app-state-danger :is(svg, strong) {
+  color: var(--color-danger);
+}
+
 @media (max-width: 1100px) {
   .gm-operational-context > span:not(.gm-connection),
   .gm-operator-label {
@@ -594,13 +770,12 @@ html[data-density="compact"] :is(.gm-admin-content, .gm-operational-content) {
     position: fixed;
     z-index: calc(var(--z-modal) + 1);
     inset: 0 auto 0 0;
+    display: none;
     width: min(86vw, 21rem);
-    transform: translateX(-105%);
-    transition: transform 180ms ease;
   }
 
   .gm-admin-shell.menu-open .gm-admin-navigation {
-    transform: translateX(0);
+    display: block;
   }
 
   .gm-admin-backdrop {
@@ -625,9 +800,58 @@ html[data-density="compact"] :is(.gm-admin-content, .gm-operational-content) {
     padding: 0.45rem 0.75rem;
   }
 
-  .gm-operational-header .gm-brand-link > span,
-  .gm-operational-context .gm-connection {
+  .gm-operational-header .gm-brand-link > span {
     display: none;
+  }
+
+  .gm-operational-context {
+    gap: 0.35rem;
+  }
+
+  .gm-operational-context .gm-connection {
+    width: var(--touch-target);
+    min-width: var(--touch-target);
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .gm-operational-context .gm-branch-switcher {
+    width: min(6.5rem, 24vw);
+    padding-inline: 0.4rem;
+  }
+
+  .gm-shell-preferences-trigger {
+    display: grid;
+  }
+
+  .gm-shell-preferences-panel {
+    position: absolute;
+    z-index: calc(var(--z-modal) + 2);
+    top: calc(100% + 0.5rem);
+    right: 0;
+    display: none;
+    width: min(20rem, calc(100vw - 1.5rem));
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow);
+  }
+
+  .gm-shell-preferences.open .gm-shell-preferences-panel {
+    display: grid;
+  }
+
+  .gm-shell-preferences-panel :is(.gm-branch-switcher, .gm-density-toggle) {
+    width: 100%;
+    max-width: none;
+  }
+
+  .gm-shell-preferences-panel .gm-theme-toggle {
+    justify-content: space-between;
   }
 
   .gm-brand-mark {
@@ -663,9 +887,26 @@ html[data-density="compact"] :is(.gm-admin-content, .gm-operational-content) {
 }
 
 @media (max-width: 430px) {
+  .gm-admin-shell,
+  .gm-admin-workspace,
+  .gm-admin-content {
+    width: 100%;
+    min-width: 0;
+    max-width: 100vw;
+  }
+
+  .cash-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cash-layout .panel-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
   .gm-theme-toggle button {
-    width: 1.85rem;
-    height: 1.85rem;
+    width: var(--touch-target);
+    height: var(--touch-target);
   }
 
   .gm-module-title span,
@@ -676,7 +917,6 @@ html[data-density="compact"] :is(.gm-admin-content, .gm-operational-content) {
   html,
   body {
     max-width: 100%;
-    overflow-x: clip;
   }
 
   .app-layout {
@@ -757,5 +997,152 @@ html[data-density="compact"] :is(.gm-admin-content, .gm-operational-content) {
 @media (prefers-reduced-motion: reduce) {
   .gm-admin-navigation {
     transition: none;
+  }
+}
+
+/*
+ * A number of operational terminals report `hasTouch` without exposing
+ * `(pointer: coarse)` as their primary pointer (notably Chromium tablet
+ * emulation and some hybrid Windows devices).  Keep the target policy tied
+ * to the same practical breakpoint used by the responsive layouts so every
+ * control remains comfortably usable on a touch terminal.
+ */
+@media (pointer: coarse), (any-pointer: coarse), (max-width: 1024px) {
+  html[data-theme][data-theme][data-theme][data-theme]
+    :where(
+      button,
+      input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not(.visually-hidden),
+      select,
+      textarea,
+      summary,
+      [role="button"]
+    ) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  html[data-theme][data-theme][data-theme][data-theme] :where(button, summary, [role="button"]) {
+    min-width: 44px;
+  }
+
+  html[data-theme][data-theme][data-theme][data-theme]
+    :where(
+      input[type="checkbox"]:not(.visually-hidden),
+      input[type="radio"]:not(.visually-hidden)
+    ) {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  /* Legacy menu filters intentionally use a compact selector outside the
+   * shared component layer. Keep them aligned with the operational target.
+   */
+  html[data-theme][data-theme][data-theme][data-theme] .menu-shell-night .filter {
+    min-height: 44px;
+  }
+}
+
+/* Public informational pages use legacy fixed light surfaces. Keep their
+ * semantic surfaces aligned with the selected dark theme so global text
+ * tokens never land on white cards. */
+:root[data-theme="dark"]
+  :is(.legal-page, .manual-page, .status-page, .login-page.trial-signup-page) {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"]
+  :is(
+    .legal-pending,
+    .manual-page .topbar,
+    .manual-hero aside,
+    .manual-section,
+    .manual-checklist,
+    .manual-support,
+    .status-card,
+    .status-details,
+    .trial-signup-page .login-panel,
+    .trial-plan-selector button,
+    .trial-next-steps
+  ) {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"]
+  :is(.legal-page, .manual-page, .status-page, .trial-signup-page)
+  :is(.button.secondary, .button.ghost) {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"]
+  :is(.legal-page, .manual-page, .status-page, .trial-signup-page)
+  :is(.section-kicker, .trial-plan-selector small) {
+  color: #facc15;
+}
+
+:root[data-theme="dark"] .support-page-night .gm-badge-neutral {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbe5ef;
+}
+
+:root[data-theme="dark"] .status-details strong {
+  color: #4ade80;
+}
+
+@media (max-width: 900px) {
+  .app-layout.app-layout-night .sidebar nav:not(.is-open) {
+    display: none;
+  }
+
+  html[data-theme][data-theme] .platform-tenant-row {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  html[data-theme][data-theme] :is(.platform-support-layout, .platform-plan-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-theme][data-theme]
+    :is(.platform-tenant-row, .platform-support-layout, .platform-plan-grid)
+    > * {
+    min-width: 0;
+  }
+
+  html[data-theme][data-theme] .platform-tenant-row .gm-badge {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .login-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .login-page :is(.login-art, .login-panel, .form) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .manual-grid,
+  .manual-checklist {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .manual-page :is(.manual-section, .manual-checklist, .manual-support) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 620px) {
+  .login-page .login-panel {
+    padding: 3.5rem 1rem;
   }
 }

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import "../styles/foundation-v2.css";
+import { CookieConsent } from "../components/CookieConsent";
 import { ServiceWorkerRegistration } from "../components/ServiceWorkerRegistration";
 
 const themeBootstrap = `(()=>{try{const k="gm_theme",s=localStorage.getItem(k)||"system",d=s==="dark"||(s==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light";document.documentElement.dataset.themePreference=s}catch{document.documentElement.dataset.theme="light"}})()`;
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <ServiceWorkerRegistration />
         {children}
+        <CookieConsent />
       </body>
     </html>
   );

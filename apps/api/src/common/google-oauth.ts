@@ -1,4 +1,5 @@
 import { createPublicKey, verify as verifySignature } from "node:crypto";
+import { safeFetch } from "@giromesa/config";
 
 const GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -65,7 +66,7 @@ export async function exchangeGoogleCode(input: {
   clientSecret: string;
   redirectUri: string;
 }) {
-  const response = await fetch(GOOGLE_TOKEN_URL, {
+  const response = await safeFetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -95,7 +96,7 @@ export async function exchangeGoogleCode(input: {
 }
 
 export async function fetchGoogleUserInfo(accessToken: string) {
-  const response = await fetch(GOOGLE_USERINFO_URL, {
+  const response = await safeFetch(GOOGLE_USERINFO_URL, {
     headers: {
       authorization: `Bearer ${accessToken}`,
     },
@@ -171,13 +172,13 @@ async function resolveGoogleJwk(kid: string) {
     return cachedJwks.keys.find((key) => key.kid === kid);
   }
 
-  const response = await fetch(GOOGLE_JWKS_URL);
+  const response = await safeFetch(GOOGLE_JWKS_URL);
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Google JWKS fetch failed: ${response.status} ${body.slice(0, 240)}`);
   }
 
-  const cacheControl = response.headers.get("cache-control") ?? "";
+  const cacheControl = response.headers["cache-control"] ?? "";
   const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
   const maxAgeSeconds = maxAgeMatch ? Number(maxAgeMatch[1]) : 3600;
   const payload = (await response.json()) as GoogleJwks;

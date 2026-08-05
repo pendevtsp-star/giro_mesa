@@ -1,4 +1,4 @@
-import { loadEnv } from "@giromesa/config";
+import { loadEnv, safeFetch } from "@giromesa/config";
 import { Injectable, Logger } from "@nestjs/common";
 
 export type IfoodOrderStatus =
@@ -59,6 +59,7 @@ const IFOOD_STATUS_MAP: Record<IfoodOrderStatus, string> = {
 @Injectable()
 export class IfoodProvider {
   private readonly logger = new Logger(IfoodProvider.name);
+  private readonly request = safeFetch;
 
   private getConfig() {
     const env = loadEnv();
@@ -86,7 +87,7 @@ export class IfoodProvider {
       return this.getMockOrders();
     }
 
-    const response = await fetch(`${IFOOD_API_BASE}/merchants/${config.merchantId}/orders`, {
+    const response = await this.request(`${IFOOD_API_BASE}/merchants/${config.merchantId}/orders`, {
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
@@ -114,7 +115,7 @@ export class IfoodProvider {
       return;
     }
 
-    const response = await fetch(
+    const response = await this.request(
       `${IFOOD_API_BASE}/merchants/${config.merchantId}/orders/${externalOrderId}/status`,
       {
         method: "PATCH",

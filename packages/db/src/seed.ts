@@ -26,6 +26,7 @@ import {
   invitations,
   kdsStations,
   kdsTickets,
+  legalAcceptances,
   mfaRecoveryCodes,
   modifierGroups,
   modifierOptions,
@@ -167,6 +168,7 @@ async function resetDemoTenant() {
   await db.delete(invitations).where(eq(invitations.tenantId, tenantId));
   await db.delete(passwordResetTokens).where(eq(passwordResetTokens.tenantId, tenantId));
   await db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.tenantId, tenantId));
+  await db.delete(legalAcceptances).where(eq(legalAcceptances.tenantId, tenantId));
   await db.delete(oauthAccounts).where(eq(oauthAccounts.tenantId, tenantId));
   await db.delete(sessions).where(eq(sessions.tenantId, tenantId));
   await db.delete(operationalDevices).where(eq(operationalDevices.tenantId, tenantId));
@@ -322,12 +324,16 @@ async function upsertDemo() {
         "cash:manage",
         "fiscal:read",
         "fiscal:manage",
+        "fiscal:configure",
+        "fiscal:activate_production",
         "hardware:manage",
         "print:operate",
         "inventory:manage",
         "reports:read",
         "delivery:manage",
         "approvals:manage",
+        "staff_finance:manage",
+        "staff_finance:read_self",
       ],
     },
     {
@@ -348,6 +354,8 @@ async function upsertDemo() {
         "inventory:manage",
         "reports:read",
         "approvals:manage",
+        "staff_finance:manage",
+        "staff_finance:read_self",
       ],
     },
     {
@@ -367,7 +375,7 @@ async function upsertDemo() {
     {
       code: "waiter",
       name: "Garçom",
-      permissions: ["pos:operate", "pos:qr_review", "pos:kds_send"],
+      permissions: ["pos:operate", "pos:qr_review", "pos:kds_send", "staff_finance:read_self"],
     },
     {
       code: "kitchen",
@@ -382,7 +390,13 @@ async function upsertDemo() {
     {
       code: "finance",
       name: "Financeiro",
-      permissions: ["cash:manage", "fiscal:read", "reports:read"],
+      permissions: [
+        "cash:manage",
+        "fiscal:read",
+        "reports:read",
+        "staff_finance:manage",
+        "staff_finance:read_self",
+      ],
     },
   ];
 
@@ -824,6 +838,7 @@ async function upsertDemo() {
       description: "Tirado na hora, gelado e com colarinho cremoso.",
       priceCents: 1400,
       costCents: 420,
+      isAlcoholic: true,
       channels: ["pos", "qr"],
       fiscalNcm: "22030000",
       fiscalCfop: "5102",
@@ -888,6 +903,7 @@ async function upsertDemo() {
       description: "Garrafa elegivel para Dose Club com 20 doses padrao de 50ml.",
       priceCents: 42000,
       costCents: 21000,
+      isAlcoholic: true,
       isClubEligible: true,
       bottleVolumeMl: 1000,
       defaultDoseMl: 50,

@@ -13,7 +13,7 @@ import { firstHeader, type HeaderRecord } from "../../common/http";
 import { RateLimitService } from "../../common/rate-limit";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
-import { ClubWhiskyService } from "./club-whisky.service";
+import { CLUB_WHISKY_CONTRACT_VERSION, ClubWhiskyService } from "./club-whisky.service";
 import { IntegrationAuthService } from "./integration-auth.service";
 
 export const clubSaleSchema = z
@@ -112,7 +112,7 @@ export const customerLinkSchema = z.strictObject({
 });
 
 export const configureSchema = z.strictObject({
-  branchId: z.string().optional(),
+  branchId: z.string().uuid(),
   remoteClientId: z.string().trim().min(1).max(160).optional(),
   webhookSecretRef: z
     .string()
@@ -127,6 +127,23 @@ export const configureSchema = z.strictObject({
     .refine(isAllowedDoseClubWebhookUrl, "Webhook URL is not allowed for Dose Club")
     .optional(),
   rotateKey: z.boolean().optional().default(false),
+});
+
+export const activateIntegrationSchema = z.strictObject({
+  expectedVersion: z.number().int().nonnegative(),
+  contractVersion: z.literal(CLUB_WHISKY_CONTRACT_VERSION),
+  evidence: z.string().trim().min(10).max(500),
+});
+
+export const integrationHealthSchema = z.strictObject({
+  expectedVersion: z.number().int().nonnegative(),
+  healthy: z.boolean(),
+  detail: z.string().trim().min(3).max(500),
+});
+
+export const revokeIntegrationSchema = z.strictObject({
+  expectedVersion: z.number().int().nonnegative(),
+  reason: z.string().trim().min(3).max(500),
 });
 
 function isAllowedDoseClubWebhookUrl(value: string) {
@@ -241,6 +258,36 @@ export class ClubWhiskyController {
   async getIntegrationConfig(@Headers() headers: HeaderRecord) {
     const context = await this.context(headers, "tenant:manage");
     return this.clubWhiskyService.getIntegrationConfig(context);
+  }
+
+  @Post("lifecycle/activate")
+  async activateIntegration(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.context(headers, "tenant:manage");
+    return this.clubWhiskyService.transitionIntegrationLifecycle(context, {
+      event: "activate",
+      ...activateIntegrationSchema.parse(body),
+    });
+  }
+
+  @Post("lifecycle/health")
+  async recordIntegrationHealth(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.context(headers, "tenant:manage");
+    return this.clubWhiskyService.transitionIntegrationLifecycle(context, {
+      event: "health",
+      ...integrationHealthSchema.parse(body),
+    });
+  }
+
+  @Post("lifecycle/revoke")
+  async revokeIntegration(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    const context = await this.context(headers, "tenant:manage");
+    return this.clubWhiskyService.transitionIntegrationLifecycle(context, {
+      event: "revoke",
+      ...revokeIntegrationSchema.parse(body),
+    });
   }
 
   private async context(headers: HeaderRecord, permission: string) {

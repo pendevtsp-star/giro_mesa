@@ -271,6 +271,27 @@
   box-shadow: var(--shadow);
 }
 
+.gm-dialog.modifier-dialog-content {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.gm-dialog.modifier-dialog-content > .gm-dialog-body {
+  display: grid;
+  gap: 16px;
+  overflow-y: auto;
+  border-top: 0;
+  padding: 22px;
+}
+
+.gm-dialog.modifier-dialog-content > .gm-dialog-body > div:not(.modifier-actions) {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
 .modifier-dialog-content h2,
 .modifier-dialog-content h3 {
   margin: 0;
@@ -880,7 +901,7 @@
 .pos-payment-drawer select,
 .pos-payment-drawer label > input,
 .pos-payment-drawer label > select {
-  min-height: 38px;
+  min-height: var(--touch-target);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1009,8 +1030,8 @@
   top: 8px;
   right: 8px;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: var(--touch-target);
+  height: var(--touch-target);
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -1131,6 +1152,23 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.pos-payment-allocation {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.9rem;
+}
+
+.pos-payment-allocation legend {
+  padding-inline: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .pos-split-row input {

@@ -1,8 +1,6 @@
-import { loadEnv } from "@giromesa/config";
-import { Body, Controller, Headers, Inject, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Headers, Inject, Post } from "@nestjs/common";
 import { z } from "zod";
-import { firstHeader, type HeaderRecord } from "../../common/http";
-import { RateLimitService } from "../../common/rate-limit";
+import type { HeaderRecord } from "../../common/http";
 import { requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
 import { PaymentsService } from "./payments.service";
@@ -46,7 +44,6 @@ export class PaymentsController {
   constructor(
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
     @Inject(AuthService) private readonly authService: AuthService,
-    @Inject(RateLimitService) private readonly rateLimitService: RateLimitService,
   ) {}
 
   @Post()
@@ -113,44 +110,6 @@ export class PaymentsController {
       input.reason,
       input.idempotencyKey,
     );
-  }
-
-  @Post("webhooks/asaas")
-  async receiveAsaasWebhook(@Body() body: unknown, @Headers() headers: HeaderRecord) {
-    const env = loadEnv();
-    this.rateLimitService.assertAllowed(headers, {
-      namespace: "asaas_payment_webhook",
-      limit: 300,
-      windowMs: 60_000,
-    });
-
-    if (env.NODE_ENV === "production" && !env.ASAAS_WEBHOOK_SECRET) {
-      throw new UnauthorizedException("Webhook authentication is not configured");
-    }
-
-    const receivedSecret =
-      firstHeader(headers["asaas-access-token"]) ??
-      firstHeader(headers["x-asaas-webhook-secret"]) ??
-      firstHeader(headers["asaas-webhook-secret"]);
-    if (env.ASAAS_WEBHOOK_SECRET && receivedSecret !== env.ASAAS_WEBHOOK_SECRET) {
-      throw new UnauthorizedException("Invalid webhook authentication");
-    }
-
-    const payload =
-      body && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>)
-        : {};
-
-    const externalEventId =
-      firstHeader(headers["x-webhook-id"]) ??
-      firstHeader(headers["x-event-id"]) ??
-      (typeof payload.id === "string" ? payload.id : `asaas-${Date.now()}`);
-
-    return this.paymentsService.handleWebhook({
-      provider: "asaas",
-      externalEventId,
-      payload,
-    });
   }
 
   private async context(headers: HeaderRecord, permission: string) {

@@ -26,7 +26,7 @@ function run(args) {
   });
 }
 
-for (const packageName of ["@giromesa/domain", "@giromesa/db"]) {
+for (const packageName of ["@giromesa/config", "@giromesa/domain", "@giromesa/db"]) {
   const build = run(["--filter", packageName, "build"]);
   if (build.status !== 0) process.exit(build.status ?? 1);
 }
@@ -42,28 +42,31 @@ if (migration.status !== 0) {
 for (const args of [
   [
     "--filter",
-    "@giromesa/api",
-    "exec",
-    "vitest",
-    "run",
-    "src/modules/integrations/club-whisky.integration.test.ts",
-    "src/modules/fiscal/fiscal.integration.test.ts",
-    "src/modules/printing/connector-auth.integration.test.ts",
-    "src/modules/qr/qr.integration.test.ts",
-    "src/modules/pos/operational-foundation.integration.test.ts",
-    "src/modules/pos/pos.integration.test.ts",
-    "--pool=threads",
-    "--maxWorkers=1",
-    "--minWorkers=1",
-  ],
-  [
-    "--filter",
     "@giromesa/worker",
     "exec",
     "vitest",
     "run",
     "src/outbox.integration.test.ts",
     "src/fiscal.integration.test.ts",
+    "--pool=threads",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+  ],
+  [
+    "--filter",
+    "@giromesa/api",
+    "exec",
+    "vitest",
+    "run",
+    "src/modules/integrations/f15.integration.test.ts",
+    "src/modules/integrations/club-whisky.integration.test.ts",
+    "src/modules/inventory/inventory.integration.test.ts",
+    "src/modules/fiscal/fiscal.integration.test.ts",
+    "src/modules/kds/kds.integration.test.ts",
+    "src/modules/printing/connector-auth.integration.test.ts",
+    "src/modules/qr/qr.integration.test.ts",
+    "src/modules/pos/operational-foundation.integration.test.ts",
+    "src/modules/pos/pos.integration.test.ts",
     "--pool=threads",
     "--maxWorkers=1",
     "--minWorkers=1",

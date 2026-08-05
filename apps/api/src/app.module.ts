@@ -20,6 +20,7 @@ import { PosModule } from "./modules/pos/pos.module";
 import { PrintingModule } from "./modules/printing/printing.module";
 import { QrModule } from "./modules/qr/qr.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { StaffFinanceModule } from "./modules/staff-finance/staff-finance.module";
 import { TenantsModule } from "./modules/tenants/tenants.module";
 
 @Module({
@@ -41,6 +42,7 @@ import { TenantsModule } from "./modules/tenants/tenants.module";
     PrintingModule,
     QrModule,
     ReportsModule,
+    StaffFinanceModule,
     PlatformModule,
     IntegrationsModule,
     AuditModule,

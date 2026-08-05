@@ -29,27 +29,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Validate exact Trivy exceptions
+        run: pnpm security:trivy-exceptions
+
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           format: sarif
           output: trivy-fs-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "0"
-          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
+          trivyignores: .trivyignore.generated
 
       - name: Run Trivy config scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         if: always()
         with:
           scan-type: config
           scan-ref: .
           format: sarif
           output: trivy-config-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "0"
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
+          trivyignores: .trivyignore.generated
 
       - name: Upload Trivy filesystem results
         uses: github/codeql-action/upload-sarif@v4

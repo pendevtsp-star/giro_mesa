@@ -1,10 +1,11 @@
-import { integrationAccounts } from "@giromesa/db";
+import { branches, integrationAccounts } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { firstHeader, type HeaderRecord, requestIdFromHeaders } from "../../common/http";
 import { hashIntegrationApiKey } from "../../common/integration-key";
 import { DatabaseService } from "../database/database.service";
+import { readClubWhiskyBranchId } from "./club-whisky-branch";
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
@@ -54,7 +55,23 @@ export class IntegrationAuthService {
       });
     }
 
-    const branchId = optionalString(account.config.branchId);
+    const branchId =
+      provider === "club_whisky"
+        ? readClubWhiskyBranchId(account.config)
+        : optionalString(account.config.branchId);
+    if (provider === "club_whisky" && !branchId) {
+      throw new ForbiddenException("Dose Club integration must be assigned to a branch");
+    }
+    if (provider === "club_whisky" && branchId) {
+      const [ownedBranch] = await this.database.db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(and(eq(branches.tenantId, account.tenantId), eq(branches.id, branchId)))
+        .limit(1);
+      if (!ownedBranch) {
+        throw new ForbiddenException("Dose Club integration branch is invalid for this tenant");
+      }
+    }
     const context: TenantContext = {
       tenantId: account.tenantId,
       requestId: requestIdFromHeaders(headers),

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   Inject,
@@ -37,6 +38,31 @@ const startTrialSchema = z.object({
   document: z.string().max(32).optional(),
   branchName: z.string().min(2).max(140).default("Matriz"),
   planCode: z.enum(["starter", "professional", "premium"]).default("professional"),
+});
+
+const commercialInterestSchema = z.object({
+  product: z.literal("giromesa"),
+  planCode: z.enum(["starter", "professional", "premium"]).optional(),
+  origin: z
+    .string()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9_-]+$/),
+  establishmentName: z.string().min(2).max(160),
+  contactName: z.string().min(2).max(160),
+  email: z.email(),
+  phone: z.string().min(8).max(32).optional(),
+  message: z.string().max(1000).optional(),
+});
+
+const legalAcceptanceSchema = z.object({
+  documentType: z.enum(["terms", "privacy"]),
+  accepted: z.literal(true),
+  origin: z
+    .string()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9_-]+$/),
 });
 
 const inviteSchema = z.object({
@@ -244,6 +270,12 @@ export class AuthController {
     @Headers() headers: HeaderRecord,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
+    if (publicTrialSignupDisabled()) {
+      throw new ForbiddenException({
+        error: "pilot_invite_only",
+        message: "O programa piloto opera somente por convite. Solicite acesso ao suporte.",
+      });
+    }
     rejectTenantOverride(body);
     const input = startTrialSchema.parse(body);
     this.rateLimitService.assertAllowed(headers, {
@@ -267,11 +299,38 @@ export class AuthController {
     };
   }
 
+  @Post("commercial-interests")
+  async createCommercialInterest(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const input = commercialInterestSchema.parse(body);
+    this.rateLimitService.assertAllowed(headers, {
+      namespace: "commercial_interest",
+      limit: 4,
+      windowMs: 60_000,
+      identifier: input.email.toLowerCase(),
+    });
+    return this.authService.createCommercialInterest(input);
+  }
+
   @Get("me")
   async me(@Headers() headers: HeaderRecord) {
     return {
       context: await this.authService.resolveContext(headers),
     };
+  }
+
+  @Post("legal-acceptances")
+  async recordLegalAcceptance(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const { accepted: _accepted, ...input } = legalAcceptanceSchema.parse(body);
+    const context = await this.authService.resolveContext(headers);
+    return this.authService.recordLegalAcceptance(context, input, headers);
+  }
+
+  @Get("legal-acceptances/status")
+  async getLegalAcceptanceStatus(@Headers() headers: HeaderRecord) {
+    const context = await this.authService.resolveContext(headers);
+    return this.authService.getLegalAcceptanceStatus(context);
   }
 
   @Get("csrf")
@@ -531,4 +590,11 @@ export class AuthController {
 
     return this.authService.deactivateUser(context, userId);
   }
+}
+
+function publicTrialSignupDisabled() {
+  if (process.env.PILOT_INVITE_ONLY === "true") {
+    return true;
+  }
+  return process.env.NODE_ENV === "production" && process.env.PILOT_INVITE_ONLY !== "false";
 }

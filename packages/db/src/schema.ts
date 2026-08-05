@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigserial,
   boolean,
   check,
@@ -36,6 +37,7 @@ export const orderStatus = pgEnum("order_status", [
   "paid",
   "canceled",
   "refunded",
+  "written_off",
 ]);
 export const orderItemStatus = pgEnum("order_item_status", [
   "pending",
@@ -54,6 +56,7 @@ export const paymentStatus = pgEnum("payment_status", [
   "canceled",
   "refunded",
   "partially_refunded",
+  "unknown",
 ]);
 export const cashSessionStatus = pgEnum("cash_session_status", [
   "open",
@@ -153,6 +156,26 @@ export const themeMode = pgEnum("theme_mode", ["light", "dark", "system"]);
 export const kdsInputMode = pgEnum("kds_input_mode", ["touch", "keyboard", "hybrid", "printer"]);
 export const operationalDeviceStatus = pgEnum("operational_device_status", ["active", "revoked"]);
 export const productionOutputMode = pgEnum("production_output_mode", ["kds", "printer", "hybrid"]);
+export const waiterResponsibilityPolicy = pgEnum("waiter_responsibility_policy", [
+  "strict",
+  "collaborative",
+]);
+export const qrMode = pgEnum("qr_mode", [
+  "disabled",
+  "menu_only",
+  "waiter_assisted",
+  "self_service",
+]);
+export const tableServiceSessionStatus = pgEnum("table_service_session_status", [
+  "active",
+  "closed",
+  "revoked",
+]);
+export const qrGuestSessionStatus = pgEnum("qr_guest_session_status", [
+  "active",
+  "revoked",
+  "expired",
+]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -305,6 +328,9 @@ export const branchOperationalSettings = pgTable(
     allowWaiterPayments: boolean("allow_waiter_payments").notNull().default(false),
     defaultTheme: themeMode("default_theme").notNull().default("dark"),
     defaultKdsInputMode: kdsInputMode("default_kds_input_mode").notNull().default("hybrid"),
+    waiterResponsibilityPolicy: waiterResponsibilityPolicy("waiter_responsibility_policy")
+      .notNull()
+      .default("collaborative"),
     kdsShortcuts: jsonb("kds_shortcuts").$type<Record<string, string>>().notNull().default({
       refresh: "r",
       sound: "s",
@@ -466,10 +492,19 @@ export const operationalDevices = pgTable(
       .references(() => branches.id),
     name: varchar("name", { length: 120 }).notNull(),
     kind: varchar("kind", { length: 40 }).notNull(),
+    initialMode: varchar("initial_mode", { length: 40 }).notNull().default("table"),
+    stationId: uuid("station_id").references(() => kdsStations.id),
+    printerDeviceId: uuid("printer_device_id").references(() => printerDevices.id),
+    allowModeSwitch: boolean("allow_mode_switch").notNull().default(false),
     tokenHash: text("token_hash").notNull(),
     status: operationalDeviceStatus("status").notNull().default("active"),
     theme: themeMode("theme").notNull().default("system"),
     kdsInput: kdsInputMode("kds_input").notNull().default("hybrid"),
+    provider: varchar("provider", { length: 40 }),
+    providerTerminalId: varchar("provider_terminal_id", { length: 160 }),
+    capabilities: jsonb("capabilities").$type<Record<string, unknown>>().notNull().default({}),
+    pairedAt: timestamp("paired_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
@@ -481,6 +516,7 @@ export const operationalDevices = pgTable(
   (table) => [
     uniqueIndex("operational_devices_token_idx").on(table.tokenHash),
     index("operational_devices_scope_idx").on(table.tenantId, table.branchId, table.status),
+    check("operational_devices_version_check", sql`${table.version} > 0`),
   ],
 );
 
@@ -614,7 +650,68 @@ export const invitations = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     ...timestamps,
   },
-  (table) => [index("invitations_tenant_idx").on(table.tenantId)],
+  (table) => [
+    index("invitations_tenant_idx").on(table.tenantId),
+    uniqueIndex("invitations_token_hash_idx").on(table.tokenHash),
+  ],
+);
+
+export const legalAcceptances = pgTable(
+  "legal_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    documentType: varchar("document_type", { length: 32 }).notNull(),
+    documentVersion: varchar("document_version", { length: 80 }).notNull(),
+    documentHash: varchar("document_hash", { length: 64 }).notNull(),
+    origin: varchar("origin", { length: 80 }).notNull(),
+    ipAddress: varchar("ip_address", { length: 80 }),
+    userAgent: text("user_agent"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("legal_acceptances_tenant_user_idx").on(table.tenantId, table.userId),
+    uniqueIndex("legal_acceptances_document_idx").on(
+      table.tenantId,
+      table.userId,
+      table.documentType,
+      table.documentVersion,
+      table.documentHash,
+    ),
+    check(
+      "legal_acceptances_hash_check",
+      sql`length(${table.documentHash}) = 64 and ${table.documentHash} ~ '^[0-9a-f]+$'`,
+    ),
+  ],
+);
+
+export const commercialInterests = pgTable(
+  "commercial_interests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    product: varchar("product", { length: 32 }).notNull(),
+    planCode: varchar("plan_code", { length: 32 }),
+    origin: varchar("origin", { length: 80 }).notNull(),
+    establishmentName: varchar("establishment_name", { length: 160 }).notNull(),
+    contactName: varchar("contact_name", { length: 160 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    phone: varchar("phone", { length: 32 }),
+    message: text("message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("commercial_interests_created_idx").on(table.createdAt),
+    check("commercial_interests_product_check", sql`${table.product} in ('giromesa')`),
+    check(
+      "commercial_interests_plan_check",
+      sql`${table.planCode} is null or ${table.planCode} in ('starter', 'professional', 'premium')`,
+    ),
+  ],
 );
 
 export const passwordResetTokens = pgTable(
@@ -741,6 +838,18 @@ export const qrBranchSettings = pgTable(
         "request_pre_bill",
       ]),
     reviewBeforeKds: boolean("review_before_kds").notNull().default(false),
+    mode: qrMode("mode").notNull().default("waiter_assisted"),
+    presenceMethods: jsonb("presence_methods")
+      .$type<Array<"code" | "approval" | "network">>()
+      .notNull()
+      .default(["code"]),
+    tabVisibility: varchar("tab_visibility", { length: 24 })
+      .$type<"shared" | "own_items">()
+      .notNull()
+      .default("shared"),
+    guestSessionTtlMinutes: integer("guest_session_ttl_minutes").notNull().default(720),
+    presenceCodeTtlMinutes: integer("presence_code_ttl_minutes").notNull().default(30),
+    trustedNetworkCidrs: jsonb("trusted_network_cidrs").$type<string[]>().notNull().default([]),
     template: varchar("template", { length: 40 }).notNull().default("classic"),
     primaryColor: varchar("primary_color", { length: 16 }).notNull().default("#FFCC00"),
     instruction: varchar("instruction", { length: 180 })
@@ -852,6 +961,7 @@ export const products = pgTable(
     imageUrl: text("image_url"),
     isActive: boolean("is_active").notNull().default(true),
     isAvailable: boolean("is_available").notNull().default(true),
+    isAlcoholic: boolean("is_alcoholic").notNull().default(false),
     isClubEligible: boolean("is_club_eligible").notNull().default(false),
     bottleVolumeMl: integer("bottle_volume_ml"),
     defaultDoseMl: integer("default_dose_ml").notNull().default(50),
@@ -957,9 +1067,48 @@ export const stockLocations = pgTable(
       .references(() => branches.id),
     name: varchar("name", { length: 120 }).notNull(),
     type: varchar("type", { length: 40 }).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps,
   },
-  (table) => [index("stock_locations_tenant_branch_idx").on(table.tenantId, table.branchId)],
+  (table) => [
+    index("stock_locations_tenant_branch_idx").on(table.tenantId, table.branchId),
+    uniqueIndex("stock_locations_one_transit_idx")
+      .on(table.tenantId, table.branchId)
+      .where(sql`${table.type} = 'transit' and ${table.archivedAt} is null`),
+  ],
+);
+
+export const branchInventorySettings = pgTable(
+  "branch_inventory_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    transferMode: varchar("transfer_mode", { length: 24 }).notNull().default("immediate"),
+    consumptionLocationId: uuid("consumption_location_id").references(() => stockLocations.id),
+    managerApprovalThreshold: numeric("manager_approval_threshold", {
+      precision: 14,
+      scale: 3,
+    })
+      .notNull()
+      .default("0"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("branch_inventory_settings_scope_idx").on(table.tenantId, table.branchId),
+    check(
+      "branch_inventory_settings_transfer_mode_check",
+      sql`${table.transferMode} in ('immediate', 'awaiting_receipt')`,
+    ),
+    check(
+      "branch_inventory_settings_approval_threshold_check",
+      sql`${table.managerApprovalThreshold} >= 0 and ${table.managerApprovalThreshold} <= 100`,
+    ),
+  ],
 );
 
 export const recipes = pgTable(
@@ -1027,6 +1176,107 @@ export const stockMovements = pgTable(
   (table) => [index("stock_movements_tenant_item_idx").on(table.tenantId, table.inventoryItemId)],
 );
 
+export const inventoryTransfers = pgTable(
+  "inventory_transfers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    originLocationId: uuid("origin_location_id")
+      .notNull()
+      .references(() => stockLocations.id),
+    destinationLocationId: uuid("destination_location_id")
+      .notNull()
+      .references(() => stockLocations.id),
+    transitLocationId: uuid("transit_location_id").references(() => stockLocations.id),
+    requestedByUserId: uuid("requested_by_user_id").references(() => users.id),
+    receivedByUserId: uuid("received_by_user_id").references(() => users.id),
+    status: varchar("status", { length: 24 }).notNull().default("draft"),
+    mode: varchar("mode", { length: 24 }).notNull().default("immediate"),
+    reason: text("reason").notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    version: integer("version").notNull().default(1),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("inventory_transfers_tenant_key_idx").on(table.tenantId, table.idempotencyKey),
+    index("inventory_transfers_branch_status_idx").on(table.tenantId, table.branchId, table.status),
+    check(
+      "inventory_transfers_status_check",
+      sql`${table.status} in ('draft', 'awaiting_receipt', 'completed', 'cancelled')`,
+    ),
+    check(
+      "inventory_transfers_mode_check",
+      sql`${table.mode} in ('immediate', 'awaiting_receipt')`,
+    ),
+    check(
+      "inventory_transfers_distinct_locations_check",
+      sql`${table.originLocationId} <> ${table.destinationLocationId}`,
+    ),
+    check("inventory_transfers_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const inventoryTransferLines = pgTable(
+  "inventory_transfer_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    transferId: uuid("transfer_id")
+      .notNull()
+      .references(() => inventoryTransfers.id),
+    inventoryItemId: uuid("inventory_item_id")
+      .notNull()
+      .references(() => inventoryItems.id),
+    quantitySent: numeric("quantity_sent", { precision: 14, scale: 3 }).notNull(),
+    quantityReceived: numeric("quantity_received", { precision: 14, scale: 3 }),
+    divergenceReason: text("divergence_reason"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("inventory_transfer_lines_item_idx").on(
+      table.tenantId,
+      table.transferId,
+      table.inventoryItemId,
+    ),
+    check("inventory_transfer_lines_sent_check", sql`${table.quantitySent} > 0`),
+    check(
+      "inventory_transfer_lines_received_check",
+      sql`${table.quantityReceived} is null or (${table.quantityReceived} >= 0 and ${table.quantityReceived} <= ${table.quantitySent})`,
+    ),
+  ],
+);
+
+export const returnableMappings = pgTable(
+  "returnable_mappings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    fullInventoryItemId: uuid("full_inventory_item_id")
+      .notNull()
+      .references(() => inventoryItems.id),
+    emptyInventoryItemId: uuid("empty_inventory_item_id")
+      .notNull()
+      .references(() => inventoryItems.id),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("returnable_mappings_product_idx").on(table.tenantId, table.productId)],
+);
+
 export const orders = pgTable(
   "orders",
   {
@@ -1046,6 +1296,16 @@ export const orders = pgTable(
     subtotalCents: integer("subtotal_cents").notNull().default(0),
     discountCents: integer("discount_cents").notNull().default(0),
     serviceChargeCents: integer("service_charge_cents").notNull().default(0),
+    shiftId: uuid("shift_id").references(() => operationalShifts.id),
+    serviceChargeSuggestedCents: integer("service_charge_suggested_cents").notNull().default(0),
+    serviceChargeStatus: varchar("service_charge_status", { length: 24 })
+      .$type<"not_configured" | "suggested" | "accepted" | "removed" | "manual">()
+      .notNull()
+      .default("not_configured"),
+    serviceChargePolicySnapshot: jsonb("service_charge_policy_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     deliveryFeeCents: integer("delivery_fee_cents").notNull().default(0),
     totalCents: integer("total_cents").notNull().default(0),
     version: integer("version").notNull().default(1),
@@ -1085,6 +1345,178 @@ export const tabs = pgTable(
   (table) => [index("tabs_tenant_branch_idx").on(table.tenantId, table.branchId)],
 );
 
+export const tableWaiterAssignments = pgTable(
+  "table_waiter_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => operationalShifts.id),
+    tableId: uuid("table_id")
+      .notNull()
+      .references(() => diningTables.id),
+    waiterUserId: uuid("waiter_user_id")
+      .notNull()
+      .references(() => users.id),
+    assignedByUserId: uuid("assigned_by_user_id").references(() => users.id),
+    source: varchar("source", { length: 32 })
+      .$type<"manager" | "area" | "first_service" | "transfer">()
+      .notNull(),
+    reason: varchar("reason", { length: 240 }),
+    version: integer("version").notNull().default(1),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedByUserId: uuid("ended_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("table_waiter_assignments_one_active_idx")
+      .on(table.tenantId, table.shiftId, table.tableId)
+      .where(sql`${table.endedAt} is null`),
+    index("table_waiter_assignments_waiter_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.shiftId,
+      table.waiterUserId,
+    ),
+    index("table_waiter_assignments_table_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.shiftId,
+      table.tableId,
+    ),
+    check("table_waiter_assignments_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const tableServiceSessions = pgTable(
+  "table_service_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    shiftId: uuid("shift_id").references(() => operationalShifts.id),
+    tableId: uuid("table_id")
+      .notNull()
+      .references(() => diningTables.id),
+    orderId: uuid("order_id").references(() => orders.id),
+    status: tableServiceSessionStatus("status").notNull().default("active"),
+    version: integer("version").notNull().default(1),
+    mode: qrMode("mode").notNull().default("waiter_assisted"),
+    capabilities: jsonb("capabilities").$type<string[]>().notNull().default([]),
+    presenceMethods: jsonb("presence_methods").$type<string[]>().notNull().default(["code"]),
+    tabVisibility: varchar("tab_visibility", { length: 24 })
+      .$type<"shared" | "own_items">()
+      .notNull()
+      .default("shared"),
+    guestSessionTtlMinutes: integer("guest_session_ttl_minutes").notNull().default(720),
+    presenceCodeHash: text("presence_code_hash"),
+    presenceCodeExpiresAt: timestamp("presence_code_expires_at", { withTimezone: true }),
+    presenceCodeAttempts: integer("presence_code_attempts").notNull().default(0),
+    activatedByUserId: uuid("activated_by_user_id").references(() => users.id),
+    closedByUserId: uuid("closed_by_user_id").references(() => users.id),
+    revokedByUserId: uuid("revoked_by_user_id").references(() => users.id),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokeReason: varchar("revoke_reason", { length: 240 }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("table_service_sessions_one_active_idx")
+      .on(table.tenantId, table.tableId)
+      .where(sql`${table.status} = 'active'`),
+    index("table_service_sessions_branch_table_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.tableId,
+    ),
+    index("table_service_sessions_order_idx").on(table.tenantId, table.orderId),
+    check("table_service_sessions_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const qrGuestSessions = pgTable(
+  "qr_guest_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    tableServiceSessionId: uuid("table_service_session_id")
+      .notNull()
+      .references(() => tableServiceSessions.id),
+    tokenHash: text("token_hash").notNull(),
+    validationMethod: varchar("validation_method", { length: 24 })
+      .$type<"code" | "approval" | "network">()
+      .notNull(),
+    status: qrGuestSessionStatus("status").notNull().default("active"),
+    approvedByUserId: uuid("approved_by_user_id").references(() => users.id),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedByUserId: uuid("revoked_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("qr_guest_sessions_token_hash_idx").on(table.tokenHash),
+    index("qr_guest_sessions_active_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.tableServiceSessionId,
+      table.status,
+    ),
+  ],
+);
+
+export const qrGuestAccessRequests = pgTable(
+  "qr_guest_access_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    tableServiceSessionId: uuid("table_service_session_id")
+      .notNull()
+      .references(() => tableServiceSessions.id),
+    claimKeyHash: text("claim_key_hash").notNull(),
+    status: varchar("status", { length: 24 })
+      .$type<"pending" | "approved" | "rejected" | "claimed" | "expired">()
+      .notNull()
+      .default("pending"),
+    approvedByUserId: uuid("approved_by_user_id").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("qr_guest_access_requests_claim_key_idx").on(table.claimKeyHash),
+    index("qr_guest_access_requests_pending_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.tableServiceSessionId,
+      table.status,
+    ),
+  ],
+);
+
 export const orderItems = pgTable(
   "order_items",
   {
@@ -1104,9 +1536,17 @@ export const orderItems = pgTable(
     unitPriceCents: integer("unit_price_cents").notNull(),
     totalCents: integer("total_cents").notNull(),
     sourceChannel: varchar("source_channel", { length: 20 }).notNull().default("pos"),
+    registeredByUserId: uuid("registered_by_user_id").references(() => users.id),
+    shiftId: uuid("shift_id").references(() => operationalShifts.id),
+    responsibleWaiterUserId: uuid("responsible_waiter_user_id").references(() => users.id),
+    tableServiceSessionId: uuid("table_service_session_id").references(
+      () => tableServiceSessions.id,
+    ),
+    qrGuestSessionId: uuid("qr_guest_session_id").references(() => qrGuestSessions.id),
     status: orderItemStatus("status").notNull().default("pending"),
     notes: text("notes"),
     modifiers: jsonb("modifiers").$type<Record<string, unknown>[]>().notNull().default([]),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
     sentToKitchenAt: timestamp("sent_to_kitchen_at", { withTimezone: true }),
     ...timestamps,
   },
@@ -1117,6 +1557,7 @@ export const orderItems = pgTable(
       table.sourceChannel,
       table.status,
     ),
+    uniqueIndex("order_items_idempotency_idx").on(table.tenantId, table.idempotencyKey),
   ],
 );
 
@@ -1132,6 +1573,14 @@ export const payments = pgTable(
     provider: varchar("provider", { length: 40 }).notNull().default("manual"),
     method: varchar("method", { length: 40 }).notNull(),
     status: paymentStatus("status").notNull().default("pending"),
+    executionMode: varchar("execution_mode", { length: 20 }).notNull().default("manual"),
+    terminalDeviceId: uuid("terminal_device_id").references(() => operationalDevices.id),
+    providerReference: varchar("provider_reference", { length: 160 }),
+    originalPaymentId: uuid("original_payment_id").references((): AnyPgColumn => payments.id),
+    paymentType: varchar("payment_type", { length: 20 }).notNull().default("charge"),
+    resultUnknownAt: timestamp("result_unknown_at", { withTimezone: true }),
+    lastQueriedAt: timestamp("last_queried_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
     amountCents: integer("amount_cents").notNull(),
     externalId: varchar("external_id", { length: 160 }),
     idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
@@ -1151,6 +1600,47 @@ export const payments = pgTable(
   (table) => [
     uniqueIndex("payments_idempotency_idx").on(table.tenantId, table.idempotencyKey),
     index("payments_tenant_order_idx").on(table.tenantId, table.orderId),
+    index("payments_tenant_original_idx").on(table.tenantId, table.originalPaymentId),
+    check("payments_amount_check", sql`${table.amountCents} > 0`),
+    check("payments_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const paymentAllocations = pgTable(
+  "payment_allocations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id),
+    orderItemId: uuid("order_item_id").references(() => orderItems.id),
+    seatLabel: varchar("seat_label", { length: 80 }),
+    amountCents: integer("amount_cents").notNull(),
+    allocatedByUserId: uuid("allocated_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("payment_allocations_idempotency_idx").on(table.tenantId, table.idempotencyKey),
+    index("payment_allocations_tenant_order_idx").on(table.tenantId, table.orderId),
+    index("payment_allocations_tenant_payment_idx").on(table.tenantId, table.paymentId),
+    index("payment_allocations_tenant_item_idx").on(table.tenantId, table.orderItemId),
+    check("payment_allocations_amount_check", sql`${table.amountCents} > 0`),
+    check(
+      "payment_allocations_target_check",
+      sql`(${table.orderItemId} is not null and ${table.seatLabel} is null) or (${table.orderItemId} is null and ${table.seatLabel} is not null)`,
+    ),
   ],
 );
 
@@ -1374,12 +1864,19 @@ export const serviceRequests = pgTable(
       .notNull()
       .references(() => diningTables.id),
     orderId: uuid("order_id").references(() => orders.id),
+    tableServiceSessionId: uuid("table_service_session_id").references(
+      () => tableServiceSessions.id,
+    ),
+    qrGuestSessionId: uuid("qr_guest_session_id").references(() => qrGuestSessions.id),
     type: varchar("type", { length: 40 })
-      .$type<"call_waiter" | "request_pre_bill" | "need_help">()
+      .$type<
+        "call_waiter" | "request_pre_bill" | "need_help" | "split_intent" | "payment_preference"
+      >()
       .notNull(),
     status: serviceRequestStatus("status").notNull().default("pending"),
     requesterKeyHash: text("requester_key_hash"),
     message: varchar("message", { length: 180 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     acknowledgedByUserId: uuid("acknowledged_by_user_id").references(() => users.id),
     acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
     resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id),
@@ -1593,6 +2090,9 @@ export const cashMovements = pgTable(
     type: cashMovementType("type").notNull(),
     amountCents: integer("amount_cents").notNull(),
     reason: text("reason").notNull(),
+    sourceType: varchar("source_type", { length: 60 }),
+    sourceId: uuid("source_id"),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id),
@@ -1601,6 +2101,455 @@ export const cashMovements = pgTable(
   (table) => [
     index("cash_movements_tenant_session_idx").on(table.tenantId, table.cashSessionId),
     index("cash_movements_tenant_branch_idx").on(table.tenantId, table.branchId),
+    uniqueIndex("cash_movements_idempotency_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+  ],
+);
+
+export const staffServicePolicies = pgTable(
+  "staff_service_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    version: integer("version").notNull(),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull().defaultNow(),
+    isActive: boolean("is_active").notNull().default(false),
+    attributionMode: varchar("attribution_mode", { length: 32 })
+      .$type<"table_responsible" | "item_author" | "shift_pool">()
+      .notNull(),
+    serviceRateBps: integer("service_rate_bps").notNull().default(1000),
+    serviceBase: varchar("service_base", { length: 32 })
+      .$type<"net_consumption" | "gross_consumption" | "manual">()
+      .notNull()
+      .default("net_consumption"),
+    requireWaiterConfirmation: boolean("require_waiter_confirmation").notNull().default(false),
+    poolRules: jsonb("pool_rules").$type<Record<string, unknown>>().notNull().default({}),
+    confirmedLegalReview: boolean("confirmed_legal_review").notNull().default(false),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    idempotencyPayloadHash: varchar("idempotency_payload_hash", { length: 64 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("staff_service_policies_version_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.version,
+    ),
+    uniqueIndex("staff_service_policies_one_active_idx")
+      .on(table.tenantId, table.branchId)
+      .where(sql`${table.isActive}`),
+    uniqueIndex("staff_service_policies_idempotency_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    check(
+      "staff_service_policies_rate_check",
+      sql`${table.serviceRateBps} >= 0 and ${table.serviceRateBps} <= 10000`,
+    ),
+  ],
+);
+
+export const waiterShiftSettlements = pgTable(
+  "waiter_shift_settlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => operationalShifts.id),
+    waiterUserId: uuid("waiter_user_id")
+      .notNull()
+      .references(() => users.id),
+    revision: integer("revision").notNull().default(1),
+    supersedesId: uuid("supersedes_id"),
+    status: varchar("status", { length: 32 })
+      .$type<"calculating" | "awaiting_confirmation" | "checked" | "closed" | "reopened">()
+      .notNull()
+      .default("calculating"),
+    policyId: uuid("policy_id").references(() => staffServicePolicies.id),
+    policySnapshot: jsonb("policy_snapshot").$type<Record<string, unknown>>().notNull().default({}),
+    grossSalesCents: integer("gross_sales_cents").notNull().default(0),
+    cancelledCents: integer("cancelled_cents").notNull().default(0),
+    discountCents: integer("discount_cents").notNull().default(0),
+    netConsumptionCents: integer("net_consumption_cents").notNull().default(0),
+    serviceSuggestedCents: integer("service_suggested_cents").notNull().default(0),
+    serviceReceivedCents: integer("service_received_cents").notNull().default(0),
+    pooledServiceCents: integer("pooled_service_cents").notNull().default(0),
+    pendingCashCents: integer("pending_cash_cents").notNull().default(0),
+    adjustmentsCents: integer("adjustments_cents").notNull().default(0),
+    occurrenceOpenCents: integer("occurrence_open_cents").notNull().default(0),
+    occurrenceRecoveredCents: integer("occurrence_recovered_cents").notNull().default(0),
+    commissionAccruedCents: integer("commission_accrued_cents").notNull().default(0),
+    breakdown: jsonb("breakdown").$type<Record<string, unknown>>().notNull().default({}),
+    version: integer("version").notNull().default(1),
+    calculateIdempotencyKey: varchar("calculate_idempotency_key", { length: 180 }),
+    calculatePayloadHash: varchar("calculate_payload_hash", { length: 64 }),
+    calculatedAt: timestamp("calculated_at", { withTimezone: true }).notNull().defaultNow(),
+    ledgerHash: varchar("ledger_hash", { length: 64 }).notNull(),
+    closeIdempotencyKey: varchar("close_idempotency_key", { length: 180 }),
+    waiterConfirmedAt: timestamp("waiter_confirmed_at", { withTimezone: true }),
+    checkedByUserId: uuid("checked_by_user_id").references(() => users.id),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    closedByUserId: uuid("closed_by_user_id").references(() => users.id),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    reopenReason: varchar("reopen_reason", { length: 500 }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("waiter_shift_settlements_revision_idx").on(
+      table.tenantId,
+      table.shiftId,
+      table.waiterUserId,
+      table.revision,
+    ),
+    uniqueIndex("waiter_shift_settlements_calculate_key_idx")
+      .on(table.tenantId, table.calculateIdempotencyKey)
+      .where(sql`${table.calculateIdempotencyKey} is not null`),
+    uniqueIndex("waiter_shift_settlements_close_key_idx")
+      .on(table.tenantId, table.closeIdempotencyKey)
+      .where(sql`${table.closeIdempotencyKey} is not null`),
+    index("waiter_shift_settlements_shift_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.shiftId,
+      table.status,
+    ),
+    check("waiter_shift_settlements_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const managerialShiftSettlements = pgTable(
+  "managerial_shift_settlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    shiftId: uuid("shift_id")
+      .notNull()
+      .references(() => operationalShifts.id),
+    revision: integer("revision").notNull().default(1),
+    supersedesId: uuid("supersedes_id").references(
+      (): AnyPgColumn => managerialShiftSettlements.id,
+    ),
+    status: varchar("status", { length: 32 })
+      .$type<"checked" | "closed" | "reopened">()
+      .notNull()
+      .default("checked"),
+    policyId: uuid("policy_id").references(() => staffServicePolicies.id),
+    policySnapshot: jsonb("policy_snapshot").$type<Record<string, unknown>>().notNull().default({}),
+    grossSalesCents: integer("gross_sales_cents").notNull().default(0),
+    cancelledCents: integer("cancelled_cents").notNull().default(0),
+    discountCents: integer("discount_cents").notNull().default(0),
+    netConsumptionCents: integer("net_consumption_cents").notNull().default(0),
+    netPaidCents: integer("net_paid_cents").notNull().default(0),
+    serviceSuggestedCents: integer("service_suggested_cents").notNull().default(0),
+    serviceReceivedCents: integer("service_received_cents").notNull().default(0),
+    pendingCashCents: integer("pending_cash_cents").notNull().default(0),
+    breakdown: jsonb("breakdown").$type<Record<string, unknown>>().notNull().default({}),
+    version: integer("version").notNull().default(1),
+    calculateIdempotencyKey: varchar("calculate_idempotency_key", { length: 180 }),
+    calculatePayloadHash: varchar("calculate_payload_hash", { length: 64 }),
+    calculatedAt: timestamp("calculated_at", { withTimezone: true }).notNull().defaultNow(),
+    ledgerHash: varchar("ledger_hash", { length: 64 }).notNull(),
+    closeIdempotencyKey: varchar("close_idempotency_key", { length: 180 }),
+    checkedByUserId: uuid("checked_by_user_id").references(() => users.id),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    closedByUserId: uuid("closed_by_user_id").references(() => users.id),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    reopenReason: varchar("reopen_reason", { length: 500 }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("managerial_shift_settlements_revision_idx").on(
+      table.tenantId,
+      table.shiftId,
+      table.revision,
+    ),
+    uniqueIndex("managerial_shift_settlements_calculate_key_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.shiftId,
+      table.calculateIdempotencyKey,
+    ),
+    index("managerial_shift_settlements_shift_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.shiftId,
+      table.status,
+    ),
+    check("managerial_shift_settlements_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const operationalOccurrences = pgTable(
+  "operational_occurrences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    shiftId: uuid("shift_id").references(() => operationalShifts.id),
+    tableId: uuid("table_id").references(() => diningTables.id),
+    orderId: uuid("order_id").references(() => orders.id),
+    responsibleWaiterUserId: uuid("responsible_waiter_user_id").references(() => users.id),
+    type: varchar("type", { length: 60 }).notNull(),
+    initialReport: text("initial_report").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("under_review"),
+    decision: varchar("decision", { length: 32 }),
+    version: integer("version").notNull().default(1),
+    unpaidBalanceCents: integer("unpaid_balance_cents").notNull().default(0),
+    menuValueCents: integer("menu_value_cents").notNull().default(0),
+    serviceSuggestedCents: integer("service_suggested_cents").notNull().default(0),
+    paidSnapshotCents: integer("paid_snapshot_cents").notNull().default(0),
+    branchRuleSnapshot: jsonb("branch_rule_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    idempotencyPayloadHash: varchar("idempotency_payload_hash", { length: 64 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    decidedByUserId: uuid("decided_by_user_id").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("operational_occurrences_key_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    uniqueIndex("operational_occurrences_open_order_type_idx")
+      .on(table.tenantId, table.orderId, table.type)
+      .where(sql`${table.status} in ('under_review', 'approved') and ${table.orderId} is not null`),
+    index("operational_occurrences_branch_shift_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.shiftId,
+      table.status,
+    ),
+    check("operational_occurrences_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const operationalOccurrenceEvents = pgTable(
+  "operational_occurrence_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    occurrenceId: uuid("occurrence_id")
+      .notNull()
+      .references(() => operationalOccurrences.id),
+    eventType: varchar("event_type", { length: 60 }).notNull(),
+    resultingStatus: varchar("resulting_status", { length: 32 }),
+    resultingDecision: varchar("resulting_decision", { length: 32 }),
+    note: text("note"),
+    amountCents: integer("amount_cents").notNull().default(0),
+    method: varchar("method", { length: 40 }),
+    reference: varchar("reference", { length: 160 }),
+    cashMovementId: uuid("cash_movement_id").references(() => cashMovements.id),
+    reversesEventId: uuid("reverses_event_id").references(
+      (): AnyPgColumn => operationalOccurrenceEvents.id,
+    ),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    idempotencyPayloadHash: varchar("idempotency_payload_hash", { length: 64 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("operational_occurrence_events_key_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    uniqueIndex("operational_occurrence_events_reversal_once_idx")
+      .on(table.tenantId, table.reversesEventId)
+      .where(sql`${table.reversesEventId} is not null`),
+    index("operational_occurrence_events_occurrence_idx").on(
+      table.tenantId,
+      table.occurrenceId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const commissionPolicies = pgTable(
+  "commission_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    version: integer("version").notNull(),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }),
+    status: varchar("status", { length: 24 }).notNull().default("draft"),
+    model: varchar("model", { length: 32 }).notNull(),
+    period: varchar("period", { length: 16 }).notNull(),
+    base: varchar("base", { length: 32 }).notNull(),
+    attributionMode: varchar("attribution_mode", { length: 32 }).notNull(),
+    rules: jsonb("rules").$type<Record<string, unknown>>().notNull().default({}),
+    confirmedLegalReview: boolean("confirmed_legal_review").notNull().default(false),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    idempotencyPayloadHash: varchar("idempotency_payload_hash", { length: 64 }),
+    activationIdempotencyKey: varchar("activation_idempotency_key", { length: 180 }),
+    activationPayloadHash: varchar("activation_payload_hash", { length: 64 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("commission_policies_version_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.name,
+      table.version,
+    ),
+    uniqueIndex("commission_policies_one_active_idx")
+      .on(table.tenantId, table.branchId, table.name)
+      .where(sql`${table.status} = 'active'`),
+    uniqueIndex("commission_policies_idempotency_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    uniqueIndex("commission_policies_activation_idempotency_idx")
+      .on(table.tenantId, table.activationIdempotencyKey)
+      .where(sql`${table.activationIdempotencyKey} is not null`),
+  ],
+);
+
+export const commissionPolicyMembers = pgTable(
+  "commission_policy_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    policyId: uuid("policy_id")
+      .notNull()
+      .references(() => commissionPolicies.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    eligible: boolean("eligible").notNull().default(true),
+    override: jsonb("override").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("commission_policy_members_unique_idx").on(
+      table.tenantId,
+      table.policyId,
+      table.userId,
+    ),
+  ],
+);
+
+export const commissionAccruals = pgTable(
+  "commission_accruals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    policyId: uuid("policy_id")
+      .notNull()
+      .references(() => commissionPolicies.id),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    revision: integer("revision").notNull().default(1),
+    supersedesId: uuid("supersedes_id"),
+    policySnapshot: jsonb("policy_snapshot").$type<Record<string, unknown>>().notNull().default({}),
+    baseCents: integer("base_cents").notNull().default(0),
+    calculatedCents: integer("calculated_cents").notNull().default(0),
+    approvedCents: integer("approved_cents").notNull().default(0),
+    paidCents: integer("paid_cents").notNull().default(0),
+    status: varchar("status", { length: 32 }).notNull().default("calculating"),
+    version: integer("version").notNull().default(1),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    idempotencyPayloadHash: varchar("idempotency_payload_hash", { length: 64 }),
+    approvedByUserId: uuid("approved_by_user_id").references(() => users.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    reason: varchar("reason", { length: 500 }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("commission_accruals_revision_idx").on(
+      table.tenantId,
+      table.userId,
+      table.policyId,
+      table.periodStart,
+      table.periodEnd,
+      table.revision,
+    ),
+    uniqueIndex("commission_accruals_key_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    check("commission_accruals_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const commissionPaymentRecords = pgTable(
+  "commission_payment_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    accrualId: uuid("accrual_id")
+      .notNull()
+      .references(() => commissionAccruals.id),
+    amountCents: integer("amount_cents").notNull(),
+    informedAt: timestamp("informed_at", { withTimezone: true }).notNull(),
+    method: varchar("method", { length: 40 }).notNull(),
+    reference: varchar("reference", { length: 160 }),
+    note: text("note"),
+    cashMovementId: uuid("cash_movement_id").references(() => cashMovements.id),
+    bankReconciliationStatus: varchar("bank_reconciliation_status", { length: 24 })
+      .notNull()
+      .default("not_applicable"),
+    reversesRecordId: uuid("reverses_record_id").references(
+      (): AnyPgColumn => commissionPaymentRecords.id,
+    ),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    idempotencyPayloadHash: varchar("idempotency_payload_hash", { length: 64 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    confirmedByUserId: uuid("confirmed_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("commission_payment_records_key_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+    uniqueIndex("commission_payment_records_reversal_once_idx")
+      .on(table.tenantId, table.reversesRecordId)
+      .where(sql`${table.reversesRecordId} is not null`),
+    index("commission_payment_records_accrual_idx").on(
+      table.tenantId,
+      table.accrualId,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -1811,7 +2760,23 @@ export const fiscalSettings = pgTable(
       .notNull()
       .references(() => branches.id),
     provider: varchar("provider", { length: 40 }).notNull().default("mock"),
-    status: varchar("status", { length: 40 }).notNull().default("enabled"),
+    status: varchar("status", { length: 40 }).notNull().default("disabled"),
+    onboardingStatus: varchar("onboarding_status", { length: 40 }).notNull().default("not_started"),
+    providerCompanyId: varchar("provider_company_id", { length: 160 }),
+    providerMetadata: jsonb("provider_metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    productionEnabledAt: timestamp("production_enabled_at", { withTimezone: true }),
+    productionEnabledBy: uuid("production_enabled_by").references(() => users.id),
+    productionEnabledReason: text("production_enabled_reason"),
+    certificateFingerprint: varchar("certificate_fingerprint", { length: 128 }),
+    certificateExpiresAt: timestamp("certificate_expires_at", { withTimezone: true }),
+    providerCertificateStatus: varchar("provider_certificate_status", { length: 40 }),
+    lastReconciledAt: timestamp("last_reconciled_at", { withTimezone: true }),
+    lastHealthStatus: varchar("last_health_status", { length: 40 }),
+    lastHealthErrorCode: varchar("last_health_error_code", { length: 120 }),
+    version: integer("version").notNull().default(1),
     environment: varchar("environment", { length: 20 }).notNull().default("homologation"),
     defaultModel: varchar("default_model", { length: 20 }).notNull().default("nfce"),
     legalName: varchar("legal_name", { length: 180 }),
@@ -1831,6 +2796,212 @@ export const fiscalSettings = pgTable(
     ...timestamps,
   },
   (table) => [uniqueIndex("fiscal_settings_tenant_branch_idx").on(table.tenantId, table.branchId)],
+);
+
+export const fiscalProviderCredentials = pgTable(
+  "fiscal_provider_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    environment: varchar("environment", { length: 20 }).notNull(),
+    tokenEncrypted: text("token_encrypted").notNull(),
+    tokenFingerprint: varchar("token_fingerprint", { length: 128 }).notNull(),
+    tokenLastFour: varchar("token_last_four", { length: 4 }).notNull(),
+    webhookSecretHash: varchar("webhook_secret_hash", { length: 128 }),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("fiscal_provider_credentials_scope_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.provider,
+      table.environment,
+    ),
+    index("fiscal_provider_credentials_branch_idx").on(table.tenantId, table.branchId),
+  ],
+);
+
+export const fiscalAccountantInvitations = pgTable(
+  "fiscal_accountant_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    email: varchar("email", { length: 254 }).notNull(),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull().default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("fiscal_accountant_invitation_token_idx").on(table.tokenHash),
+    index("fiscal_accountant_invitation_scope_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.status,
+    ),
+  ],
+);
+
+export const fiscalOperations = pgTable(
+  "fiscal_operations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    fiscalDocumentId: uuid("fiscal_document_id").references(() => fiscalDocuments.id),
+    type: varchar("type", { length: 20 }).notNull(),
+    environment: varchar("environment", { length: 20 }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
+    providerReference: varchar("provider_reference", { length: 160 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    leaseOwner: varchar("lease_owner", { length: 120 }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    errorCode: varchar("error_code", { length: 120 }),
+    errorMessage: varchar("error_message", { length: 500 }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("fiscal_operations_idempotency_idx").on(
+      table.tenantId,
+      table.idempotencyKey,
+      table.type,
+    ),
+    index("fiscal_operations_claim_idx").on(table.status, table.availableAt),
+  ],
+);
+
+export const branchPaymentSettings = pgTable(
+  "branch_payment_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    profile: varchar("profile", { length: 32 }).notNull().default("external_terminal"),
+    preferredMode: varchar("preferred_mode", { length: 20 }).notNull().default("manual"),
+    allowManualFallback: boolean("allow_manual_fallback").notNull().default(true),
+    reconciliationMode: varchar("reconciliation_mode", { length: 20 }).notNull().default("manual"),
+    provider: varchar("provider", { length: 40 }),
+    status: varchar("status", { length: 20 }).notNull().default("disabled"),
+    version: integer("version").notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("branch_payment_settings_scope_idx").on(table.tenantId, table.branchId),
+    check("branch_payment_settings_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const paymentReconciliationImports = pgTable(
+  "payment_reconciliation_imports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    source: varchar("source", { length: 60 }).notNull().default("giromesa_csv"),
+    mode: varchar("mode", { length: 20 }).notNull().default("import"),
+    checksum: varchar("checksum", { length: 64 }).notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    status: varchar("status", { length: 24 }).notNull().default("processed"),
+    summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default({}),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("payment_reconciliation_import_scope_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.source,
+      table.checksum,
+    ),
+  ],
+);
+
+export const paymentReconciliationEntries = pgTable(
+  "payment_reconciliation_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid("branch_id")
+      .notNull()
+      .references(() => branches.id),
+    importId: uuid("import_id")
+      .notNull()
+      .references(() => paymentReconciliationImports.id),
+    paymentId: uuid("payment_id").references(() => payments.id),
+    occurrenceId: uuid("occurrence_id").references(() => operationalOccurrences.id),
+    externalKey: varchar("external_key", { length: 180 }).notNull(),
+    providerReference: varchar("provider_reference", { length: 160 }),
+    nsu: varchar("nsu", { length: 80 }),
+    authorizationCode: varchar("authorization_code", { length: 80 }),
+    grossCents: integer("gross_cents").notNull(),
+    feeCents: integer("fee_cents").notNull().default(0),
+    netCents: integer("net_cents").notNull(),
+    expectedSettlementAt: timestamp("expected_settlement_at", { withTimezone: true }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    status: varchar("status", { length: 24 }).notNull().default("unmatched"),
+    resolution: jsonb("resolution").$type<Record<string, unknown>>().notNull().default({}),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("payment_reconciliation_entry_key_idx").on(
+      table.tenantId,
+      table.importId,
+      table.externalKey,
+    ),
+    index("payment_reconciliation_entry_status_idx").on(
+      table.tenantId,
+      table.branchId,
+      table.status,
+    ),
+    check(
+      "payment_reconciliation_entry_amounts_check",
+      sql`${table.grossCents} > 0 and ${table.feeCents} >= 0 and ${table.netCents} >= 0`,
+    ),
+    check("payment_reconciliation_entry_version_check", sql`${table.version} > 0`),
+  ],
 );
 
 export const fiscalCertificates = pgTable(
@@ -1889,6 +3060,8 @@ export const webhookEvents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     provider: varchar("provider", { length: 60 }).notNull(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
+    branchId: uuid("branch_id").references(() => branches.id),
+    credentialId: uuid("credential_id").references(() => fiscalProviderCredentials.id),
     externalEventId: varchar("external_event_id", { length: 180 }).notNull(),
     status: varchar("status", { length: 40 }).notNull().default("received"),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -1913,9 +3086,17 @@ export const outboxEvents = pgTable(
     availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
     processedAt: timestamp("processed_at", { withTimezone: true }),
     errorMessage: text("error_message"),
+    idempotencyKey: varchar("idempotency_key", { length: 180 }),
+    leaseOwner: varchar("lease_owner", { length: 120 }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     ...timestamps,
   },
-  (table) => [index("outbox_events_status_idx").on(table.status, table.availableAt)],
+  (table) => [
+    index("outbox_events_status_idx").on(table.status, table.availableAt),
+    uniqueIndex("outbox_events_idempotency_idx")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+  ],
 );
 
 export const auditLogs = pgTable(

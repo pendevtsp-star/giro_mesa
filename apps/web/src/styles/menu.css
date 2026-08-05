@@ -14,6 +14,31 @@
   font-family: var(--qr-font);
 }
 
+/* The public experience follows the establishment branding, independently
+ * from the operator theme stored on this browser. Re-declare the light
+ * semantic palette here so a dark root theme cannot leak light text into
+ * branded white cards. */
+.menu-shell[data-theme="light"] {
+  color-scheme: light;
+  --ink: #0d1b2a;
+  --ink-soft: #1b263b;
+  --muted: #526474;
+  --line: #d6e0df;
+  --paper: #fffaf0;
+  --surface: #fff;
+  --surface-soft: #fff6e6;
+  color: var(--ink);
+}
+
+.menu-shell[data-theme="light"][data-accent="emerald"] {
+  --accent: #047857;
+  --accent-strong: #065f46;
+}
+
+.menu-shell[data-theme="light"][data-accent="emerald"] .button.primary {
+  color: #fff;
+}
+
 .menu-shell[data-font="serif"] {
   --qr-font: Georgia, "Times New Roman", serif;
 }

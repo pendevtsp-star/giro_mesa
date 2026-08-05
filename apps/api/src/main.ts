@@ -7,8 +7,15 @@ import { AppModule } from "./app.module";
 import { verifyCsrfToken } from "./common/csrf";
 import { firstHeader, parseCookies } from "./common/http";
 import { metricsMiddleware } from "./common/metrics.middleware";
+import { SanitizedExceptionFilter } from "./common/sanitized-exception.filter";
+import { SanitizedLogger } from "./common/sanitized-logger";
+import { corsOrigin, registerSecurityHeaders } from "./common/security-headers";
 
 const env = loadEnv();
+const trustedProxyCidrs = (process.env.TRUSTED_PROXY_CIDRS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -16,11 +23,14 @@ async function bootstrap() {
     new FastifyAdapter({
       logger: env.NODE_ENV !== "test",
       maxParamLength: 1024,
+      trustProxy: trustedProxyCidrs.length > 0 ? trustedProxyCidrs : false,
     }),
     { rawBody: true },
   );
 
   const fastify = app.getHttpAdapter().getInstance();
+  app.useLogger(new SanitizedLogger());
+  app.useGlobalFilters(new SanitizedExceptionFilter());
 
   // Metrics middleware - track all requests
   fastify.addHook("preHandler", metricsMiddleware);
@@ -45,28 +55,10 @@ async function bootstrap() {
     }
   });
 
-  fastify.addHook(
-    "onSend",
-    async (
-      _request: unknown,
-      reply: { header: (key: string, value: string) => void },
-      payload: unknown,
-    ) => {
-      reply.header("x-content-type-options", "nosniff");
-      reply.header("x-frame-options", "DENY");
-      reply.header("referrer-policy", "same-origin");
-      reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
-      reply.header("cross-origin-opener-policy", "same-origin");
-      reply.header(
-        "content-security-policy",
-        "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' http: https: ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-      );
-      return payload;
-    },
-  );
+  registerSecurityHeaders(fastify);
 
   app.enableCors({
-    origin: env.NODE_ENV === "production" ? [env.APP_URL] : true,
+    origin: corsOrigin(env.NODE_ENV, env.APP_URL),
     credentials: true,
   });
 
@@ -74,9 +66,6 @@ async function bootstrap() {
     exclude: [
       { path: "health", method: RequestMethod.GET },
       { path: "health/ready", method: RequestMethod.GET },
-      { path: "health/detailed", method: RequestMethod.GET },
-      { path: "health/metrics", method: RequestMethod.GET },
-      { path: "health/alerts", method: RequestMethod.GET },
       { path: "webhooks/asaas", method: RequestMethod.POST },
       { path: "webhooks/meta", method: RequestMethod.POST },
       { path: "webhooks/ifood", method: RequestMethod.POST },

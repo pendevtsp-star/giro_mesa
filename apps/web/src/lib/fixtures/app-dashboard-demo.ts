@@ -52,6 +52,7 @@ export const demoProducts: Product[] = [
     priceCents: 3200,
     costCents: 1150,
     isAvailable: true,
+    isAlcoholic: false,
     channels: ["pos", "qr"],
   },
   {
@@ -62,6 +63,7 @@ export const demoProducts: Product[] = [
     priceCents: 5800,
     costCents: 1850,
     isAvailable: true,
+    isAlcoholic: false,
     channels: ["pos", "qr"],
   },
   {
@@ -72,6 +74,7 @@ export const demoProducts: Product[] = [
     priceCents: 1400,
     costCents: 420,
     isAvailable: true,
+    isAlcoholic: true,
     channels: ["pos", "qr"],
   },
   {
@@ -82,6 +85,7 @@ export const demoProducts: Product[] = [
     priceCents: 2200,
     costCents: 620,
     isAvailable: true,
+    isAlcoholic: false,
     channels: ["pos", "qr"],
   },
 ];
@@ -90,6 +94,7 @@ export const demoTickets: KdsTicket[] = [
   {
     id: "demo-kds-1",
     branchId: "demo",
+    stationId: "demo-kitchen",
     stationName: "Chapa",
     orderId: "M03",
     tableCode: "M03",
@@ -103,6 +108,7 @@ export const demoTickets: KdsTicket[] = [
   {
     id: "demo-kds-2",
     branchId: "demo",
+    stationId: "demo-kitchen",
     stationName: "Cozinha",
     orderId: "C07",
     tableCode: null,
@@ -116,6 +122,7 @@ export const demoTickets: KdsTicket[] = [
   {
     id: "demo-kds-3",
     branchId: "demo",
+    stationId: "demo-bar",
     stationName: "Bar",
     orderId: "M12",
     tableCode: "M12",
@@ -129,6 +136,7 @@ export const demoTickets: KdsTicket[] = [
   {
     id: "demo-kds-4",
     branchId: "demo",
+    stationId: "demo-expedition",
     stationName: "Expedicao",
     orderId: "Balcao 03",
     tableCode: null,

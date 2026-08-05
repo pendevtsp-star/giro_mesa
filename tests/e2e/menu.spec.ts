@@ -69,6 +69,7 @@ test.describe("Digital menu: public access, filtering and QR order", () => {
         branchId: context.branchId,
         tableId: table?.id,
         peopleCount: 2,
+        idempotencyKey: `e2e-menu-open-${Date.now()}`,
       },
     });
     expect(service.ok()).toBe(true);

@@ -3,6 +3,28 @@ import { fileURLToPath } from "node:url";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const apiUrl = process.env.API_URL ?? "http://localhost:3333";
+function cspFor(nodeEnv) {
+  const developmentEval = nodeEnv === "production" ? "" : " 'unsafe-eval'";
+  return `default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'${developmentEval}; connect-src 'self' http: https: ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`;
+}
+
+export function buildCspHeaders(
+  reportOnly = process.env.CSP_REPORT_ONLY === "true",
+  nodeEnv = process.env.NODE_ENV,
+) {
+  const csp = cspFor(nodeEnv);
+  return [
+    { key: "Content-Security-Policy", value: csp },
+    ...(reportOnly
+      ? [
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value: `${csp}; report-uri /api/csp-report`,
+          },
+        ]
+      : []),
+  ];
+}
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -12,6 +34,10 @@ const nextConfig = {
   typedRoutes: true,
   outputFileTracingRoot: path.join(dirname, "../.."),
   headers: async () => [
+    {
+      source: "/:path*",
+      headers: buildCspHeaders(),
+    },
     {
       source: "/_next/:path*",
       headers: [

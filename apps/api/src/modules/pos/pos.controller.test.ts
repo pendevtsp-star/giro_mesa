@@ -83,6 +83,14 @@ function controllerWithContext(permissions: string[]) {
     })),
     verifyPersonalPin: vi.fn(async (_context, branchId, _pin) => ({ valid: true, branchId })),
     listOperationalDevices: vi.fn(async () => []),
+    activateOperationalDevice: vi.fn(async (_context, _token) => ({
+      id: "device-id",
+      branchId: "11111111-1111-4111-8111-111111111111",
+      name: "Caixa 01",
+      initialMode: "cashier",
+      allowModeSwitch: false,
+    })),
+    resolveOperationalDevice: vi.fn(async () => null),
     revokeOperationalDevice: vi.fn(async (_context, deviceId) => ({
       id: deviceId,
       status: "revoked",
@@ -94,6 +102,62 @@ function controllerWithContext(permissions: string[]) {
     posService,
   };
 }
+
+describe("operational device bootstrap", () => {
+  it("activates a terminal without replacing the human permission context", async () => {
+    const { controller, posService } = controllerWithContext(["pos:operate"]);
+    const reply = { header: vi.fn() };
+
+    const profile = await controller.activateOperationalDevice(
+      {},
+      { token: "device-activation-token-123456" },
+      reply as never,
+    );
+
+    expect(profile).toEqual(expect.objectContaining({ initialMode: "cashier" }));
+    expect(posService.activateOperationalDevice).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-test", permissions: ["pos:operate"] }),
+      "device-activation-token-123456",
+    );
+    expect(reply.header).toHaveBeenCalledWith(
+      "Set-Cookie",
+      expect.stringContaining("gm_operational_device="),
+    );
+  });
+
+  it("allows a kitchen operator to activate and resolve a bound KDS terminal", async () => {
+    const { controller, posService } = controllerWithContext(["kds:operate", "print:operate"]);
+    const reply = { header: vi.fn() };
+
+    await expect(
+      controller.activateOperationalDevice(
+        {},
+        { token: "kds-device-activation-token-123" },
+        reply as never,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ id: "device-id" }));
+    await expect(
+      controller.getCurrentOperationalDevice({
+        cookie: "gm_operational_device=kds-device-activation-token-123",
+      }),
+    ).resolves.toBeNull();
+    expect(posService.resolveOperationalDevice).toHaveBeenCalledWith(
+      expect.objectContaining({ permissions: ["kds:operate", "print:operate"] }),
+      "kds-device-activation-token-123",
+    );
+  });
+
+  it("does not let a device token bypass human operational permissions", async () => {
+    const { controller, posService } = controllerWithContext(["catalog:read"]);
+
+    await expect(
+      controller.getCurrentOperationalDevice({
+        cookie: "gm_operational_device=kds-device-activation-token-123",
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(posService.resolveOperationalDevice).not.toHaveBeenCalled();
+  });
+});
 
 describe("PosController", () => {
   it("keeps PIN verification and device revocation behind tenant management boundaries", async () => {
@@ -200,6 +264,57 @@ describe("PosController", () => {
     expect(result.orderStatus).toBe("partially_paid");
   });
 
+  it("accepts an optional item allocation for a manual payment", async () => {
+    const { controller, posService } = controllerWithContext(["pos:payment_manage"]);
+    const allocation = {
+      orderItemId: "11111111-1111-4111-8111-111111111111",
+      amountCents: 2500,
+      idempotencyKey: "allocation-item-123",
+    };
+
+    await controller.registerPayment(
+      "order-1",
+      {
+        amountCents: 2500,
+        method: "pix_manual",
+        idempotencyKey: "payment-key-allocation",
+        allocations: [allocation],
+      },
+      {},
+    );
+
+    expect(posService.registerPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-test" }),
+      "order-1",
+      expect.objectContaining({ allocations: [allocation] }),
+    );
+  });
+
+  it("rejects an allocation that targets an item and person simultaneously", async () => {
+    const { controller, posService } = controllerWithContext(["pos:payment_manage"]);
+
+    await expect(
+      controller.registerPayment(
+        "order-1",
+        {
+          amountCents: 2500,
+          method: "pix_manual",
+          idempotencyKey: "payment-key-invalid-allocation",
+          allocations: [
+            {
+              orderItemId: "11111111-1111-4111-8111-111111111111",
+              seatLabel: "Pessoa 1",
+              amountCents: 2500,
+              idempotencyKey: "allocation-invalid-123",
+            },
+          ],
+        },
+        {},
+      ),
+    ).rejects.toThrow();
+    expect(posService.registerPayment).not.toHaveBeenCalled();
+  });
+
   it("rejects tenant overrides in payment payloads", async () => {
     const { controller } = controllerWithContext(["pos:payment_manage"]);
 
@@ -298,14 +413,14 @@ describe("PosController", () => {
 
     const result = await controller.requestDiscount(
       "11111111-1111-4111-8111-111111111111",
-      { amountCents: 1250, reason: "Cliente fidelidade" },
+      { amountCents: 1250, idempotencyKey: "pos-test", reason: "Cliente fidelidade" },
       {},
     );
 
     expect(posService.requestDiscount).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: "tenant-test" }),
       "11111111-1111-4111-8111-111111111111",
-      { amountCents: 1250, reason: "Cliente fidelidade" },
+      { amountCents: 1250, idempotencyKey: "pos-test", reason: "Cliente fidelidade" },
     );
     expect(result.status).toBe("pending_approval");
   });
@@ -316,7 +431,7 @@ describe("PosController", () => {
     const result = await controller.requestItemCancellation(
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
-      { reason: "Cliente desistiu" },
+      { idempotencyKey: "pos-test", reason: "Cliente desistiu" },
       {},
     );
 
@@ -324,7 +439,7 @@ describe("PosController", () => {
       expect.objectContaining({ tenantId: "tenant-test" }),
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
-      { reason: "Cliente desistiu" },
+      { idempotencyKey: "pos-test", reason: "Cliente desistiu" },
     );
     expect(result.status).toBe("pending_approval");
   });

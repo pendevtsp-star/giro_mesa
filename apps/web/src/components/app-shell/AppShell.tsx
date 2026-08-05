@@ -7,8 +7,8 @@ import type { TenantBranding } from "../../lib/giromesa-api";
 import { type Locale, useTranslation } from "../../lib/i18n";
 import { UnauthenticatedState } from "../states/AppStates";
 import { AppNavigation } from "./AppNavigation";
+import { ShellPreferences } from "./AppRouteFrame";
 import type { AppNavigationItem } from "./navigation";
-import { ThemeToggle } from "./ThemeToggle";
 
 export function AppShell({
   branding,
@@ -115,7 +115,7 @@ export function AppShell({
                 Entrar
               </a>
             )}
-            <ThemeToggle defaultPreference={branding.themeMode} />
+            <ShellPreferences includeBranch={false} themeMode={branding.themeMode} />
             {status === "ready" && onLogout && (
               <button className="button secondary" type="button" onClick={onLogout}>
                 <LogOut size={18} /> Sair

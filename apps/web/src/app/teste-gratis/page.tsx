@@ -27,6 +27,13 @@ export default function TrialSignupPage() {
     setIsHydrated(true);
   }, []);
 
+  useEffect(() => {
+    const plan = new URLSearchParams(window.location.search).get("plan");
+    if (plan === "starter" || plan === "professional" || plan === "premium") {
+      setForm((current) => ({ ...current, planCode: plan }));
+    }
+  }, []);
+
   function updateForm(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
@@ -54,7 +61,9 @@ export default function TrialSignupPage() {
       const message =
         trialError instanceof ApiError && trialError.status === 400
           ? t("trial.dataConflict")
-          : t("trial.afterSignupError");
+          : trialError instanceof ApiError && trialError.status === 403
+            ? "O programa piloto está disponível por convite. Solicite acesso à equipe GiroMesa."
+            : t("trial.afterSignupError");
       setError(message);
       setStatus("idle");
     }

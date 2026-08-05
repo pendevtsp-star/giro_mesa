@@ -11,6 +11,11 @@ import {
 } from "@nestjs/common";
 import { hashPassword, verifyPassword } from "../../common/password";
 import { requirePermission } from "../../common/security";
+import type { DatabaseService } from "../database/database.service";
+
+export type ApprovalTransaction = Parameters<
+  Parameters<DatabaseService["db"]["transaction"]>[0]
+>[0];
 
 export type OperationPolicyRecord = {
   id: string;
@@ -70,7 +75,11 @@ export interface ApprovalsRepository {
   savePolicy(context: TenantContext, policy: OperationPolicyRecord): Promise<OperationPolicyRecord>;
   listApprovals(context: TenantContext, status?: ApprovalStatus): Promise<ApprovalRecord[]>;
   findApproval(context: TenantContext, approvalId: string): Promise<ApprovalRecord | null>;
-  createApproval(context: TenantContext, approval: ApprovalRecord): Promise<ApprovalRecord>;
+  createApproval(
+    context: TenantContext,
+    approval: ApprovalRecord,
+    tx?: ApprovalTransaction,
+  ): Promise<ApprovalRecord>;
   decideApproval(
     context: TenantContext,
     approvalId: string,
@@ -83,6 +92,7 @@ export interface ApprovalsRepository {
     action: string,
     entity: { id: string; branchId: string | null },
     metadata?: Record<string, unknown>,
+    tx?: ApprovalTransaction,
   ): Promise<void>;
 }
 
@@ -183,7 +193,11 @@ export class ApprovalsService {
     return this.repository.listApprovals(context, status);
   }
 
-  async createRequest(context: TenantContext, input: CreateApprovalInput) {
+  async createRequest(
+    context: TenantContext,
+    input: CreateApprovalInput,
+    tx?: ApprovalTransaction,
+  ) {
     const approval: ApprovalRecord = {
       id: randomUUID(),
       tenantId: context.tenantId,
@@ -203,11 +217,17 @@ export class ApprovalsService {
       appliedAt: null,
       createdAt: new Date(),
     };
-    const created = await this.repository.createApproval(context, approval);
-    await this.repository.audit(context, "approval.requested", created, {
-      action: created.action,
-      entityType: created.entityType,
-    });
+    const created = await this.repository.createApproval(context, approval, tx);
+    await this.repository.audit(
+      context,
+      "approval.requested",
+      created,
+      {
+        action: created.action,
+        entityType: created.entityType,
+      },
+      tx,
+    );
     return created;
   }
 
@@ -270,6 +290,11 @@ export class ApprovalsService {
       action: rejected.action,
     });
     return rejected;
+  }
+
+  async verifyManagerPin(context: TenantContext, managerPin: string) {
+    requirePermission(context, "approvals:manage");
+    await this.assertManagerPin(context, managerPin);
   }
 
   private async assertManagerPin(context: TenantContext, managerPin: string) {

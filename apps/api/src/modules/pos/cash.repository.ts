@@ -9,6 +9,7 @@ import {
 import type { TenantContext } from "@giromesa/domain";
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { netPaymentSumSql, paymentLedgerDeltaSql } from "../../common/payment-ledger";
 import { DatabaseService } from "../database/database.service";
 
 type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
@@ -112,8 +113,12 @@ export class CashRepository {
     return session ?? null;
   }
 
-  async findCashMovements(context: TenantContext, sessionId: string) {
-    return this.database.db
+  async findCashMovements(
+    context: TenantContext,
+    sessionId: string,
+    client: CashDbClient = this.database.db,
+  ) {
+    return client
       .select({
         id: cashMovements.id,
         type: cashMovements.type,
@@ -138,14 +143,14 @@ export class CashRepository {
     return this.database.db
       .select({
         method: payments.method,
-        totalCents: sql<number>`coalesce(sum(${payments.amountCents}), 0)`,
+        totalCents: netPaymentSumSql(),
       })
       .from(payments)
       .innerJoin(orders, eq(orders.id, payments.orderId))
       .where(
         and(
           eq(payments.tenantId, context.tenantId),
-          eq(payments.status, "confirmed"),
+          sql`${paymentLedgerDeltaSql()} <> 0`,
           eq(orders.branchId, branchId),
           session ? sql`${payments.confirmedAt} >= ${session.openedAt}` : sql`true`,
           session?.closedAt ? sql`${payments.confirmedAt} <= ${session.closedAt}` : sql`true`,
@@ -158,11 +163,12 @@ export class CashRepository {
     context: TenantContext,
     branchId: string,
     session: { openedAt: Date; closedAt: Date | null } | null,
+    client: CashDbClient = this.database.db,
   ) {
-    return this.database.db
+    return client
       .select({
         id: payments.id,
-        amountCents: payments.amountCents,
+        amountCents: paymentLedgerDeltaSql(),
         status: payments.cashHandoverStatus,
         registeredByUserId: payments.registeredByUserId,
         registeredVia: payments.registeredVia,
@@ -173,7 +179,7 @@ export class CashRepository {
       .where(
         and(
           eq(payments.tenantId, context.tenantId),
-          eq(payments.status, "confirmed"),
+          sql`${paymentLedgerDeltaSql()} <> 0`,
           eq(payments.method, "cash"),
           eq(orders.branchId, branchId),
           session ? sql`${payments.confirmedAt} >= ${session.openedAt}` : sql`true`,

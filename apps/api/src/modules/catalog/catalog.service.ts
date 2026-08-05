@@ -39,6 +39,7 @@ export type CreateProductInput = {
   imageUrl?: string | undefined;
   isAvailable?: boolean | undefined;
   isActive?: boolean | undefined;
+  isAlcoholic: boolean;
   isClubEligible?: boolean | undefined;
   bottleVolumeMl?: number | undefined;
   defaultDoseMl?: number | undefined;
@@ -62,6 +63,7 @@ export type UpdateProductInput = {
   imageUrl?: string | undefined;
   isAvailable?: boolean | undefined;
   isActive?: boolean | undefined;
+  isAlcoholic?: boolean | undefined;
   isClubEligible?: boolean | undefined;
   bottleVolumeMl?: number | undefined;
   defaultDoseMl?: number | undefined;
@@ -148,6 +150,7 @@ export class CatalogService {
         imageUrl: products.imageUrl,
         isActive: products.isActive,
         isAvailable: products.isAvailable,
+        isAlcoholic: products.isAlcoholic,
         isClubEligible: products.isClubEligible,
         bottleVolumeMl: products.bottleVolumeMl,
         defaultDoseMl: products.defaultDoseMl,
@@ -213,6 +216,7 @@ export class CatalogService {
           costCents: input.costCents ?? 0,
           imageUrl: input.imageUrl,
           isAvailable: input.isAvailable ?? true,
+          isAlcoholic: input.isAlcoholic,
           isClubEligible: input.isClubEligible ?? false,
           bottleVolumeMl: input.bottleVolumeMl,
           defaultDoseMl: input.defaultDoseMl ?? 50,
@@ -263,6 +267,7 @@ export class CatalogService {
           ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
           ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
           ...(input.isAvailable !== undefined ? { isAvailable: input.isAvailable } : {}),
+          ...(input.isAlcoholic !== undefined ? { isAlcoholic: input.isAlcoholic } : {}),
           ...(input.isClubEligible !== undefined ? { isClubEligible: input.isClubEligible } : {}),
           ...(input.bottleVolumeMl !== undefined ? { bottleVolumeMl: input.bottleVolumeMl } : {}),
           ...(input.defaultDoseMl !== undefined ? { defaultDoseMl: input.defaultDoseMl } : {}),
@@ -308,6 +313,7 @@ export class CatalogService {
           priceCents: products.priceCents,
           imageUrl: products.imageUrl,
           isAvailable: products.isAvailable,
+          isAlcoholic: products.isAlcoholic,
           channels: products.channels,
           isClubEligible: products.isClubEligible,
           bottleVolumeMl: products.bottleVolumeMl,

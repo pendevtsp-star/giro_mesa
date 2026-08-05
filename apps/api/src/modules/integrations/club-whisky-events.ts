@@ -1,4 +1,5 @@
 import {
+  branches,
   integrationAccounts,
   inventoryItems,
   outboxEvents,
@@ -10,6 +11,7 @@ import {
 import type { TenantContext } from "@giromesa/domain";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DatabaseService } from "../database/database.service";
+import { readClubWhiskyBranchId } from "./club-whisky-branch";
 
 export const CLUB_WHISKY_CONTRACT_VERSION = "2026-07-30";
 
@@ -30,9 +32,9 @@ type ProductSnapshot = Pick<
   | "updatedAt"
 >;
 
-async function hasActiveClubWhiskyIntegration(client: EventDatabaseClient, tenantId: string) {
+async function activeClubWhiskyIntegrationBranch(client: EventDatabaseClient, tenantId: string) {
   const [account] = await client
-    .select({ id: integrationAccounts.id })
+    .select({ config: integrationAccounts.config })
     .from(integrationAccounts)
     .where(
       and(
@@ -43,7 +45,14 @@ async function hasActiveClubWhiskyIntegration(client: EventDatabaseClient, tenan
     )
     .limit(1);
 
-  return Boolean(account);
+  const branchId = account ? readClubWhiskyBranchId(account.config) : null;
+  if (!branchId) return null;
+  const [ownedBranch] = await client
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.tenantId, tenantId), eq(branches.id, branchId)))
+    .limit(1);
+  return ownedBranch?.id ?? null;
 }
 
 export async function enqueueClubWhiskyProductUpdated(
@@ -52,7 +61,8 @@ export async function enqueueClubWhiskyProductUpdated(
   product: ProductSnapshot,
   reason: "created" | "updated",
 ) {
-  if (!(await hasActiveClubWhiskyIntegration(client, context.tenantId))) {
+  const branchId = await activeClubWhiskyIntegrationBranch(client, context.tenantId);
+  if (!branchId) {
     return false;
   }
 
@@ -63,6 +73,7 @@ export async function enqueueClubWhiskyProductUpdated(
       integration: "club_whisky",
       contractVersion: CLUB_WHISKY_CONTRACT_VERSION,
       correlationId: context.requestId,
+      branchId,
       reason,
       productId: product.id,
       name: product.name,
@@ -93,10 +104,8 @@ export async function enqueueClubWhiskyStockUpdatedForInventoryItems(
   },
 ) {
   const inventoryItemIds = [...new Set(input.inventoryItemIds)];
-  if (
-    inventoryItemIds.length === 0 ||
-    !(await hasActiveClubWhiskyIntegration(client, context.tenantId))
-  ) {
+  const configuredBranchId = await activeClubWhiskyIntegrationBranch(client, context.tenantId);
+  if (inventoryItemIds.length === 0 || configuredBranchId !== input.branchId) {
     return 0;
   }
 

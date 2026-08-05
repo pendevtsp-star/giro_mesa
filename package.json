@@ -9,6 +9,8 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
+    "plan:sync": "node scripts/sync-plan-views.mjs",
+    "topology:local:check": "node scripts/topology-local-check.mjs",
     "dev": "turbo dev",
     "build": "turbo build --concurrency=1",
     "typecheck": "turbo typecheck --concurrency=1",
@@ -22,13 +24,20 @@
     "test:visual-audit": "playwright test tests/e2e/visual-audit.spec.ts --project=chromium",
     "test:e2e:ui": "playwright test --ui",
     "security:preflight": "node scripts/security-preflight.mjs",
+    "security:cases": "node scripts/security-cases.mjs",
+    "security:high": "node scripts/high-security-gate.mjs",
+    "security:trivy-exceptions": "node scripts/trivy-exception-gate.mjs",
+    "security:workflow": "node scripts/workflow-gate.mjs",
+    "coverage:baseline": "node scripts/coverage-baseline.mjs",
     "lint": "biome check .",
     "lint:copy": "biome check .",
     "format": "biome check --write .",
     "db:generate": "pnpm --filter @giromesa/db db:generate",
     "db:check-safety": "pnpm --filter @giromesa/db db:check-safety",
     "db:migrate": "pnpm --filter @giromesa/db db:migrate",
-    "demo:reset": "pnpm db:migrate && pnpm --filter @giromesa/db db:seed"
+    "demo:reset": "pnpm db:migrate && pnpm --filter @giromesa/db db:seed",
+    "seed:f16-load": "node scripts/seed-f16-load.mjs",
+    "test:f16-load": "node scripts/seed-f16-load.mjs --self-test && node scripts/mint-f16-load-sessions.mjs --self-test && node scripts/pilot-load-test.mjs --self-test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
@@ -36,6 +45,7 @@
     "@vitest/coverage-v8": "^3.2.6",
     "glob": "13.0.6",
     "turbo": "^2.5.0",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "yaml": "^2.8.1"
   }
 }

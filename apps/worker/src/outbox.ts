@@ -1,5 +1,10 @@
 import { createHmac } from "node:crypto";
-import { loadEnv } from "@giromesa/config";
+import {
+  loadEnv,
+  type SafeHttpRequestInit,
+  type SafeHttpResponse,
+  safeFetch,
+} from "@giromesa/config";
 import type * as schema from "@giromesa/db";
 import { integrationAccounts, outboxEvents } from "@giromesa/db";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
@@ -19,6 +24,11 @@ const CLUB_WHISKY_MAX_ATTEMPTS = 8;
 const CLUB_WHISKY_REQUEST_TIMEOUT_MS = 10_000;
 
 type Db = NodePgDatabase<typeof schema>;
+type OutboxHttpRequest = (
+  value: string | URL,
+  init?: SafeHttpRequestInit,
+) => Promise<SafeHttpResponse>;
+type OutboxPublisherDependencies = { request?: OutboxHttpRequest };
 
 class ClubWhiskyPublishError extends Error {
   constructor(
@@ -61,8 +71,12 @@ function clubWhiskyTargetUrl(
     : undefined;
 }
 
-export async function publishPendingClubWhiskyOutbox(db: Db) {
+export async function publishPendingClubWhiskyOutbox(
+  db: Db,
+  dependencies: OutboxPublisherDependencies = {},
+) {
   const env = loadEnv();
+  const request = dependencies.request ?? safeFetch;
   const events = await db
     .select()
     .from(outboxEvents)
@@ -139,9 +153,9 @@ export async function publishPendingClubWhiskyOutbox(db: Db) {
       const signature = createHmac("sha256", webhookSecret).update(body).digest("hex");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), CLUB_WHISKY_REQUEST_TIMEOUT_MS);
-      let response: Response;
+      let response: SafeHttpResponse;
       try {
-        response = await fetch(targetUrl, {
+        response = await request(targetUrl, {
           method: "POST",
           headers: {
             "content-type": "application/json",

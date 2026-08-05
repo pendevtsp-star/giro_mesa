@@ -1,0 +1,240 @@
+{
+  "baseUrl": "https://staging.example.invalid",
+  "headers": { "x-load-test": "giromesa-pilot" },
+  "requirements": { "operators": 12, "minimumTargets": 120 },
+  "sse": {
+    "consumers": 600,
+    "minConnected": 600,
+    "maxFailures": 0,
+    "reconnectEveryMs": 30000,
+    "path": "/api/v1/qr/public/{{env:PILOT_LOAD_QR_TOKEN}}/events/delta",
+    "headers": {
+      "accept": "text/event-stream",
+      "cookie": "gm_qr_guest={{sseGuest}}",
+      "x-forwarded-for": "{{sseIp}}"
+    }
+  },
+  "requiredEnv": ["PILOT_LOAD_BRANCH_ID", "PILOT_LOAD_PRODUCT_ID", "PILOT_LOAD_STATION_ID"],
+  "targetPool": {
+    "count": 120,
+    "tableIdEnvPrefix": "PILOT_LOAD_TABLE_",
+    "padWidth": 3
+  },
+  "identities": [
+    {
+      "name": "operator-01",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_01}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_01}}"
+      }
+    },
+    {
+      "name": "operator-02",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_02}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_02}}"
+      }
+    },
+    {
+      "name": "operator-03",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_03}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_03}}"
+      }
+    },
+    {
+      "name": "operator-04",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_04}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_04}}"
+      }
+    },
+    {
+      "name": "operator-05",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_05}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_05}}"
+      }
+    },
+    {
+      "name": "operator-06",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_06}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_06}}"
+      }
+    },
+    {
+      "name": "operator-07",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_07}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_07}}"
+      }
+    },
+    {
+      "name": "operator-08",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_08}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_08}}"
+      }
+    },
+    {
+      "name": "operator-09",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_09}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_09}}"
+      }
+    },
+    {
+      "name": "operator-10",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_10}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_10}}"
+      }
+    },
+    {
+      "name": "operator-11",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_11}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_11}}"
+      }
+    },
+    {
+      "name": "operator-12",
+      "headers": { "cookie": "{{env:PILOT_LOAD_SESSION_12}}" },
+      "variables": {
+        "paidOrderId": "{{env:PILOT_LOAD_PAID_ORDER_12}}"
+      }
+    }
+  ],
+  "setupSteps": [
+    {
+      "name": "open-or-resume-table-order",
+      "forEachTarget": true,
+      "method": "POST",
+      "path": "/api/v1/pos/orders/open",
+      "expectedStatuses": [200, 201],
+      "capture": { "orderId": "id" },
+      "assertResponse": { "tableId": "{{tableId}}" },
+      "body": {
+        "channel": "table",
+        "branchId": "{{env:PILOT_LOAD_BRANCH_ID}}",
+        "tableId": "{{tableId}}",
+        "peopleCount": 4,
+        "idempotencyKey": "pilot-open-{{identity}}-{{tableId}}"
+      }
+    },
+    {
+      "name": "add-initial-item",
+      "forEachTarget": true,
+      "method": "POST",
+      "path": "/api/v1/pos/orders/{{orderId}}/items",
+      "expectedStatuses": [200, 201],
+      "body": {
+        "productId": "{{env:PILOT_LOAD_PRODUCT_ID}}",
+        "quantity": 1,
+        "notes": "Carga inicial {{identity}}/{{tableId}}",
+        "modifiers": [],
+        "idempotencyKey": "pilot-item-{{identity}}-{{tableId}}"
+      }
+    },
+    {
+      "name": "send-initial-item-to-production",
+      "forEachTarget": true,
+      "method": "POST",
+      "path": "/api/v1/pos/orders/{{orderId}}/send-to-kitchen",
+      "expectedStatuses": [200, 201]
+    }
+  ],
+  "steps": [
+    {
+      "name": "ready",
+      "method": "GET",
+      "path": "/health/ready",
+      "weight": 1,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "tables",
+      "method": "GET",
+      "path": "/api/v1/pos/tables?branchId={{env:PILOT_LOAD_BRANCH_ID}}",
+      "weight": 5,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "catalog",
+      "method": "GET",
+      "path": "/api/v1/catalog/products?branchId={{env:PILOT_LOAD_BRANCH_ID}}",
+      "weight": 7,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "kds-delta",
+      "method": "GET",
+      "path": "/api/v1/kds/tickets?stationId={{env:PILOT_LOAD_STATION_ID}}",
+      "weight": 4,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "order-read",
+      "method": "GET",
+      "path": "/api/v1/pos/orders/active?branchId={{env:PILOT_LOAD_BRANCH_ID}}&orderId={{orderId}}",
+      "weight": 12,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "order-item",
+      "method": "POST",
+      "path": "/api/v1/pos/orders/{{orderId}}/items",
+      "weight": 4,
+      "maxAttempts": 2,
+      "expectedStatuses": [200, 201],
+      "body": {
+        "productId": "{{env:PILOT_LOAD_PRODUCT_ID}}",
+        "quantity": 1,
+        "notes": "Carga controlada {{identity}}/{{sequence}}",
+        "modifiers": [],
+        "idempotencyKey": "{{idempotencyKey}}"
+      }
+    }
+  ],
+  "teardownSteps": [
+    {
+      "name": "payment-idempotent",
+      "enabledWhen": "{{paidOrderId}}",
+      "method": "POST",
+      "path": "/api/v1/pos/orders/{{paidOrderId}}/payments",
+      "expectedStatuses": [200, 201],
+      "body": {
+        "amountCents": 1,
+        "method": "cash",
+        "registeredVia": "cashier",
+        "idempotencyKey": "pilot-payment-{{identity}}"
+      }
+    },
+    {
+      "name": "close-paid-order",
+      "enabledWhen": "{{paidOrderId}}",
+      "method": "POST",
+      "path": "/api/v1/pos/orders/{{paidOrderId}}/close",
+      "expectedStatuses": [200, 201]
+    },
+    {
+      "name": "table-transfer",
+      "workers": [1],
+      "enabledWhen": "{{env:PILOT_LOAD_TRANSFER_SOURCE_ID}}",
+      "method": "POST",
+      "path": "/api/v1/floor/tables/{{env:PILOT_LOAD_TRANSFER_SOURCE_ID}}/transfer",
+      "expectedStatuses": [200, 201],
+      "body": { "targetTableId": "{{env:PILOT_LOAD_TRANSFER_TARGET_ID}}" }
+    },
+    {
+      "name": "cancel-item",
+      "workers": [1],
+      "enabledWhen": "{{env:PILOT_LOAD_CANCEL_ITEM_ID}}",
+      "method": "POST",
+      "path": "/api/v1/pos/orders/{{env:PILOT_LOAD_CANCEL_ORDER_ID}}/items/{{env:PILOT_LOAD_CANCEL_ITEM_ID}}/cancel-requests",
+      "expectedStatuses": [200, 201],
+      "body": { "reason": "Cancelamento controlado do ensaio" }
+    }
+  ]
+}

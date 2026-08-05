@@ -29,6 +29,22 @@ export class CustomersController {
     return { data: await this.customersService.list(context, search) };
   }
 
+  @Get("search")
+  async search(
+    @Headers() headers: HeaderRecord,
+    @Query("q") query: string,
+    @Query("limit") limit = "20",
+  ) {
+    const context = await this.context(headers, "pos:operate");
+    return {
+      data: await this.customersService.search(
+        context,
+        z.string().trim().min(2).max(120).parse(query),
+        z.coerce.number().int().min(1).max(50).parse(limit),
+      ),
+    };
+  }
+
   @Get(":customerId/history")
   async history(@Headers() headers: HeaderRecord, @Param("customerId") customerId: string) {
     const context = await this.context(headers, "pos:operate");

@@ -1,4 +1,4 @@
-import { loadEnv } from "@giromesa/config";
+import { loadEnv, safeFetch } from "@giromesa/config";
 import {
   auditLogs,
   branches,
@@ -23,14 +23,22 @@ import {
 } from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, like, sql } from "drizzle-orm";
-import { createEmailProvider } from "../../common/email-provider";
+import { sendEmail } from "../../common/email-delivery";
 import { createSessionToken } from "../../common/http";
 import { hashPassword } from "../../common/password";
+import { auditMetadata } from "../../common/sensitive-data";
 import { DatabaseService } from "../database/database.service";
+import {
+  assertSupportAccess,
+  readSupportGrants,
+  type SupportAction,
+  type SupportResource,
+} from "./support-access";
 
 type PlanCode = GiromesaPlanCode;
 type TenantStatus = "trial" | "active" | "past_due" | "suspended" | "canceled";
 type SupportPriority = "normal" | "high";
+type SupportAccessMode = "read_only" | "elevated";
 
 type CreatePlatformTenantInput = {
   name: string;
@@ -50,6 +58,12 @@ type UpdatePlatformTenantSupportInput = {
   slaTier: "standard" | "priority" | "critical";
   nextFollowUpAt?: string | null | undefined;
   contactSummary?: string | undefined;
+  accessMode?: SupportAccessMode | undefined;
+  elevationExpiresAt?: string | null | undefined;
+  elevationReason?: string | undefined;
+  accessBranchId?: string | null | undefined;
+  accessResource?: SupportResource | undefined;
+  accessActions?: SupportAction[] | undefined;
 };
 
 type ListPlatformCommunicationsInput = {
@@ -396,18 +410,23 @@ export class PlatformService {
             "reports:read",
             "delivery:manage",
             "approvals:manage",
+            "staff_finance:manage",
+            "staff_finance:read_self",
           ],
         })
         .returning();
 
-      const temporaryPassword = this.temporaryPassword(slug);
       const [owner] = await tx
         .insert(users)
         .values({
           tenantId: tenant.id,
           email: input.ownerEmail.toLowerCase(),
           name: input.ownerName,
-          passwordHash: await hashPassword(temporaryPassword),
+          // The owner cannot authenticate before accepting the one-time invitation.
+          // A random unusable hash preserves the existing user/invitation relationship
+          // without creating a derivable bootstrap credential.
+          passwordHash: await hashPassword(createSessionToken().token),
+          isActive: false,
         })
         .returning();
 
@@ -467,7 +486,7 @@ export class PlatformService {
         logoUrl: null,
         accentPreset: "emerald",
       };
-      const emailDelivery = await createEmailProvider().send({
+      const emailDelivery = await sendEmail(this.database, {
         tenantId: tenant.id,
         to: owner.email,
         subject: `Convite para ativar ${input.name}`,
@@ -592,6 +611,7 @@ export class PlatformService {
         slaTier: readSlaTier(tenant.settings),
         nextFollowUpAt: readSupportNullableString(tenant.settings, "nextFollowUpAt"),
         contactHistory: readContactHistory(tenant.settings),
+        access: readSupportAccess(tenant.settings),
       },
     };
   }
@@ -640,95 +660,239 @@ export class PlatformService {
     tenantId: string,
     input: UpdatePlatformTenantSupportInput,
   ) {
+    return this.database.db.transaction(async (tx) => {
+      const [tenant] = await tx
+        .select({ id: tenants.id, settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, tenantId))
+        .limit(1);
+      if (!tenant) throw new NotFoundException("Tenant not found");
+      if (!context.userId) throw new BadRequestException("Named support actor is required");
+
+      const now = new Date();
+      const grants = readSupportGrants(tenant.settings);
+      if (input.accessMode) {
+        const expiresAt = input.elevationExpiresAt
+          ? new Date(input.elevationExpiresAt)
+          : new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        if (
+          !Number.isFinite(expiresAt.getTime()) ||
+          expiresAt <= now ||
+          expiresAt.getTime() > now.getTime() + 8 * 60 * 60 * 1000 ||
+          (input.accessMode === "elevated" && !input.elevationReason?.trim())
+        ) {
+          throw new BadRequestException(
+            "Support elevation requires a reason and an expiry within eight hours",
+          );
+        }
+        if (input.accessBranchId) {
+          const [ownedBranch] = await tx
+            .select({ id: branches.id })
+            .from(branches)
+            .where(and(eq(branches.id, input.accessBranchId), eq(branches.tenantId, tenant.id)))
+            .limit(1);
+          if (!ownedBranch) throw new BadRequestException("Support branch is outside tenant scope");
+        }
+        const actions = input.accessActions ?? ["read"];
+        if (input.accessMode === "read_only" && actions.includes("mutate")) {
+          throw new BadRequestException("Read-only grant cannot mutate resources");
+        }
+        grants.push({
+          id: crypto.randomUUID(),
+          tenantId: tenant.id,
+          branchId: input.accessBranchId ?? null,
+          resource: input.accessResource ?? "operations",
+          actions,
+          mode: input.accessMode,
+          reason: input.elevationReason?.trim() || "Read-only diagnostic support",
+          createdBy: context.userId,
+          createdAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          revokedAt: null,
+        });
+      }
+
+      const nextSettings: Record<string, unknown> = {
+        ...tenant.settings,
+        commercialNotes: input.commercialNotes.trim(),
+        supportPriority: input.priority,
+        supportStatus: input.supportStatus,
+        relationshipOwnerName: input.relationshipOwnerName?.trim() || null,
+        relationshipOwnerEmail: input.relationshipOwnerEmail?.trim() || null,
+        slaTier: input.slaTier,
+        nextFollowUpAt: input.nextFollowUpAt ?? null,
+        supportLastUpdatedAt: now.toISOString(),
+        supportLastUpdatedBy: context.userId,
+        supportGrants: grants.slice(-50),
+      };
+      const nextContactHistory = readContactHistory(nextSettings);
+      if (input.contactSummary?.trim()) {
+        nextContactHistory.unshift({
+          id: crypto.randomUUID(),
+          summary: input.contactSummary.trim(),
+          createdAt: now.toISOString(),
+          createdBy: context.userId,
+        });
+      }
+      nextSettings.contactHistory = nextContactHistory.slice(0, 12);
+
+      const [updated] = await tx
+        .update(tenants)
+        .set({ settings: nextSettings, updatedAt: now })
+        .where(eq(tenants.id, tenant.id))
+        .returning({ id: tenants.id, settings: tenants.settings });
+      await tx.insert(auditLogs).values({
+        tenantId: tenant.id,
+        userId: null,
+        requestId: context.requestId,
+        action: input.accessMode
+          ? "platform.support.grant_created"
+          : "platform.tenant.support_updated",
+        entityType: "tenant",
+        entityId: tenant.id,
+        metadata: auditMetadata({
+          platformUserId: context.userId,
+          priority: input.priority,
+          supportStatus: input.supportStatus,
+          notesLength: input.commercialNotes.trim().length,
+          accessMode: input.accessMode ?? null,
+          branchId: input.accessBranchId ?? null,
+          resource: input.accessResource ?? null,
+          actions: input.accessActions ?? [],
+          expiresAt: input.elevationExpiresAt ?? null,
+          reasonLength: input.elevationReason?.trim().length ?? 0,
+        }),
+      });
+      const settings = updated?.settings ?? nextSettings;
+      return {
+        tenantId: updated?.id ?? tenant.id,
+        support: {
+          priority: readSupportPriority(settings, "trial"),
+          status: readSupportStatus(settings),
+          commercialNotes: readCommercialNotes(settings),
+          relationshipOwnerName: readSupportString(settings, "relationshipOwnerName"),
+          relationshipOwnerEmail: readSupportString(settings, "relationshipOwnerEmail"),
+          slaTier: readSlaTier(settings),
+          nextFollowUpAt: readSupportNullableString(settings, "nextFollowUpAt"),
+          contactHistory: readContactHistory(settings),
+          access: readSupportAccess(settings),
+        },
+      };
+    });
+  }
+
+  async getSupportResource(
+    context: TenantContext,
+    tenantId: string,
+    branchId: string | null,
+    resource: SupportResource,
+  ) {
     const [tenant] = await this.database.db
       .select({
         id: tenants.id,
+        name: tenants.name,
+        status: tenants.status,
         settings: tenants.settings,
       })
       .from(tenants)
       .where(eq(tenants.id, tenantId))
       .limit(1);
-
-    if (!tenant) {
-      throw new NotFoundException("Tenant not found");
-    }
-
-    const nextSettings: Record<string, unknown> = {
-      ...tenant.settings,
-      commercialNotes: input.commercialNotes.trim(),
-      supportPriority: input.priority,
-      supportStatus: input.supportStatus,
-      relationshipOwnerName: input.relationshipOwnerName?.trim() || null,
-      relationshipOwnerEmail: input.relationshipOwnerEmail?.trim() || null,
-      slaTier: input.slaTier,
-      nextFollowUpAt: input.nextFollowUpAt ?? null,
-      supportLastUpdatedAt: new Date().toISOString(),
-      supportLastUpdatedBy: context.userId ?? null,
-    };
-    const nextContactHistory = readContactHistory(nextSettings);
-    if (input.contactSummary?.trim()) {
-      nextContactHistory.unshift({
-        id: crypto.randomUUID(),
-        summary: input.contactSummary.trim(),
-        createdAt: new Date().toISOString(),
-        createdBy: context.userId ?? null,
-      });
-    }
-    nextSettings.contactHistory = nextContactHistory.slice(0, 12);
-
-    const [updated] = await this.database.db
-      .update(tenants)
-      .set({
-        settings: nextSettings,
-        updatedAt: new Date(),
-      })
-      .where(eq(tenants.id, tenant.id))
-      .returning({
-        id: tenants.id,
-        settings: tenants.settings,
-      });
-
-    await this.database.db.insert(auditLogs).values({
-      tenantId: tenant.id,
-      userId: null,
-      requestId: context.requestId,
-      action: "platform.tenant.support_updated",
-      entityType: "tenant",
-      entityId: tenant.id,
-      metadata: {
-        platformUserId: context.userId,
-        priority: input.priority,
-        supportStatus: input.supportStatus,
-        notesLength: input.commercialNotes.trim().length,
-        relationshipOwnerName: input.relationshipOwnerName?.trim() || null,
-        slaTier: input.slaTier,
-        nextFollowUpAt: input.nextFollowUpAt ?? null,
-        contactLogged: Boolean(input.contactSummary?.trim()),
-      },
+    if (!tenant) throw new NotFoundException("Tenant not found");
+    const grant = assertSupportAccess({
+      settings: tenant.settings,
+      context,
+      tenantId,
+      branchId,
+      resource,
+      action: "read",
     });
-
     return {
-      tenantId: updated?.id ?? tenant.id,
-      support: {
-        priority: readSupportPriority(updated?.settings ?? nextSettings, "trial"),
-        status: readSupportStatus(updated?.settings ?? nextSettings),
-        commercialNotes: readCommercialNotes(updated?.settings ?? nextSettings),
-        relationshipOwnerName: readSupportString(
-          updated?.settings ?? nextSettings,
-          "relationshipOwnerName",
-        ),
-        relationshipOwnerEmail: readSupportString(
-          updated?.settings ?? nextSettings,
-          "relationshipOwnerEmail",
-        ),
-        slaTier: readSlaTier(updated?.settings ?? nextSettings),
-        nextFollowUpAt: readSupportNullableString(
-          updated?.settings ?? nextSettings,
-          "nextFollowUpAt",
-        ),
-        contactHistory: readContactHistory(updated?.settings ?? nextSettings),
-      },
+      actorId: context.userId,
+      tenantId,
+      branchId,
+      resource,
+      grantId: grant.id,
+      tenant: { name: tenant.name, status: tenant.status },
     };
+  }
+
+  async recordSupportDiagnostic(
+    context: TenantContext,
+    tenantId: string,
+    input: { branchId: string | null; resource: SupportResource; summary: string },
+  ) {
+    return this.database.db.transaction(async (tx) => {
+      const [tenant] = await tx
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, tenantId))
+        .limit(1);
+      if (!tenant) throw new NotFoundException("Tenant not found");
+      const grant = assertSupportAccess({
+        settings: tenant.settings,
+        context,
+        tenantId,
+        branchId: input.branchId,
+        resource: input.resource,
+        action: "mutate",
+      });
+      const [audit] = await tx
+        .insert(auditLogs)
+        .values({
+          tenantId,
+          branchId: input.branchId,
+          userId: null,
+          requestId: context.requestId,
+          action: "platform.support.diagnostic_recorded",
+          entityType: "support_grant",
+          metadata: auditMetadata({
+            actorId: context.userId,
+            grantId: grant.id,
+            resource: input.resource,
+            summary: input.summary,
+          }),
+        })
+        .returning({ id: auditLogs.id, createdAt: auditLogs.createdAt });
+      return {
+        ...audit,
+        actorId: context.userId,
+        tenantId,
+        branchId: input.branchId,
+        grantId: grant.id,
+      };
+    });
+  }
+
+  async revokeSupportGrant(context: TenantContext, tenantId: string, grantId: string) {
+    return this.database.db.transaction(async (tx) => {
+      const [tenant] = await tx
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, tenantId))
+        .limit(1);
+      if (!tenant) throw new NotFoundException("Tenant not found");
+      const now = new Date().toISOString();
+      let found = false;
+      const grants = readSupportGrants(tenant.settings).map((grant) => {
+        if (grant.id !== grantId) return grant;
+        found = true;
+        return { ...grant, revokedAt: now };
+      });
+      if (!found) throw new NotFoundException("Support grant not found");
+      await tx
+        .update(tenants)
+        .set({ settings: { ...tenant.settings, supportGrants: grants }, updatedAt: new Date() })
+        .where(eq(tenants.id, tenantId));
+      await tx.insert(auditLogs).values({
+        tenantId,
+        userId: null,
+        requestId: context.requestId,
+        action: "platform.support.grant_revoked",
+        entityType: "support_grant",
+        metadata: auditMetadata({ actorId: context.userId, grantId }),
+      });
+      return { tenantId, grantId, revokedAt: now };
+    });
   }
 
   async prepareAsaasCheckout(
@@ -997,7 +1161,7 @@ export class PlatformService {
       currentPeriodEndsAt: tenant.currentPeriodEndsAt,
     });
 
-    const delivery = await createEmailProvider().send({
+    const delivery = await sendEmail(this.database, {
       tenantId,
       to: recipient.email,
       subject: message.subject,
@@ -1045,10 +1209,6 @@ export class PlatformService {
       .slice(0, 60);
   }
 
-  private temporaryPassword(slug: string) {
-    return `Giro@${slug.slice(0, 8).padEnd(8, "0")}1`;
-  }
-
   private publicAppUrl(path: string) {
     const baseUrl = process.env.APP_URL ?? "http://localhost:3002";
     return new URL(path, baseUrl).toString();
@@ -1066,7 +1226,7 @@ export class PlatformService {
     idempotencyKey: string;
   }) {
     const callbackBase = this.publicAppUrl(`/platform/${input.tenantId}`);
-    const response = await fetch(`${input.baseUrl}/checkouts`, {
+    const response = await safeFetch(`${input.baseUrl}/checkouts`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1303,6 +1463,24 @@ function readSupportStatus(settings: Record<string, unknown>) {
   return value === "in_progress" || value === "waiting_customer" || value === "resolved"
     ? value
     : "queued";
+}
+
+function readSupportAccess(settings: Record<string, unknown>) {
+  const grant = readSupportGrants(settings)
+    .filter(
+      (candidate) =>
+        candidate.revokedAt === null && new Date(candidate.expiresAt).getTime() > Date.now(),
+    )
+    .at(-1);
+  return {
+    mode: grant?.mode ?? "read_only",
+    expiresAt: grant?.expiresAt ?? null,
+    reason: grant?.reason ?? "",
+    grantId: grant?.id ?? null,
+    branchId: grant?.branchId ?? null,
+    resource: grant?.resource ?? "operations",
+    actions: grant?.actions ?? [],
+  };
 }
 
 function buildSupportQueueLabel(settings: Record<string, unknown>, status: TenantStatus) {

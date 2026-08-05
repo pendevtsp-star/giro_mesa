@@ -50,6 +50,22 @@ export type CashSessionSummary = {
   };
 };
 
+export function deriveExpectedCashAmountCents(input: {
+  openingAmountCents: number;
+  movements: Array<{ type: string; amountCents: number }>;
+  handovers: Array<{ status: string; amountCents: number }>;
+}) {
+  const movementDelta = input.movements.reduce(
+    (sum, movement) =>
+      sum + (movement.type === "supply" ? movement.amountCents : -movement.amountCents),
+    0,
+  );
+  const receivedCashDelta = input.handovers
+    .filter((handover) => handover.status === "received")
+    .reduce((sum, handover) => sum + handover.amountCents, 0);
+  return input.openingAmountCents + movementDelta + receivedCashDelta;
+}
+
 type OpenCashSessionInput = {
   branchId: string;
   openingAmountCents: number;
@@ -205,6 +221,13 @@ export class CashService {
 
     const paymentRows = await this.cashRepository.findPaymentsByMethod(context, branchId, session);
     const cashHandovers = await this.cashRepository.findCashHandovers(context, branchId, session);
+    const derivedExpectedAmountCents = session
+      ? deriveExpectedCashAmountCents({
+          openingAmountCents: session.openingAmountCents,
+          movements,
+          handovers: cashHandovers,
+        })
+      : 0;
 
     const totalPayments = paymentRows.reduce((sum, row) => sum + Number(row.totalCents), 0);
     const totalPaymentCount = paymentRows.length;
@@ -229,12 +252,12 @@ export class CashService {
             id: session.id,
             status: session.status,
             openingAmountCents: session.openingAmountCents,
-            expectedAmountCents: session.expectedAmountCents,
+            expectedAmountCents: derivedExpectedAmountCents,
             countedAmountCents: session.countedAmountCents,
             differenceCents:
               session.countedAmountCents === null
                 ? null
-                : session.countedAmountCents - session.expectedAmountCents,
+                : session.countedAmountCents - derivedExpectedAmountCents,
             openedAt: session.openedAt,
             closedAt: session.closedAt,
           }
@@ -293,16 +316,40 @@ export class CashService {
         );
       }
 
+      const handovers = await this.cashRepository.findCashHandovers(
+        context,
+        session.branchId,
+        session,
+        tx,
+      );
+      const movements = await this.cashRepository.findCashMovements(context, session.id, tx);
+      const derivedExpectedAmountCents = deriveExpectedCashAmountCents({
+        openingAmountCents: session.openingAmountCents,
+        movements,
+        handovers,
+      });
+      if (handovers.some((handover) => handover.status === "pending")) {
+        throw new BadRequestException(
+          "Confirme as entregas de dinheiro dos garçons antes de fechar o caixa",
+        );
+      }
+      if (handovers.some((handover) => handover.status === "disputed")) {
+        throw new BadRequestException(
+          "Resolva as divergências de dinheiro antes de fechar o caixa",
+        );
+      }
+
       const nextStatus =
-        input.countedAmountCents === session.expectedAmountCents ? "closed" : "disputed";
+        input.countedAmountCents === derivedExpectedAmountCents ? "closed" : "disputed";
       stateMachines.assertCashSessionTransition(session.status, nextStatus);
-      const differenceCents = input.countedAmountCents - session.expectedAmountCents;
+      const differenceCents = input.countedAmountCents - derivedExpectedAmountCents;
       const closedAt = new Date();
       const closed = await this.cashRepository.updateCashSession(
         context,
         session.id,
         {
           status: nextStatus,
+          expectedAmountCents: derivedExpectedAmountCents,
           countedAmountCents: input.countedAmountCents,
           closeIdempotencyKey: idempotencyKey,
           closedAt,
@@ -324,7 +371,7 @@ export class CashService {
           entityId: session.id,
           metadata: {
             openingAmountCents: session.openingAmountCents,
-            expectedAmountCents: session.expectedAmountCents,
+            expectedAmountCents: derivedExpectedAmountCents,
             countedAmountCents: input.countedAmountCents,
             differenceCents,
           },
@@ -339,7 +386,7 @@ export class CashService {
             cashSessionId: session.id,
             branchId: session.branchId,
             status: nextStatus,
-            expectedAmountCents: session.expectedAmountCents,
+            expectedAmountCents: derivedExpectedAmountCents,
             countedAmountCents: input.countedAmountCents,
             differenceCents,
             closedAt: closedAt.toISOString(),

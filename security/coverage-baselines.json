@@ -1,0 +1,12 @@
+{
+  "auth": { "path": "/modules/auth/", "lines": 15 },
+  "tenant": { "path": "/modules/tenants/", "lines": 14 },
+  "rbac": { "path": "/modules/approvals/", "lines": 24 },
+  "pedido": { "path": "/modules/pos/orders", "lines": 22 },
+  "pagamento": { "path": "/modules/pos/payments", "lines": 42 },
+  "caixa": { "path": "/modules/pos/cash", "lines": 6 },
+  "qr": { "path": "/modules/qr/", "lines": 11 },
+  "estoque": { "path": "/modules/inventory/", "lines": 12 },
+  "webhooks": { "path": "/modules/integrations/webhooks", "lines": 24 },
+  "billing": { "path": "/modules/platform/", "lines": 15 }
+}

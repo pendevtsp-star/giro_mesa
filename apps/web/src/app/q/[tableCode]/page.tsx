@@ -1,6 +1,7 @@
 "use client";
 
 import { escapeHtml, renderBrandedPrintDocument } from "@giromesa/domain";
+import { Dialog } from "@giromesa/ui";
 import {
   BellRing,
   Circle,
@@ -13,9 +14,16 @@ import {
   ReceiptText,
   Search,
   Send,
-  X,
 } from "lucide-react";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ageConfirmationStorageKey,
+  cartContainsAlcohol,
+  hasValidAgeConfirmation,
+  parseStoredAgeConfirmation,
+  requiresAgeConfirmation,
+  type StoredAgeConfirmation,
+} from "../../../features/qr/age-policy";
 import { normalizeQrFontPreset } from "../../../features/qr/font-preset";
 import {
   formatPublicQrMoney,
@@ -26,8 +34,11 @@ import {
   publicTimelineLabel,
 } from "../../../features/qr/public-copy";
 import {
-  buildSecurePublicOrderEventsUrl,
+  buildSecurePublicOrderDeltaEventsUrl,
+  claimSecurePublicPresenceApproval,
+  classifyOperationalDeltaBatch,
   createPublicQrOrder,
+  createSecureAgeConfirmation,
   createSecurePublicOrder,
   createSecureServiceRequest,
   getPublicMenu,
@@ -36,13 +47,17 @@ import {
   getSecurePublicOrder,
   getSecurePublicQrContext,
   getSecureServiceRequest,
+  type OperationalDeltaBatch,
   type Product,
   type PublicMenuResponse,
   type PublicModifierGroup,
   type PublicQrResponse,
   recordSecureQrAttribution,
   requestPublicQrAction,
+  requestSecurePublicPresenceApproval,
   type SecurePublicOrderSummary,
+  validateSecurePublicPresenceCode,
+  validateSecurePublicPresenceNetwork,
 } from "../../../lib/giromesa-api";
 
 type ModifierSelection = {
@@ -57,12 +72,14 @@ type CartLine = {
   name: string;
   quantity: number;
   priceCents: number;
+  isAlcoholic?: boolean;
   modifiers: ModifierSelection[];
 };
 
 export default function TableQrPage({ params }: { params: Promise<{ tableCode: string }> }) {
   const { tableCode } = use(params);
   const secureMode = tableCode.includes(".");
+  const ageConfirmationKey = ageConfirmationStorageKey(tableCode);
   const [qr, setQr] = useState<PublicQrResponse | null>(null);
   const [menu, setMenu] = useState<PublicMenuResponse | null>(null);
   const [fatalError, setFatalError] = useState("");
@@ -79,6 +96,22 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     type: string;
     status: string;
   } | null>(null);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [presenceValidated, setPresenceValidated] = useState(false);
+  const [presenceCode, setPresenceCode] = useState("");
+  const [splitMode, setSplitMode] = useState<"equal" | "by_item" | "custom">("equal");
+  const [splitPeople, setSplitPeople] = useState(2);
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "pix" | "credit_card" | "debit_card" | "other"
+  >("pix");
+  const realtimeVersion = useRef(0);
+  const [presenceApproval, setPresenceApproval] = useState<{
+    requestId: string;
+    claimKey: string;
+  } | null>(null);
+  const [secureAgeConfirmation, setSecureAgeConfirmation] = useState<StoredAgeConfirmation | null>(
+    null,
+  );
 
   const [modifierModalProduct, setModifierModalProduct] = useState<
     PublicMenuResponse["products"][number] | null
@@ -120,6 +153,23 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   }, [tableCode]);
 
   useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(ageConfirmationKey);
+      if (secureMode) {
+        const confirmation = parseStoredAgeConfirmation(stored);
+        setSecureAgeConfirmation(confirmation);
+        setAgeConfirmed(hasValidAgeConfirmation(confirmation));
+        if (stored && !confirmation) window.localStorage.removeItem(ageConfirmationKey);
+      } else {
+        setAgeConfirmed(stored === "true");
+      }
+    } catch {
+      setSecureAgeConfirmation(null);
+      setAgeConfirmed(false);
+    }
+  }, [ageConfirmationKey, secureMode]);
+
+  useEffect(() => {
     const value = guestLabel.trim();
     if (value) window.localStorage.setItem(`giromesa:qr-label:${tableCode}`, value);
     else window.localStorage.removeItem(`giromesa:qr-label:${tableCode}`);
@@ -129,6 +179,19 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     if (!cartHydrated) return;
     window.localStorage.setItem(`giromesa:qr-cart:${tableCode}`, JSON.stringify(cart));
   }, [cart, cartHydrated, tableCode]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const classification = new Map(
+      menu.products.map((product) => [product.id, product.isAlcoholic === true]),
+    );
+    setCart((current) =>
+      current.map((line) => ({
+        ...line,
+        isAlcoholic: classification.get(line.productId) ?? line.isAlcoholic ?? false,
+      })),
+    );
+  }, [menu]);
 
   useEffect(() => {
     let ignore = false;
@@ -150,6 +213,8 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                 branding,
               },
               capabilities: context.capabilities,
+              mode: context.mode,
+              service: context.service,
               reviewBeforeKds: context.reviewBeforeKds,
               ...(context.qrSettings ? { qrSettings: context.qrSettings } : {}),
               ...(context.partnerAttribution
@@ -178,7 +243,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                 isClubEligible: false,
                 bottleVolumeMl: null,
                 defaultDoseMl: 50,
-                spiritType: null,
+                spiritType: product.spiritType ?? null,
               })),
             } satisfies PublicMenuResponse,
           };
@@ -192,6 +257,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         if (!ignore) {
           setQr(qrResponse.qr);
           setMenu(qrResponse.menu);
+          setPresenceValidated(qrResponse.qr.service?.guestValidated ?? false);
           setFatalError("");
         }
       })
@@ -221,28 +287,46 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     const refreshOrder = async () => {
       try {
         const response = await getSecurePublicOrder(tableCode);
-        if (!ignore) setPublicOrder(response.order);
+        if (!ignore) {
+          setPublicOrder(response.order);
+          setPresenceValidated(true);
+        }
       } catch {
-        if (!ignore) setPublicOrder(null);
+        if (!ignore) {
+          setPublicOrder(null);
+          setPresenceValidated(false);
+        }
       }
     };
     void refreshOrder();
     const startPollingFallback = () => {
       if (fallbackTimer === null) {
-        fallbackTimer = window.setInterval(() => void refreshOrder(), 15_000);
+        fallbackTimer = window.setInterval(() => void refreshOrder(), 60_000);
       }
     };
     if (qr.capabilities?.includes("view_tab")) {
       try {
-        eventSource = new EventSource(buildSecurePublicOrderEventsUrl(tableCode));
-        eventSource.onmessage = (event) => {
+        eventSource = new EventSource(buildSecurePublicOrderDeltaEventsUrl(tableCode), {
+          withCredentials: true,
+        });
+        eventSource.addEventListener("qr.operation.delta", (event) => {
           try {
-            const snapshot = JSON.parse(event.data) as SecurePublicOrderSummary;
-            if (!ignore) setPublicOrder(snapshot.order);
+            const batch = JSON.parse((event as MessageEvent<string>).data) as OperationalDeltaBatch;
+            const classification = classifyOperationalDeltaBatch(realtimeVersion.current, batch);
+            if (classification === "stale") return;
+            realtimeVersion.current = batch.toVersion;
+            if (classification === "gap") {
+              void refreshOrder();
+              return;
+            }
+            if (!ignore) {
+              setPublicOrder((current) => applyPublicOrderDeltas(current, batch));
+              setServiceRequest((current) => applyPublicServiceDeltas(current, batch));
+            }
           } catch {
             startPollingFallback();
           }
-        };
+        });
         eventSource.onerror = () => {
           eventSource?.close();
           eventSource = null;
@@ -278,12 +362,43 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         // Keep the last known status if the token is rotated while this page is open.
       }
     };
-    const timer = window.setInterval(() => void refreshRequest(), 5_000);
+    const timer = window.setInterval(() => void refreshRequest(), 60_000);
     return () => {
       ignore = true;
       window.clearInterval(timer);
     };
   }, [secureMode, serviceRequest, tableCode]);
+
+  useEffect(() => {
+    if (!presenceApproval || presenceValidated) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const result = await claimSecurePublicPresenceApproval(
+          tableCode,
+          presenceApproval.requestId,
+          presenceApproval.claimKey,
+        );
+        if (stopped) return;
+        if (result.status === "approved") {
+          setPresenceValidated(true);
+          setPresenceApproval(null);
+          setStatus("Mesa confirmada. Você já pode usar os recursos deste atendimento.");
+        } else if (result.status !== "pending") {
+          setPresenceApproval(null);
+          setStatus("A confirmação expirou. Solicite novamente à equipe.");
+        }
+      } catch {
+        if (!stopped) setPresenceApproval(null);
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [presenceApproval, presenceValidated, tableCode]);
 
   const totalCents = cart.reduce((sum, line) => sum + line.quantity * line.priceCents, 0);
   const language = normalizePublicQrLanguage(qr?.qrSettings?.language);
@@ -320,7 +435,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const houseInfo = qr?.qrSettings?.houseInfo?.trim();
   const highlights = qr?.qrSettings?.highlights?.filter(Boolean) ?? [];
 
-  function addProduct(product: Pick<Product, "id" | "name" | "priceCents">) {
+  function addProduct(product: Pick<Product, "id" | "name" | "priceCents" | "isAlcoholic">) {
     setCart((current) => {
       const existing = current.find((line) => line.productId === product.id);
       if (existing) {
@@ -334,6 +449,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           productId: product.id,
           name: product.name,
           priceCents: product.priceCents,
+          isAlcoholic: product.isAlcoholic,
           quantity: 1,
           modifiers: [],
         },
@@ -352,6 +468,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         productId: product.id,
         name: product.name,
         priceCents: product.priceCents + modifierDelta,
+        isAlcoholic: product.isAlcoholic,
         quantity: 1,
         modifiers: selections,
       },
@@ -457,6 +574,34 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
     }
   }
 
+  function confirmPresenceCode() {
+    void run(async () => {
+      if (!/^\d{6}$/.test(presenceCode)) {
+        throw new Error("Digite o código de 6 dígitos mostrado pela equipe.");
+      }
+      await validateSecurePublicPresenceCode(tableCode, presenceCode);
+      setPresenceValidated(true);
+      setPresenceCode("");
+      setStatus("Mesa confirmada. Você já pode usar os recursos deste atendimento.");
+    });
+  }
+
+  function confirmPresenceNetwork() {
+    void run(async () => {
+      await validateSecurePublicPresenceNetwork(tableCode);
+      setPresenceValidated(true);
+      setStatus("Mesa confirmada pela rede do estabelecimento.");
+    });
+  }
+
+  function requestPresenceApproval() {
+    void run(async () => {
+      const request = await requestSecurePublicPresenceApproval(tableCode);
+      setPresenceApproval({ requestId: request.requestId, claimKey: request.claimKey });
+      setStatus("Solicitação enviada. Aguarde a confirmação da equipe.");
+    });
+  }
+
   function submitOrder() {
     void run(async () => {
       if (!qr || cart.length === 0) {
@@ -464,6 +609,17 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       }
       if (secureMode && qr.table.active === false) {
         throw new Error(text.inactiveTable);
+      }
+      if (secureMode && !presenceValidated) {
+        throw new Error("Confirme que você está na mesa antes de enviar o pedido.");
+      }
+      const containsAlcohol = cartContainsAlcohol(cart, menu?.products ?? []);
+      const validSecureConfirmation = hasValidAgeConfirmation(secureAgeConfirmation);
+      if (containsAlcohol && !(secureMode ? validSecureConfirmation : ageConfirmed)) {
+        setAgeConfirmed(false);
+        setSecureAgeConfirmation(null);
+        window.localStorage.removeItem(ageConfirmationKey);
+        throw new Error("Confirme que você tem 18 anos ou mais antes de enviar este pedido.");
       }
       const items = cart.map((line) => ({
         productId: line.productId,
@@ -475,7 +631,13 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         ? await createSecurePublicOrder(
             tableCode,
             idempotencyKey(tableCode, "order", orderPayload),
-            { items, ...(guestLabel.trim() ? { guestLabel: guestLabel.trim() } : {}) },
+            {
+              items,
+              ...(guestLabel.trim() ? { guestLabel: guestLabel.trim() } : {}),
+              ...(containsAlcohol && secureAgeConfirmation
+                ? { ageConfirmationToken: secureAgeConfirmation.token }
+                : {}),
+            },
           )
         : await createPublicQrOrder(tableCode, {
             items,
@@ -493,6 +655,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   function callWaiter(reason?: string) {
     void run(async () => {
       if (!qr) return;
+      if (secureMode && !presenceValidated) {
+        throw new Error("Confirme que você está na mesa antes de chamar a equipe.");
+      }
       if (secureMode) {
         const request = await createSecureServiceRequest(
           tableCode,
@@ -514,6 +679,9 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   function requestPreBill() {
     void run(async () => {
       if (!qr) return;
+      if (secureMode && !presenceValidated) {
+        throw new Error("Confirme que você está na mesa antes de solicitar a conta.");
+      }
       if (secureMode) {
         const request = await createSecureServiceRequest(
           tableCode,
@@ -525,6 +693,41 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         await requestPublicQrAction(tableCode, "pre-bill");
       }
       setStatus(text.preBillRequested);
+    });
+  }
+
+  function requestSplitIntent() {
+    void run(async () => {
+      if (!secureMode || !presenceValidated || !hasActiveOrder) {
+        throw new Error("Confirme a mesa e abra uma comanda antes de solicitar a divisão.");
+      }
+      const split = {
+        mode: splitMode,
+        ...(splitMode === "equal" ? { people: splitPeople } : {}),
+      };
+      const request = await createSecureServiceRequest(
+        tableCode,
+        idempotencyKey(tableCode, "split-intent", JSON.stringify(split)),
+        { type: "split_intent", split },
+      );
+      setServiceRequest(request);
+      setStatus("Preferência de divisão enviada à equipe.");
+    });
+  }
+
+  function requestPaymentPreference() {
+    void run(async () => {
+      if (!secureMode || !presenceValidated || !hasActiveOrder) {
+        throw new Error("Confirme a mesa e abra uma comanda antes de informar o pagamento.");
+      }
+      const payment = { method: paymentMethod, splitMode: "single" as const };
+      const request = await createSecureServiceRequest(
+        tableCode,
+        idempotencyKey(tableCode, "payment-preference", JSON.stringify(payment)),
+        { type: "payment_preference", payment },
+      );
+      setServiceRequest(request);
+      setStatus("Preferência de pagamento enviada sem realizar cobrança.");
     });
   }
 
@@ -659,6 +862,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
   const canOrder = capabilities.has("order") && (qr.table.active !== false || !secureMode);
   const canCallWaiter = capabilities.has("call_waiter");
   const canRequestPreBill = capabilities.has("request_pre_bill") && secureMode;
+  const ageGateRequired = requiresAgeConfirmation(menu.products, ageConfirmed);
 
   return (
     <main
@@ -712,6 +916,114 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
         {houseInfo ? <p className="table-qr-house-info">{houseInfo}</p> : null}
       </header>
 
+      {ageGateRequired ? (
+        <Dialog
+          className="qr-age-dialog"
+          dismissible={false}
+          onClose={() => undefined}
+          open
+          title="Você tem 18 anos ou mais?"
+        >
+          <span className="section-kicker">Bebidas alcoólicas</span>
+          <p>
+            O consumo de bebidas alcoólicas é proibido para menores. Esta confirmação não substitui
+            a conferência pela equipe do estabelecimento.
+          </p>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => {
+              void run(async () => {
+                if (secureMode) {
+                  const confirmation = await createSecureAgeConfirmation(tableCode);
+                  window.localStorage.setItem(ageConfirmationKey, JSON.stringify(confirmation));
+                  setSecureAgeConfirmation(confirmation);
+                } else {
+                  window.localStorage.setItem(ageConfirmationKey, "true");
+                }
+                setAgeConfirmed(true);
+              });
+            }}
+          >
+            Tenho 18 anos ou mais
+          </button>
+        </Dialog>
+      ) : null}
+
+      {secureMode &&
+      qr.table.active &&
+      qr.service?.presenceRequired &&
+      qr.service.active &&
+      !presenceValidated ? (
+        <section className="qr-card" aria-labelledby="presence-title">
+          <span className="section-kicker">
+            <QrCode size={16} /> Segurança da mesa
+          </span>
+          <h2 id="presence-title">Confirme que você está aqui</h2>
+          <p className="muted-copy">
+            O cardápio continua disponível. Para pedir, ver a comanda ou chamar a equipe, confirme
+            uma vez neste atendimento.
+          </p>
+          {qr.service.presenceMethods.includes("code") ? (
+            <div className="form-grid two-columns">
+              <label>
+                Código da mesa
+                <input
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(event) => setPresenceCode(event.target.value.replace(/\D/g, ""))}
+                  placeholder="000000"
+                  value={presenceCode}
+                />
+              </label>
+              <button
+                className="button primary"
+                disabled={isBusy || presenceCode.length !== 6}
+                onClick={confirmPresenceCode}
+                type="button"
+              >
+                Confirmar código
+              </button>
+            </div>
+          ) : null}
+          <div className="toolbar">
+            {qr.service.presenceMethods.includes("approval") ? (
+              <button
+                className="button secondary"
+                disabled={isBusy || Boolean(presenceApproval)}
+                onClick={requestPresenceApproval}
+                type="button"
+              >
+                {presenceApproval ? "Aguardando equipe..." : "Pedir aprovação à equipe"}
+              </button>
+            ) : null}
+            {qr.service.presenceMethods.includes("network") ? (
+              <button
+                className="button ghost"
+                disabled={isBusy}
+                onClick={confirmPresenceNetwork}
+                type="button"
+              >
+                Confirmar pela rede local
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {secureMode && qr.table.active && qr.service?.presenceRequired && !qr.service.active ? (
+        <p className="workspace-message" role="status">
+          A equipe ainda não ativou o atendimento digital desta mesa. O cardápio segue disponível.
+        </p>
+      ) : null}
+
+      {secureMode && presenceValidated ? (
+        <p className="workspace-message" role="status">
+          <CircleCheck size={16} /> Mesa confirmada para este atendimento.
+        </p>
+      ) : null}
+
       <section className="qr-order-grid">
         <article className="qr-card">
           <div className="panel-title">
@@ -759,7 +1071,7 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                       ? openModifierModal(product)
                       : addProduct(product)
                   }
-                  disabled={isBusy}
+                  disabled={isBusy || ageGateRequired}
                 >
                   {product.imageUrl && (
                     // biome-ignore lint/performance/noImgElement: tenant URLs are dynamic and not eligible for a fixed Next Image allowlist.
@@ -956,6 +1268,74 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
           </div>
         </button>
       </section>
+      {canRequestPreBill && secureMode ? (
+        <section className="qr-card" aria-labelledby="payment-preferences">
+          <h2 id="payment-preferences">Divisão e pagamento</h2>
+          <p className="muted-copy">
+            Informe sua preferência à equipe. Nenhuma cobrança é realizada por esta tela.
+          </p>
+          <div className="form-grid two-columns">
+            <label>
+              Como dividir
+              <select
+                value={splitMode}
+                onChange={(event) =>
+                  setSplitMode(event.target.value as "equal" | "by_item" | "custom")
+                }
+              >
+                <option value="equal">Igualmente</option>
+                <option value="by_item">Por item</option>
+                <option value="custom">Personalizada com a equipe</option>
+              </select>
+            </label>
+            {splitMode === "equal" ? (
+              <label>
+                Pessoas
+                <input
+                  max={100}
+                  min={2}
+                  onChange={(event) => setSplitPeople(Math.max(2, Number(event.target.value) || 2))}
+                  type="number"
+                  value={splitPeople}
+                />
+              </label>
+            ) : null}
+            <button
+              className="button secondary"
+              disabled={isBusy || !hasActiveOrder}
+              onClick={requestSplitIntent}
+              type="button"
+            >
+              Solicitar divisão
+            </button>
+            <label>
+              Preferência de pagamento
+              <select
+                value={paymentMethod}
+                onChange={(event) =>
+                  setPaymentMethod(
+                    event.target.value as "cash" | "pix" | "credit_card" | "debit_card" | "other",
+                  )
+                }
+              >
+                <option value="pix">Pix</option>
+                <option value="credit_card">Cartão de crédito</option>
+                <option value="debit_card">Cartão de débito</option>
+                <option value="cash">Dinheiro</option>
+                <option value="other">Combinar com a equipe</option>
+              </select>
+            </label>
+            <button
+              className="button secondary"
+              disabled={isBusy || !hasActiveOrder}
+              onClick={requestPaymentPreference}
+              type="button"
+            >
+              Enviar preferência
+            </button>
+          </div>
+        </section>
+      ) : null}
       {canCallWaiter && qr.qrSettings?.serviceRequestReasons?.length ? (
         <section className="qr-card" aria-labelledby="quick-service-reasons">
           <h2 id="quick-service-reasons">{text.quickReasons}</h2>
@@ -1017,126 +1397,61 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
       ) : null}
 
       {modifierModalProduct && (
-        <dialog
+        <Dialog
+          className="qr-modifier-dialog"
+          closeLabel={text.close}
+          onClose={closeModifierModal}
           open
-          className="modifier-modal-overlay"
-          aria-label={text.close}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: 16,
-            border: 0,
-            width: "auto",
-            maxWidth: "none",
-            maxHeight: "none",
-          }}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) closeModifierModal();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") closeModifierModal();
-          }}
+          title={modifierModalProduct.name}
         >
-          <div
-            className="modifier-modal"
-            role="dialog"
-            aria-modal="true"
-            style={{
-              background: "#fff",
-              borderRadius: 12,
-              maxWidth: 480,
-              width: "100%",
-              maxHeight: "85vh",
-              overflow: "auto",
-              padding: 24,
-              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "start",
-                marginBottom: 16,
-              }}
-            >
+          <div className="qr-modifier-content">
+            <div className="qr-modifier-summary">
               <div>
-                <h2 style={{ margin: 0 }}>{modifierModalProduct.name}</h2>
                 {modifierModalProduct.description && (
-                  <p style={{ margin: "4px 0 0", color: "var(--muted)" }}>
+                  <p className="muted-copy qr-modifier-description">
                     {modifierModalProduct.description}
                   </p>
                 )}
-                <p style={{ margin: "8px 0 0", fontWeight: 600 }}>
+                <p className="qr-modifier-price">
                   {formatPublicQrMoney(modifierModalProduct.priceCents, language)}
                 </p>
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={closeModifierModal}
-                aria-label={text.close}
-                style={{ flexShrink: 0 }}
-              >
-                <X size={20} />
-              </button>
             </div>
 
             {modifierLoading ? (
-              <p className="muted-copy" style={{ textAlign: "center", padding: 24 }}>
+              <p className="muted-copy qr-modifier-state" role="status">
                 {text.loadingOptions}
               </p>
             ) : modifierGroups.length === 0 ? (
-              <p className="muted-copy" style={{ textAlign: "center", padding: 24 }}>
+              <p className="muted-copy qr-modifier-state" role="status">
                 {text.noOptions}
               </p>
             ) : (
               modifierGroups.map((group) => (
-                <div key={group.id} style={{ marginBottom: 20 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "baseline",
-                      marginBottom: 8,
-                    }}
-                  >
+                <fieldset className="qr-modifier-group" key={group.id}>
+                  <legend className="qr-modifier-group-heading">
                     <strong>{group.name}</strong>
-                    <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                    <span>
                       {group.isRequired ? text.required : text.optional}
                       {group.maxChoices > 1 ? ` ${text.upTo(group.maxChoices)}` : ""}
                     </span>
-                  </div>
-                  <div style={{ display: "grid", gap: 6 }}>
+                  </legend>
+                  <div className="qr-modifier-options">
                     {group.options.map((option) => {
                       const isSelected = Object.values(modifierSelections).some(
                         (s) => s.optionId === option.id,
                       );
                       return (
                         <button
+                          aria-pressed={isSelected}
+                          className={`qr-modifier-option ${isSelected ? "is-selected" : ""}`}
                           key={option.id}
                           type="button"
                           onClick={() => toggleModifierOption(group.id, option, group)}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "10px 12px",
-                            border: `1px solid ${isSelected ? "var(--accent-strong, #10b981)" : "var(--line)"}`,
-                            borderRadius: 8,
-                            background: isSelected ? "#f0fdf4" : "#fbfcfa",
-                            cursor: "pointer",
-                            textAlign: "left",
-                          }}
                         >
                           <span>{option.name}</span>
                           {option.priceDeltaCents !== 0 && (
-                            <small style={{ color: "var(--muted)" }}>
+                            <small>
                               {option.priceDeltaCents > 0 ? "+" : ""}
                               {formatPublicQrMoney(option.priceDeltaCents, language)}
                             </small>
@@ -1145,24 +1460,48 @@ export default function TableQrPage({ params }: { params: Promise<{ tableCode: s
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
               ))
             )}
 
             <button
-              className="button primary full"
+              className="button primary full qr-modifier-confirm"
               type="button"
               onClick={confirmModifierSelection}
               disabled={modifierLoading}
-              style={{ marginTop: 8 }}
             >
               <Plus size={17} /> {text.addToOrder}
             </button>
           </div>
-        </dialog>
+        </Dialog>
       )}
     </main>
   );
+}
+
+function applyPublicOrderDeltas(
+  current: SecurePublicOrderSummary["order"],
+  batch: OperationalDeltaBatch,
+) {
+  if (!current) return current;
+  let next = current;
+  for (const delta of batch.deltas) {
+    if (delta.refs.orderId !== current.id && delta.aggregate.id !== current.id) continue;
+    if (typeof delta.data.status === "string") next = { ...next, status: delta.data.status };
+  }
+  return next;
+}
+
+function applyPublicServiceDeltas(
+  current: { id: string; type: string; status: string } | null,
+  batch: OperationalDeltaBatch,
+) {
+  if (!current) return current;
+  for (const delta of batch.deltas) {
+    if (delta.aggregate.id !== current.id) continue;
+    if (typeof delta.data.status === "string") return { ...current, status: delta.data.status };
+  }
+  return current;
 }
 
 function idempotencyKey(token: string, action: string, payload = "") {

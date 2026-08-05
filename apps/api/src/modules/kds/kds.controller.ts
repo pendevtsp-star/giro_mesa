@@ -1,5 +1,5 @@
 import { orderItemStatuses } from "@giromesa/domain";
-import { Body, Controller, Get, Headers, Inject, Param, Patch } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Param, Patch, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 import type { HeaderRecord } from "../../common/http";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
@@ -12,6 +12,7 @@ const updateTicketSchema = z.object({
 const updateTicketItemSchema = z.object({
   status: z.enum(orderItemStatuses),
 });
+const recallSchema = z.object({ stationId: z.string().uuid() });
 
 @Controller("kds")
 export class KdsController {
@@ -23,10 +24,21 @@ export class KdsController {
   ) {}
 
   @Get("tickets")
-  async listTickets(@Headers() headers: HeaderRecord) {
+  async listTickets(
+    @Headers() headers: HeaderRecord,
+    @Query("stationId") stationId?: string,
+    @Query("status") status?: string,
+  ) {
     const context = await this.contextWithPermission(headers);
+    const input = {
+      stationId: stationId ? z.string().uuid().parse(stationId) : undefined,
+      status: status ? z.enum(orderItemStatuses).parse(status) : undefined,
+    };
     return {
-      data: await this.kdsService.listTickets(context),
+      data:
+        input.stationId || input.status
+          ? await this.kdsService.listTickets(context, input)
+          : await this.kdsService.listTickets(context),
     };
   }
 
@@ -36,6 +48,13 @@ export class KdsController {
     return {
       data: await this.kdsService.listStations(context),
     };
+  }
+
+  @Post("tickets/recall")
+  async recallLastDelivered(@Body() body: unknown, @Headers() headers: HeaderRecord) {
+    rejectTenantOverride(body);
+    const context = await this.contextWithPermission(headers);
+    return this.kdsService.recallLastDelivered(context, recallSchema.parse(body).stationId);
   }
 
   @Patch("tickets/:ticketId")

@@ -2,22 +2,23 @@ import { exec } from "node:child_process";
 import { readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { loadEnv, queueNames } from "@giromesa/config";
+import { createSanitizedLogger, loadEnv, queueNames, safeFetch } from "@giromesa/config";
 import * as schema from "@giromesa/db";
-import { inventoryItems } from "@giromesa/db";
+import { inventoryItems, withAuditSanitization } from "@giromesa/db";
 import { Worker } from "bullmq";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { processPendingFiscalDocuments } from "./fiscal";
+import { processFiscalOperations, reconcilePendingFiscalDocuments } from "./fiscal-operations";
 import { publishPendingClubWhiskyOutbox } from "./outbox";
 import { createWhatsAppProvider, type WhatsAppMessage } from "./whatsapp-provider";
 
 const execAsync = promisify(exec);
+const logger = createSanitizedLogger("worker");
 
 const env = loadEnv();
 const pool = new Pool({ connectionString: env.DATABASE_URL });
-const db = drizzle(pool, { schema });
+const db = withAuditSanitization(drizzle(pool, { schema }));
 const redisUrl = new URL(env.REDIS_URL);
 const connection = {
   host: redisUrl.hostname,
@@ -48,7 +49,7 @@ const handlers: Record<string, QueueHandler> = {
     const entityType = String(data.entityType ?? "unknown");
     const entityId = String(data.entityId ?? "unknown");
 
-    console.log("audit event processed", {
+    logger.info("audit event processed", {
       jobId: job.id,
       action,
       tenantId,
@@ -65,7 +66,7 @@ const handlers: Record<string, QueueHandler> = {
     ];
 
     if (criticalActions.includes(action)) {
-      console.warn("CRITICAL AUDIT ALERT", {
+      logger.warn("CRITICAL AUDIT ALERT", {
         jobId: job.id,
         action,
         tenantId,
@@ -76,17 +77,16 @@ const handlers: Record<string, QueueHandler> = {
     }
   },
   [queueNames.asaasWebhook]: async (job) => {
-    console.log("asaas webhook accepted", {
+    logger.info("asaas webhook accepted", {
       jobId: job.id,
       idempotency: "provider_external_event_id",
     });
   },
   [queueNames.fiscal]: async (job) => {
-    const result = await processPendingFiscalDocuments(db);
-    console.log("fiscal documents processed", {
+    const result = await processFiscalOperations(db, `queue-${job.id ?? "fiscal"}`);
+    logger.info("fiscal operations processed", {
       jobId: job.id,
-      provider: env.FISCAL_PROVIDER,
-      scanned: result.scanned,
+      processed: result.processed,
     });
   },
   [queueNames.inventory]: async (job) => {
@@ -96,7 +96,7 @@ const handlers: Record<string, QueueHandler> = {
     const movementType = String(data.type ?? "unknown");
     const quantity = String(data.quantity ?? "0");
 
-    console.log("inventory movement processed", {
+    logger.info("inventory movement processed", {
       jobId: job.id,
       tenantId,
       inventoryItemId,
@@ -113,7 +113,7 @@ const handlers: Record<string, QueueHandler> = {
     if (item && Number(quantity) < 0) {
       const currentStock = Number(item.minQuantity);
       if (currentStock <= 0) {
-        console.warn("LOW STOCK ALERT", {
+        logger.warn("LOW STOCK ALERT", {
           jobId: job.id,
           tenantId,
           inventoryItemId,
@@ -132,7 +132,7 @@ const handlers: Record<string, QueueHandler> = {
     const tenantId = data.tenantId;
 
     if (channel !== "whatsapp") {
-      console.log("message dispatched (non-whatsapp channel)", {
+      logger.info("message dispatched (non-whatsapp channel)", {
         jobId: job.id,
         channel,
         to,
@@ -148,7 +148,7 @@ const handlers: Record<string, QueueHandler> = {
     try {
       const result = await provider.send(message);
       if (result.status === "disabled") {
-        console.warn("whatsapp delivery disabled", {
+        logger.warn("whatsapp delivery disabled", {
           jobId: job.id,
           to,
           tenantId,
@@ -156,7 +156,7 @@ const handlers: Record<string, QueueHandler> = {
         });
         return;
       }
-      console.log("whatsapp message sent", {
+      logger.info("whatsapp message sent", {
         jobId: job.id,
         messageId: result.messageId,
         status: result.status,
@@ -165,7 +165,7 @@ const handlers: Record<string, QueueHandler> = {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error("whatsapp message failed", {
+      logger.error("whatsapp message failed", {
         jobId: job.id,
         to,
         tenantId,
@@ -178,14 +178,14 @@ const handlers: Record<string, QueueHandler> = {
   },
   [queueNames.outbox]: async (job) => {
     const result = await publishPendingClubWhiskyOutbox(db);
-    console.log("outbox processed", { jobId: job.id, scanned: result.scanned });
+    logger.info("outbox processed", { jobId: job.id, scanned: result.scanned });
   },
   [queueNames.backup]: async (job) => {
     const data = job.data as Record<string, unknown>;
     const action = String(data.action ?? "create");
     const backupDir = env.BACKUP_STORAGE_PATH ?? "./backups";
 
-    console.log("backup job started", { jobId: job.id, action, backupDir });
+    logger.info("backup job started", { jobId: job.id, action, backupDir });
 
     try {
       if (action === "create") {
@@ -222,7 +222,7 @@ const handlers: Record<string, QueueHandler> = {
 
         await writeFile(`${filepath}.meta.json`, JSON.stringify(metadata, null, 2));
 
-        console.log("backup completed", {
+        logger.info("backup completed", {
           jobId: job.id,
           filename,
           sizeBytes: fileStat.size,
@@ -239,9 +239,9 @@ const handlers: Record<string, QueueHandler> = {
             metadata.validationChecksum = checksum;
             await writeFile(`${filepath}.meta.json`, JSON.stringify(metadata, null, 2));
 
-            console.log("backup validation passed", { jobId: job.id, filename });
+            logger.info("backup validation passed", { jobId: job.id, filename });
           } catch (validationError) {
-            console.error("backup validation failed", {
+            logger.error("backup validation failed", {
               jobId: job.id,
               filename,
               error: validationError instanceof Error ? validationError.message : "unknown_error",
@@ -273,12 +273,12 @@ const handlers: Record<string, QueueHandler> = {
           }
         }
 
-        console.log("backup cleanup completed", { jobId: job.id, deleted, retentionDays });
+        logger.info("backup cleanup completed", { jobId: job.id, deleted, retentionDays });
       }
 
       if (env.NOTIFY_BACKUP_WEBHOOK) {
         try {
-          await fetch(env.NOTIFY_BACKUP_WEBHOOK, {
+          await safeFetch(env.NOTIFY_BACKUP_WEBHOOK, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -289,14 +289,14 @@ const handlers: Record<string, QueueHandler> = {
             }),
           });
         } catch (webhookError) {
-          console.warn("backup notification webhook failed", {
+          logger.warn("backup notification webhook failed", {
             jobId: job.id,
             error: webhookError instanceof Error ? webhookError.message : "unknown_error",
           });
         }
       }
     } catch (error) {
-      console.error("backup job failed", {
+      logger.error("backup job failed", {
         jobId: job.id,
         action,
         error: error instanceof Error ? error.message : "unknown_error",
@@ -316,7 +316,7 @@ const workers = Object.entries(handlers).map(([queueName, handler]) => {
   );
 
   worker.on("failed", (job, error) => {
-    console.error("queue job failed", {
+    logger.error("queue job failed", {
       queueName,
       jobId: job?.id,
       error: error.message,
@@ -328,32 +328,42 @@ const workers = Object.entries(handlers).map(([queueName, handler]) => {
 
 const outboxPoller = setInterval(() => {
   publishPendingClubWhiskyOutbox(db).catch((error) => {
-    console.error("outbox polling failed", {
+    logger.error("outbox polling failed", {
       error: error instanceof Error ? error.message : "unknown_error",
     });
   });
 }, 10_000);
 
 const fiscalPoller = setInterval(() => {
-  processPendingFiscalDocuments(db).catch((error) => {
-    console.error("fiscal polling failed", {
+  processFiscalOperations(db, `poller-${process.pid}`).catch((error) => {
+    logger.error("fiscal polling failed", {
       error: error instanceof Error ? error.message : "unknown_error",
     });
   });
 }, 10_000);
 
+const fiscalReconciliationPoller = setInterval(() => {
+  reconcilePendingFiscalDocuments(db).catch((error) => {
+    logger.error("fiscal reconciliation scheduling failed", {
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+  });
+}, 60_000);
+
 void publishPendingClubWhiskyOutbox(db);
-void processPendingFiscalDocuments(db);
+void processFiscalOperations(db, `startup-${process.pid}`);
+void reconcilePendingFiscalDocuments(db);
 
 process.on("SIGTERM", async () => {
   clearInterval(outboxPoller);
   clearInterval(fiscalPoller);
+  clearInterval(fiscalReconciliationPoller);
   await Promise.all(workers.map((worker) => worker.close()));
   await pool.end();
   process.exit(0);
 });
 
-console.log("GiroMesa worker running", { queues: Object.keys(handlers) });
+logger.info("GiroMesa worker running", { queues: Object.keys(handlers) });
 
 async function calculateChecksum(filepath: string): Promise<string> {
   try {

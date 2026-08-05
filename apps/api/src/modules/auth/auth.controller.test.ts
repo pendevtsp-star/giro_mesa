@@ -1,4 +1,4 @@
-import { UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { RateLimitService } from "../../common/rate-limit";
 import { AuthController } from "./auth.controller";
@@ -71,6 +71,22 @@ function createController() {
       nextStep: "commercial_follow_up",
       checkoutReady: false,
       message: "Solicitação recebida.",
+    })),
+    createCommercialInterest: vi.fn(async () => ({
+      id: "interest-1",
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    })),
+    recordLegalAcceptance: vi.fn(async () => ({
+      id: "acceptance-1",
+      documentType: "terms",
+      documentVersion: "v1",
+      documentHash: "a".repeat(64),
+    })),
+    getLegalAcceptanceStatus: vi.fn(async () => ({
+      required: true,
+      complete: false,
+      configurationComplete: true,
+      documents: [],
     })),
   };
 
@@ -197,6 +213,32 @@ describe("AuthController Google OAuth", () => {
     expect(reply.headers.some(([key]) => key === "set-cookie")).toBe(true);
   });
 
+  it("blocks public trial creation when the pilot is invite-only", async () => {
+    const original = process.env.PILOT_INVITE_ONLY;
+    process.env.PILOT_INVITE_ONLY = "true";
+    const { controller, authService } = createController();
+    const reply = createReply();
+
+    try {
+      await expect(
+        controller.startTrial(
+          {
+            establishmentName: "Novo Bar",
+            ownerName: "Dono Novo",
+            ownerEmail: "dono@novo-bar.com",
+            password: "Teste@12345",
+          },
+          {},
+          reply as never,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(authService.startTrial).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) delete process.env.PILOT_INVITE_ONLY;
+      else process.env.PILOT_INVITE_ONLY = original;
+    }
+  });
+
   it("rejects tenant overrides on public trial signup", async () => {
     const { controller } = createController();
     const reply = createReply();
@@ -255,5 +297,64 @@ describe("AuthController Google OAuth", () => {
         {},
       ),
     ).rejects.toThrow();
+  });
+
+  it("preserves validated commercial attribution in a public interest", async () => {
+    const { controller, authService } = createController();
+
+    await controller.createCommercialInterest(
+      {
+        product: "giromesa",
+        planCode: "professional",
+        origin: "pricing",
+        establishmentName: "Bistro Piloto",
+        contactName: "Maria",
+        email: "maria@bistro.test",
+      },
+      { "user-agent": "vitest" },
+    );
+
+    expect(authService.createCommercialInterest).toHaveBeenCalledWith(
+      expect.objectContaining({ product: "giromesa", planCode: "professional", origin: "pricing" }),
+    );
+  });
+
+  it("records a legal acceptance only for the authenticated context", async () => {
+    const { controller, authService } = createController();
+
+    await controller.recordLegalAcceptance(
+      { documentType: "terms", accepted: true, origin: "onboarding" },
+      { "user-agent": "vitest" },
+    );
+
+    expect(authService.resolveContext).toHaveBeenCalled();
+    expect(authService.recordLegalAcceptance).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-1", userId: "user-1" }),
+      { documentType: "terms", origin: "onboarding" },
+      { "user-agent": "vitest" },
+    );
+  });
+
+  it("rejects legal evidence without an explicit acceptance signal", async () => {
+    const { controller, authService } = createController();
+
+    await expect(
+      controller.recordLegalAcceptance(
+        { documentType: "terms", accepted: false, origin: "onboarding" },
+        { "user-agent": "vitest" },
+      ),
+    ).rejects.toThrow();
+    expect(authService.recordLegalAcceptance).not.toHaveBeenCalled();
+  });
+
+  it("returns the current legal acceptance status for the authenticated user", async () => {
+    const { controller, authService } = createController();
+
+    await controller.getLegalAcceptanceStatus({ "user-agent": "vitest" });
+
+    expect(authService.resolveContext).toHaveBeenCalled();
+    expect(authService.getLegalAcceptanceStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tenant-1", userId: "user-1" }),
+    );
   });
 });

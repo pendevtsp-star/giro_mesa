@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog } from "@giromesa/ui";
 import {
   ArrowLeft,
   Banknote,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { OperationalAttentionPanel } from "../../../components/operational-attention/OperationalAttentionPanel";
 import { resolvePosShortcut } from "../../../features/pos/pos-shortcuts";
 import {
   demoProducts,
@@ -34,6 +36,7 @@ import {
   formatMoney,
   getActiveOrder,
   getActiveOrderById,
+  getCurrentOperationalDevice,
   getProductionRoutingPreview,
   getSession,
   getTenantBranding,
@@ -46,6 +49,7 @@ import {
   listTables,
   type ModifierGroup,
   type OpenOrderResponse,
+  type OperationalDeviceProfile,
   type OrderItemResponse,
   type OrderPayment,
   openOrder,
@@ -57,6 +61,7 @@ import {
   type QrPendingOrder,
   receiveCashHandover,
   registerManualPayment,
+  replayOperationalMutation,
   requestItemCancellation,
   requestOrderDiscount,
   sendOrderToKitchen,
@@ -64,10 +69,17 @@ import {
   type TenantBranding,
   type TenantSession,
 } from "../../../lib/giromesa-api";
+import {
+  createOperationalOutbox,
+  createOperationIdempotencyKey,
+  executeOperationalCommand,
+  reconcileOperationalOutbox,
+} from "../../../lib/operational-outbox";
 
 type ServiceMode = "table" | "counter";
 type PaymentMethod = (typeof paymentMethodOptions)[number][0];
 type PaymentAmountMode = "remaining" | "half" | "custom" | "split";
+type PaymentAllocationMode = "none" | "items" | "person";
 type OrderSnapshot = OpenOrderResponse & { items: OrderItemResponse[]; payments: OrderPayment[] };
 
 const statusLabels: Record<string, string> = {
@@ -103,6 +115,7 @@ function statusLabel(status: string) {
 
 export default function PosPage() {
   const [session, setSession] = useState<TenantSession | null>(null);
+  const [operationalDevice, setOperationalDevice] = useState<OperationalDeviceProfile | null>(null);
   const [branding, setBranding] = useState<TenantBranding | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -136,6 +149,9 @@ export default function PosPage() {
   const [cashReceived, setCashReceived] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentIntentId, setPaymentIntentId] = useState("");
+  const [paymentAllocationMode, setPaymentAllocationMode] = useState<PaymentAllocationMode>("none");
+  const [selectedAllocationItemIds, setSelectedAllocationItemIds] = useState<string[]>([]);
+  const [allocationSeatLabel, setAllocationSeatLabel] = useState("");
   const [splitPeople, setSplitPeople] = useState("2");
   const [splitParts, setSplitParts] = useState<Array<{ person: number; amountCents: number }>>([]);
   const [lastPayment, setLastPayment] = useState<PaymentResponse | null>(null);
@@ -198,13 +214,14 @@ export default function PosPage() {
     void (async () => {
       try {
         const context = await getSession();
-        const [apiProducts, apiTables, apiCategories, tenantBranding, apiCustomers] =
+        const [apiProducts, apiTables, apiCategories, tenantBranding, apiCustomers, device] =
           await Promise.all([
             listProducts(),
             context.branchId ? listTables(context.branchId) : Promise.resolve([]),
             listCategories(),
             getTenantBranding(),
             listCustomers(),
+            getCurrentOperationalDevice().catch(() => null),
           ]);
         const availableProducts =
           apiProducts.length > 0 ? apiProducts : context.isDemo ? demoProducts : [];
@@ -212,7 +229,13 @@ export default function PosPage() {
         const route = new URLSearchParams(window.location.search);
         const requestedTableId = route.get("tableId") ?? route.get("table");
         const requestedOrderId = route.get("orderId");
-        const requestedMode = route.get("mode") === "counter" ? "counter" : "table";
+        const deviceMode = device ? (device.initialMode === "table" ? "table" : "counter") : null;
+        const requestedMode =
+          route.get("mode") === "counter"
+            ? "counter"
+            : route.get("mode") === "table"
+              ? "table"
+              : (deviceMode ?? "table");
         const queueOrders =
           route.get("queue") === "qr" && context.branchId
             ? await listQrPendingOrders(context.branchId).catch(() => [])
@@ -222,6 +245,7 @@ export default function PosPage() {
         const initialMode = initialTableId ? "table" : requestedMode;
         const initialOrderId = requestedOrderId ?? (initialTableId ? "" : (queueOrder?.id ?? ""));
         setSession(context);
+        setOperationalDevice(device);
         setBranding(tenantBranding);
         setProducts(availableProducts);
         setTables(availableTables);
@@ -275,16 +299,49 @@ export default function PosPage() {
   }, [counterOrderId, loadOrder, selectedTableId, serviceMode, session?.branchId]);
 
   useEffect(() => {
+    const branchId = session?.branchId;
+    if (!branchId || !window.navigator.onLine) return;
+    const outbox = createOperationalOutbox({
+      tenantId: session.tenantId,
+      branchId,
+    });
+    void reconcileOperationalOutbox(outbox, replayOperationalMutation).then((summary) => {
+      if (summary.confirmed > 0) {
+        setMessage(`${summary.confirmed} operação(ões) pendente(s) reconciliada(s).`);
+        void loadOrder(branchId, serviceMode, selectedTableId, counterOrderId);
+      }
+    });
+  }, [
+    counterOrderId,
+    loadOrder,
+    selectedTableId,
+    serviceMode,
+    session?.branchId,
+    session?.tenantId,
+  ]);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const shortcut = resolvePosShortcut(event.key);
       if (!shortcut) return;
+      const target = event.target as HTMLElement | null;
+      const inDialog = Boolean(target?.closest(".modifier-dialog"));
+      const isEditing = Boolean(
+        target?.closest('input, textarea, select, [contenteditable="true"]'),
+      );
 
       if (shortcut === "dismiss") {
         event.preventDefault();
         setShortcutsOpen(false);
-        document.querySelector<HTMLButtonElement>(".modifier-dialog .icon-button")?.click();
+        setSelectedProduct(null);
+        setProductionPreview(null);
+        setPaymentOpen(false);
+        setDiscountOpen(false);
+        setCancelItemId("");
         return;
       }
+
+      if (isEditing || inDialog) return;
 
       if (shortcut === "search") {
         event.preventDefault();
@@ -329,6 +386,22 @@ export default function PosPage() {
     });
   }, [categoryId, favorites, products, query]);
 
+  async function runOperationalCommand<T extends Record<string, unknown>>(
+    input: Parameters<ReturnType<typeof createOperationalOutbox>["enqueue"]>[0],
+    send: () => Promise<T>,
+  ) {
+    if (!session?.branchId) throw new Error("Sessão operacional indisponível.");
+    const outbox = createOperationalOutbox({
+      tenantId: session.tenantId,
+      branchId: session.branchId,
+    });
+    const execution = await executeOperationalCommand(outbox, input, () => send());
+    if (!execution.result) {
+      throw new Error("Operação já confirmada. Atualize a comanda para reconciliar a tela.");
+    }
+    return execution.result;
+  }
+
   async function ensureOrder() {
     if (!session?.branchId) throw new Error("Sessão operacional indisponível.");
     const branchId = session.branchId;
@@ -350,16 +423,37 @@ export default function PosPage() {
     return opened as OrderSnapshot;
 
     function openNewOrder() {
-      return openOrder(
+      const tableId = serviceMode === "table" ? selectedTable?.id : undefined;
+      const payload = {
+        channel: tableId ? "table" : "counter",
         branchId,
-        serviceMode === "table" ? selectedTable?.id : undefined,
-        2,
-        selectedCustomerId || undefined,
+        ...(tableId ? { tableId } : {}),
+        ...(selectedCustomerId ? { customerId: selectedCustomerId } : {}),
+        peopleCount: 2,
+        idempotencyKey: createOperationIdempotencyKey("open-order"),
+      };
+      return runOperationalCommand(
+        {
+          idempotencyKey: payload.idempotencyKey,
+          operation: "open_order",
+          method: "POST",
+          path: "/api/v1/pos/orders/open",
+          payload,
+          replayable: true,
+        },
+        () =>
+          openOrder(branchId, tableId, 2, selectedCustomerId || undefined, payload.idempotencyKey),
       );
     }
   }
 
   async function runAction(action: () => Promise<void>) {
+    if (!window.navigator.onLine) {
+      setMessage(
+        "Conexão reduzida: mutações foram bloqueadas. Use 4G, a contingência térmica ou registre manualmente.",
+      );
+      return;
+    }
     setBusy(true);
     setMessage("Processando...");
     try {
@@ -373,18 +467,39 @@ export default function PosPage() {
 
   async function addProduct(product: Product, modifierIds: string[] = []) {
     const order = await ensureOrder();
+    if (!session?.branchId) throw new Error("Sessão operacional indisponível.");
     const notes = [
       orderNotes.trim(),
       customerPreferences.trim() ? `Preferências: ${customerPreferences.trim()}` : "",
     ]
       .filter(Boolean)
       .join(" | ");
-    const item = await addOrderItem(
-      order.id,
-      product.id,
-      modifierIds.map((optionId) => ({ optionId })),
-      notes || undefined,
+    const idempotencyKey = createOperationIdempotencyKey("pos-item");
+    const payload = {
+      productId: product.id,
       quantity,
+      notes: notes || undefined,
+      modifiers: modifierIds.map((optionId) => ({ optionId })),
+      idempotencyKey,
+    };
+    const item = await runOperationalCommand(
+      {
+        idempotencyKey,
+        operation: "add_order_item",
+        method: "POST",
+        path: `/api/v1/pos/orders/${order.id}/items`,
+        payload,
+        replayable: true,
+      },
+      () =>
+        addOrderItem(
+          order.id,
+          product.id,
+          payload.modifiers,
+          payload.notes,
+          quantity,
+          idempotencyKey,
+        ),
     );
     applyOrder({
       ...order,
@@ -395,7 +510,7 @@ export default function PosPage() {
     });
     setSelectedProduct(null);
     setQuantity(1);
-    setMessage(`${item.nameSnapshot} adicionado ao rascunho.`);
+    setMessage(`${item.nameSnapshot} confirmado na comanda.`);
   }
 
   function selectProduct(product: Product) {
@@ -435,6 +550,11 @@ export default function PosPage() {
   }
 
   function draftPaymentAmountCents() {
+    if (paymentAllocationMode === "items") {
+      return ticketItems
+        .filter((item) => selectedAllocationItemIds.includes(item.id))
+        .reduce((sum, item) => sum + item.totalCents, 0);
+    }
     return paymentMode === "remaining"
       ? remainingCents
       : paymentMode === "half"
@@ -451,6 +571,9 @@ export default function PosPage() {
     setCustomPayment("");
     setCashReceived("");
     setPaymentReference("");
+    setPaymentAllocationMode("none");
+    setSelectedAllocationItemIds([]);
+    setAllocationSeatLabel("");
     setPaymentIntentId(crypto.randomUUID());
     setSplitParts([]);
     setPaymentOpen(true);
@@ -474,13 +597,46 @@ export default function PosPage() {
     if (paymentMethod === "cash" && parseMoneyToCents(cashReceived) < amountCents)
       throw new Error("O valor recebido em dinheiro é menor que o pagamento.");
     if (!paymentIntentId) throw new Error("Inicie o recebimento novamente.");
+    if (paymentAllocationMode === "items" && selectedAllocationItemIds.length === 0)
+      throw new Error("Selecione ao menos um item para dividir por consumo.");
+    if (paymentAllocationMode === "person" && !allocationSeatLabel.trim())
+      throw new Error("Informe a pessoa ou posição da mesa.");
+    const allocations =
+      paymentAllocationMode === "items"
+        ? ticketItems
+            .filter((item) => selectedAllocationItemIds.includes(item.id))
+            .map((item) => ({
+              orderItemId: item.id,
+              amountCents: item.totalCents,
+              idempotencyKey: `allocation:${paymentIntentId}:item:${item.id}`,
+            }))
+        : paymentAllocationMode === "person"
+          ? [
+              {
+                seatLabel: allocationSeatLabel.trim(),
+                amountCents,
+                idempotencyKey: `allocation:${paymentIntentId}:person:${allocationSeatLabel.trim()}`,
+              },
+            ]
+          : [];
     const paymentInput = {
       method: paymentMethod,
       registeredVia: "cashier",
       idempotencyKey: `pos:${currentOrder.id}:${paymentIntentId}:${paymentMethod}:${amountCents}`,
       ...(paymentReference.trim() ? { reference: paymentReference.trim() } : {}),
+      ...(allocations.length ? { allocations } : {}),
     } as const;
-    const payment = await registerManualPayment(currentOrder.id, amountCents, paymentInput);
+    const payment = await runOperationalCommand(
+      {
+        idempotencyKey: paymentInput.idempotencyKey,
+        operation: "register_payment",
+        method: "POST",
+        path: `/api/v1/pos/orders/${currentOrder.id}/payments`,
+        payload: { amountCents, ...paymentInput },
+        replayable: true,
+      },
+      () => registerManualPayment(currentOrder.id, amountCents, paymentInput),
+    );
     setLastPayment(payment);
     await syncOrderPayments(currentOrder.id, payment.orderStatus);
     setPaymentOpen(false);
@@ -497,7 +653,18 @@ export default function PosPage() {
 
   async function sendProduction() {
     if (!currentOrder) return;
-    const sent = await sendOrderToKitchen(currentOrder.id);
+    const idempotencyKey = createOperationIdempotencyKey("send-production");
+    const sent = await runOperationalCommand(
+      {
+        idempotencyKey,
+        operation: "send_to_production",
+        method: "POST",
+        path: `/api/v1/pos/orders/${currentOrder.id}/send-to-kitchen`,
+        payload: {},
+        replayable: true,
+      },
+      () => sendOrderToKitchen(currentOrder.id),
+    );
     await refreshCurrentOrder();
     setProductionPreview(null);
     setMessage(`${sent.ticketsCreated.length} lote(s) enviado(s) para produção.`);
@@ -508,10 +675,18 @@ export default function PosPage() {
     const amountCents = parseMoneyToCents(discountAmount);
     if (amountCents <= 0 || !discountReason.trim())
       throw new Error("Informe valor e motivo do desconto.");
-    const result = await requestOrderDiscount(currentOrder.id, {
-      amountCents,
-      reason: discountReason.trim(),
-    });
+    const payload = { amountCents, reason: discountReason.trim() };
+    const result = await runOperationalCommand(
+      {
+        idempotencyKey: createOperationIdempotencyKey("discount"),
+        operation: "request_discount",
+        method: "POST",
+        path: `/api/v1/pos/orders/${currentOrder.id}/discounts`,
+        payload,
+        replayable: false,
+      },
+      () => requestOrderDiscount(currentOrder.id, payload),
+    );
     setDiscountOpen(false);
     setDiscountAmount("");
     setDiscountReason("");
@@ -526,10 +701,17 @@ export default function PosPage() {
   async function cancelItem() {
     if (!currentOrder || !cancelItemId || !cancelReason.trim())
       throw new Error("Informe o motivo do cancelamento.");
-    const result = await requestItemCancellation(
-      currentOrder.id,
-      cancelItemId,
-      cancelReason.trim(),
+    const payload = { reason: cancelReason.trim() };
+    const result = await runOperationalCommand(
+      {
+        idempotencyKey: createOperationIdempotencyKey("cancel-item"),
+        operation: "request_item_cancellation",
+        method: "POST",
+        path: `/api/v1/pos/orders/${currentOrder.id}/items/${cancelItemId}/cancel-requests`,
+        payload,
+        replayable: false,
+      },
+      () => requestItemCancellation(currentOrder.id, cancelItemId, payload.reason),
     );
     setCancelItemId("");
     setCancelReason("");
@@ -545,7 +727,18 @@ export default function PosPage() {
     if (!currentOrder) throw new Error("Nenhuma comanda aberta.");
     if (remainingCents > 0 || orderStatus !== "paid")
       throw new Error("Receba o saldo restante antes de fechar a conta.");
-    await closeOrder(currentOrder.id);
+    const idempotencyKey = createOperationIdempotencyKey("close-order");
+    await runOperationalCommand(
+      {
+        idempotencyKey,
+        operation: "close_order",
+        method: "POST",
+        path: `/api/v1/pos/orders/${currentOrder.id}/close`,
+        payload: {},
+        replayable: true,
+      },
+      () => closeOrder(currentOrder.id),
+    );
     applyOrder(null);
     if (serviceMode === "counter") {
       setCounterOrderId("");
@@ -588,38 +781,40 @@ export default function PosPage() {
         <a className="button ghost compact" href="/app">
           <ArrowLeft size={16} /> Painel
         </a>
-        <fieldset className="pos-mode-switch" aria-label="Tipo de atendimento">
-          <button
-            className={serviceMode === "table" ? "active" : ""}
-            type="button"
-            aria-pressed={serviceMode === "table"}
-            title="Mesa (F3 alterna o modo de atendimento)"
-            onClick={() =>
-              void runAction(async () => {
-                applyOrder(null);
-                setServiceMode("table");
-                await loadOrder(session?.branchId ?? "", "table", selectedTableId, "");
-              })
-            }
-          >
-            Mesa
-          </button>
-          <button
-            className={serviceMode === "counter" ? "active" : ""}
-            type="button"
-            aria-pressed={serviceMode === "counter"}
-            title="Balcão (F3 alterna o modo de atendimento)"
-            onClick={() =>
-              void runAction(async () => {
-                applyOrder(null);
-                setServiceMode("counter");
-                await loadOrder(session?.branchId ?? "", "counter", "", counterOrderId);
-              })
-            }
-          >
-            Balcão
-          </button>
-        </fieldset>
+        {operationalDevice?.allowModeSwitch === false ? null : (
+          <fieldset className="pos-mode-switch" aria-label="Tipo de atendimento">
+            <button
+              className={serviceMode === "table" ? "active" : ""}
+              type="button"
+              aria-pressed={serviceMode === "table"}
+              title="Mesa (F3 alterna o modo de atendimento)"
+              onClick={() =>
+                void runAction(async () => {
+                  applyOrder(null);
+                  setServiceMode("table");
+                  await loadOrder(session?.branchId ?? "", "table", selectedTableId, "");
+                })
+              }
+            >
+              Mesa
+            </button>
+            <button
+              className={serviceMode === "counter" ? "active" : ""}
+              type="button"
+              aria-pressed={serviceMode === "counter"}
+              title="Balcão (F3 alterna o modo de atendimento)"
+              onClick={() =>
+                void runAction(async () => {
+                  applyOrder(null);
+                  setServiceMode("counter");
+                  await loadOrder(session?.branchId ?? "", "counter", "", counterOrderId);
+                })
+              }
+            >
+              Balcão
+            </button>
+          </fieldset>
+        )}
         {serviceMode === "table" ? (
           <label className="pos-table-select">
             Mesa
@@ -654,7 +849,7 @@ export default function PosPage() {
             <Keyboard size={15} /> Atalhos
           </button>
           {shortcutsOpen ? (
-            <div className="pos-shortcuts-popover" role="note">
+            <div className="pos-shortcuts-popover" role="note" aria-label="Ajuda de atalhos do PDV">
               <strong>Atalhos do PDV</strong>
               <span>
                 <kbd>F2</kbd> buscar produto
@@ -680,6 +875,7 @@ export default function PosPage() {
               <span>
                 <kbd>Esc</kbd> fechar janela
               </span>
+              <small>Os atalhos ficam suspensos dentro de campos e janelas de confirmação.</small>
             </div>
           ) : null}
         </div>
@@ -687,6 +883,16 @@ export default function PosPage() {
           {message}
         </span>
       </div>
+
+      {session?.branchId ? (
+        <OperationalAttentionPanel
+          tenantId={session.tenantId}
+          branchId={session.branchId}
+          onResolved={() =>
+            loadOrder(session.branchId ?? "", serviceMode, selectedTableId, counterOrderId)
+          }
+        />
+      ) : null}
 
       {qrQueue.length ? (
         <section className="pos-qr-queue" aria-label="Pedidos QR aguardando revisão">
@@ -843,7 +1049,19 @@ export default function PosPage() {
                       void runAction(async () => {
                         setSelectedCustomerId(customer.id);
                         setCustomerQuery(customer.name);
-                        if (currentOrder) await assignOrderCustomer(currentOrder.id, customer.id);
+                        if (currentOrder) {
+                          const payload = { customerId: customer.id };
+                          await runOperationalCommand(
+                            {
+                              idempotencyKey: createOperationIdempotencyKey("assign-customer"),
+                              operation: "assign_customer",
+                              method: "PATCH",
+                              path: `/api/v1/pos/orders/${currentOrder.id}/customer`,
+                              payload,
+                            },
+                            () => assignOrderCustomer(currentOrder.id, customer.id),
+                          );
+                        }
                       })
                     }
                   >
@@ -867,6 +1085,7 @@ export default function PosPage() {
                     </small>
                   </div>
                   <button
+                    aria-label={`Cancelar ${item.nameSnapshot}`}
                     className="icon-button"
                     type="button"
                     title="Cancelar item"
@@ -877,6 +1096,7 @@ export default function PosPage() {
                   {cancelItemId === item.id ? (
                     <div className="pos-inline-form">
                       <input
+                        aria-label="Motivo do cancelamento"
                         value={cancelReason}
                         onChange={(event) => setCancelReason(event.target.value)}
                         placeholder="Motivo do cancelamento"
@@ -918,11 +1138,13 @@ export default function PosPage() {
           ) : null}
           <div className="pos-order-notes">
             <input
+              aria-label="Observação para os próximos itens"
               value={orderNotes}
               onChange={(event) => setOrderNotes(event.target.value)}
               placeholder="Observação para os próximos itens"
             />
             <input
+              aria-label="Preferências do cliente"
               value={customerPreferences}
               onChange={(event) => setCustomerPreferences(event.target.value)}
               placeholder="Preferências do cliente"
@@ -999,12 +1221,14 @@ export default function PosPage() {
           {discountOpen ? (
             <div className="pos-inline-form pos-discount-form">
               <input
+                aria-label="Valor do desconto"
                 inputMode="decimal"
                 value={discountAmount}
                 onChange={(event) => setDiscountAmount(event.target.value)}
                 placeholder="Valor do desconto"
               />
               <input
+                aria-label="Motivo do desconto"
                 value={discountReason}
                 onChange={(event) => setDiscountReason(event.target.value)}
                 placeholder="Motivo"
@@ -1046,250 +1270,282 @@ export default function PosPage() {
       </section>
 
       {selectedProduct ? (
-        <div className="modifier-dialog">
-          <div className="modifier-dialog-content">
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setSelectedProduct(null)}
-              aria-label="Fechar modificadores"
-            >
-              <X size={18} />
+        <Dialog
+          className="modifier-dialog-content"
+          onClose={() => setSelectedProduct(null)}
+          open
+          title={selectedProduct.name}
+        >
+          <label>
+            Quantidade
+            <input
+              type="number"
+              min="1"
+              max="99"
+              value={quantity}
+              onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))}
+            />
+          </label>
+          {modifierGroups.map((group) => (
+            <fieldset key={group.id}>
+              <legend>
+                {group.name}
+                {group.isRequired ? " · obrigatório" : ""}
+              </legend>
+              {group.options.map((option) => (
+                <label key={option.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedModifierIds.includes(option.id)}
+                    onChange={(event) =>
+                      setSelectedModifierIds((current) =>
+                        event.target.checked
+                          ? [
+                              ...current.filter(
+                                (id) => !group.options.some((entry) => entry.id === id),
+                              ),
+                              option.id,
+                            ]
+                          : current.filter((id) => id !== option.id),
+                      )
+                    }
+                  />
+                  {option.name}
+                  <span>
+                    {option.priceDeltaCents
+                      ? `+ ${formatMoney(option.priceDeltaCents)}`
+                      : "Incluído"}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          ))}
+          <div className="modifier-actions">
+            <button className="button ghost" type="button" onClick={() => setSelectedProduct(null)}>
+              Cancelar
             </button>
-            <h2>{selectedProduct.name}</h2>
-            <label>
-              Quantidade
-              <input
-                type="number"
-                min="1"
-                max="99"
-                value={quantity}
-                onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))}
-              />
-            </label>
-            {modifierGroups.map((group) => (
-              <fieldset key={group.id}>
-                <legend>
-                  {group.name}
-                  {group.isRequired ? " · obrigatório" : ""}
-                </legend>
-                {group.options.map((option) => (
-                  <label key={option.id}>
-                    <input
-                      type="checkbox"
-                      checked={selectedModifierIds.includes(option.id)}
-                      onChange={(event) =>
-                        setSelectedModifierIds((current) =>
-                          event.target.checked
-                            ? [
-                                ...current.filter(
-                                  (id) => !group.options.some((entry) => entry.id === id),
-                                ),
-                                option.id,
-                              ]
-                            : current.filter((id) => id !== option.id),
-                        )
-                      }
-                    />
-                    {option.name}
-                    <span>
-                      {option.priceDeltaCents
-                        ? `+ ${formatMoney(option.priceDeltaCents)}`
-                        : "Incluído"}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-            ))}
+            <button
+              className="button primary"
+              type="button"
+              onClick={() => void runAction(() => addProduct(selectedProduct, selectedModifierIds))}
+            >
+              Adicionar à comanda
+            </button>
+          </div>
+        </Dialog>
+      ) : null}
+
+      {productionPreview ? (
+        <Dialog
+          className="modifier-dialog-content"
+          onClose={() => setProductionPreview(null)}
+          open
+          title="Conferir envio"
+        >
+          <span className="section-kicker">
+            <ChefHat size={15} /> Rotas de produção
+          </span>
+          {productionPreview.destinations.map((destination) => (
+            <div className="pos-routing-row" key={destination.stationId}>
+              <strong>{destination.stationName}</strong>
+              <span>
+                {destination.itemIds.length} item(ns) ·{" "}
+                {destination.outputMode === "printer"
+                  ? "impressora térmica"
+                  : destination.outputMode === "hybrid"
+                    ? "KDS + impressora"
+                    : "KDS"}
+              </span>
+            </div>
+          ))}
+          {productionPreview.unroutedItems.length ? (
+            <p className="danger-text">
+              Itens sem rota:{" "}
+              {productionPreview.unroutedItems.map((item) => item.nameSnapshot).join(", ")}
+            </p>
+          ) : (
             <div className="modifier-actions">
               <button
                 className="button ghost"
                 type="button"
-                onClick={() => setSelectedProduct(null)}
+                onClick={() => setProductionPreview(null)}
               >
-                Cancelar
+                Voltar
               </button>
               <button
                 className="button primary"
                 type="button"
-                onClick={() =>
-                  void runAction(() => addProduct(selectedProduct, selectedModifierIds))
-                }
+                disabled={busy}
+                onClick={() => void runAction(sendProduction)}
               >
-                Adicionar à comanda
+                Enviar agora
               </button>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {productionPreview ? (
-        <div className="modifier-dialog">
-          <div className="modifier-dialog-content">
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setProductionPreview(null)}
-              aria-label="Fechar prévia"
-            >
-              <X size={18} />
-            </button>
-            <span className="section-kicker">
-              <ChefHat size={15} /> Rotas de produção
-            </span>
-            <h2>Conferir envio</h2>
-            {productionPreview.destinations.map((destination) => (
-              <div className="pos-routing-row" key={destination.stationId}>
-                <strong>{destination.stationName}</strong>
-                <span>
-                  {destination.itemIds.length} item(ns) ·{" "}
-                  {destination.outputMode === "printer"
-                    ? "impressora térmica"
-                    : destination.outputMode === "hybrid"
-                      ? "KDS + impressora"
-                      : "KDS"}
-                </span>
-              </div>
-            ))}
-            {productionPreview.unroutedItems.length ? (
-              <p className="danger-text">
-                Itens sem rota:{" "}
-                {productionPreview.unroutedItems.map((item) => item.nameSnapshot).join(", ")}
-              </p>
-            ) : (
-              <div className="modifier-actions">
-                <button
-                  className="button ghost"
-                  type="button"
-                  onClick={() => setProductionPreview(null)}
-                >
-                  Voltar
-                </button>
-                <button
-                  className="button primary"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void runAction(sendProduction)}
-                >
-                  Enviar agora
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+          )}
+        </Dialog>
       ) : null}
 
       {paymentOpen ? (
-        <div className="modifier-dialog">
-          <div className="modifier-dialog-content pos-payment-drawer">
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setPaymentOpen(false)}
-              aria-label="Fechar recebimento"
-            >
-              <X size={18} />
-            </button>
-            <span className="section-kicker">
-              <Banknote size={15} /> Recebimento
-            </span>
-            <h2>{formatMoney(remainingCents)} restantes</h2>
-            <div className="payment-method-grid">
-              {paymentMethodOptions.map(([value, label]) => (
-                <button
-                  className={paymentMethod === value ? "active" : ""}
-                  type="button"
-                  key={value}
-                  onClick={() => setPaymentMethod(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <label>
-              Divisão
-              <select
-                value={paymentMode}
-                onChange={(event) => setPaymentMode(event.target.value as PaymentAmountMode)}
+        <Dialog
+          className="modifier-dialog-content pos-payment-drawer"
+          onClose={() => setPaymentOpen(false)}
+          open
+          title={`Recebimento · ${formatMoney(remainingCents)} restantes`}
+        >
+          <span className="section-kicker">
+            <Banknote size={15} /> Recebimento
+          </span>
+          <div className="payment-method-grid">
+            {paymentMethodOptions.map(([value, label]) => (
+              <button
+                className={paymentMethod === value ? "active" : ""}
+                type="button"
+                key={value}
+                onClick={() => setPaymentMethod(value)}
               >
-                <option value="remaining">Receber saldo total</option>
-                <option value="half">Receber metade</option>
-                <option value="custom">Informar valor</option>
-                <option value="split">Dividir por pessoas</option>
-              </select>
-            </label>
-            {paymentMode === "split" ? (
-              <div className="pos-split-row">
-                <input
-                  type="number"
-                  min="2"
-                  value={splitPeople}
-                  onChange={(event) => setSplitPeople(event.target.value)}
-                />
-                <button
-                  className="button ghost compact"
-                  type="button"
-                  onClick={() => void runAction(calculateSplit)}
-                >
-                  Calcular divisão
-                </button>
-                {splitParts.length ? <span>{splitParts.length} partes calculadas</span> : null}
-              </div>
-            ) : null}
+                {label}
+              </button>
+            ))}
+          </div>
+          <label>
+            Divisão
+            <select
+              value={paymentMode}
+              onChange={(event) => setPaymentMode(event.target.value as PaymentAmountMode)}
+            >
+              <option value="remaining">Receber saldo total</option>
+              <option value="half">Receber metade</option>
+              <option value="custom">Informar valor</option>
+              <option value="split">Dividir por pessoas</option>
+            </select>
+          </label>
+          <label>
+            Atribuir pagamento (opcional)
+            <select
+              value={paymentAllocationMode}
+              onChange={(event) => {
+                setPaymentAllocationMode(event.target.value as PaymentAllocationMode);
+                setSelectedAllocationItemIds([]);
+                setAllocationSeatLabel("");
+              }}
+            >
+              <option value="none">Sem atribuição</option>
+              <option value="items">Por itens consumidos</option>
+              <option value="person">Por pessoa ou posição</option>
+            </select>
+          </label>
+          {paymentAllocationMode === "items" ? (
+            <fieldset className="pos-payment-allocation">
+              <legend>Itens deste pagamento</legend>
+              {ticketItems
+                .filter((item) => item.status !== "canceled")
+                .map((item) => (
+                  <label className="check-line" key={item.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedAllocationItemIds.includes(item.id)}
+                      onChange={(event) =>
+                        setSelectedAllocationItemIds((current) =>
+                          event.target.checked
+                            ? [...current, item.id]
+                            : current.filter((id) => id !== item.id),
+                        )
+                      }
+                    />
+                    {item.nameSnapshot} · {formatMoney(item.totalCents)}
+                  </label>
+                ))}
+            </fieldset>
+          ) : null}
+          {paymentAllocationMode === "person" ? (
             <label>
-              Valor
+              Pessoa ou posição
               <input
-                inputMode="decimal"
-                value={
-                  paymentMode === "remaining"
+                value={allocationSeatLabel}
+                onChange={(event) => setAllocationSeatLabel(event.target.value)}
+                placeholder="Ex.: Pessoa 2 ou Cabeceira"
+                maxLength={80}
+              />
+            </label>
+          ) : null}
+          {paymentMode === "split" ? (
+            <div className="pos-split-row">
+              <input
+                aria-label="Quantidade de pessoas para divisão"
+                type="number"
+                min="2"
+                value={splitPeople}
+                onChange={(event) => setSplitPeople(event.target.value)}
+              />
+              <button
+                className="button ghost compact"
+                type="button"
+                onClick={() => void runAction(calculateSplit)}
+              >
+                Calcular divisão
+              </button>
+              {splitParts.length ? <span>{splitParts.length} partes calculadas</span> : null}
+            </div>
+          ) : null}
+          <label>
+            Valor
+            <input
+              inputMode="decimal"
+              value={
+                paymentAllocationMode === "items"
+                  ? (draftPaymentAmountCents() / 100).toFixed(2).replace(".", ",")
+                  : paymentMode === "remaining"
                     ? (remainingCents / 100).toFixed(2).replace(".", ",")
                     : paymentMode === "half"
                       ? (Math.ceil(remainingCents / 2) / 100).toFixed(2).replace(".", ",")
                       : customPayment
-                }
-                disabled={paymentMode === "remaining" || paymentMode === "half"}
-                onChange={(event) => setCustomPayment(event.target.value)}
-              />
-            </label>
-            {paymentMethod === "cash" ? (
-              <label>
-                Valor recebido
-                <input
-                  inputMode="decimal"
-                  value={cashReceived}
-                  onChange={(event) => setCashReceived(event.target.value)}
-                  placeholder="Ex.: 100,00"
-                />
-                {cashReceived && parseMoneyToCents(cashReceived) >= draftPaymentAmountCents() ? (
-                  <small>
-                    Troco {formatMoney(parseMoneyToCents(cashReceived) - draftPaymentAmountCents())}
-                  </small>
-                ) : null}
-              </label>
-            ) : null}
+              }
+              disabled={
+                paymentAllocationMode === "items" ||
+                paymentMode === "remaining" ||
+                paymentMode === "half"
+              }
+              onChange={(event) => setCustomPayment(event.target.value)}
+            />
+          </label>
+          {paymentMethod === "cash" ? (
             <label>
-              Referência (opcional)
+              Valor recebido
               <input
-                value={paymentReference}
-                onChange={(event) => setPaymentReference(event.target.value)}
-                placeholder="NSU, comprovante ou observação"
+                inputMode="decimal"
+                value={cashReceived}
+                onChange={(event) => setCashReceived(event.target.value)}
+                placeholder="Ex.: 100,00"
               />
+              {cashReceived && parseMoneyToCents(cashReceived) >= draftPaymentAmountCents() ? (
+                <small>
+                  Troco {formatMoney(parseMoneyToCents(cashReceived) - draftPaymentAmountCents())}
+                </small>
+              ) : null}
             </label>
-            <div className="modifier-actions">
-              <button className="button ghost" type="button" onClick={() => setPaymentOpen(false)}>
-                Cancelar
-              </button>
-              <button
-                className="button primary"
-                type="button"
-                disabled={busy || !canPay}
-                onClick={() => void runAction(submitPayment)}
-              >
-                Confirmar recebimento
-              </button>
-            </div>
+          ) : null}
+          <label>
+            Referência (opcional)
+            <input
+              value={paymentReference}
+              onChange={(event) => setPaymentReference(event.target.value)}
+              placeholder="NSU, comprovante ou observação"
+            />
+          </label>
+          <div className="modifier-actions">
+            <button className="button ghost" type="button" onClick={() => setPaymentOpen(false)}>
+              Cancelar
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy || !canPay}
+              onClick={() => void runAction(submitPayment)}
+            >
+              Confirmar recebimento
+            </button>
           </div>
-        </div>
+        </Dialog>
       ) : null}
     </main>
   );

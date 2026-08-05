@@ -1,11 +1,12 @@
 import { Module } from "@nestjs/common";
 import { RateLimitService } from "../../common/rate-limit";
 import { AuthModule } from "../auth/auth.module";
+import { PosModule } from "../pos/pos.module";
 import { QrController } from "./qr.controller";
 import { QrService } from "./qr.service";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, PosModule],
   controllers: [QrController],
   providers: [QrService, RateLimitService],
   exports: [QrService],

@@ -19,7 +19,6 @@ concurrency:
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "11.7.0"
-  COVERAGE_THRESHOLD: "0"
   DATABASE_URL: postgres://giromesa:giromesa@localhost:5432/giromesa
   REDIS_URL: redis://localhost:6379
   API_URL: http://127.0.0.1:3333
@@ -30,12 +29,12 @@ env:
   SESSION_SECRET: ci-session-secret-change-in-production
   PASSWORD_PEPPER: ci-password-pepper-change-in-production
   MFA_SECRET_ENCRYPTION_KEY: ci-mfa-secret-change-in-production
-  SMTP_HOST: smtp.example.com
+  SMTP_HOST: smtp.giromesa.test
   SMTP_PORT: "587"
   SMTP_SECURE: "false"
   SMTP_USER: ci
   SMTP_PASSWORD: ci
-  EMAIL_FROM: no-reply@example.com
+  EMAIL_FROM: no-reply@giromesa.test
 
 jobs:
   coverage:
@@ -89,6 +88,9 @@ jobs:
       - name: Run tests with coverage
         run: pnpm test:coverage
 
+      - name: Enforce domain coverage baselines
+        run: pnpm coverage:baseline
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         if: always() && hashFiles('coverage/coverage-summary.json') != ''
@@ -104,9 +106,6 @@ jobs:
           node - <<'NODE'
           const fs = require('node:fs');
           const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
-          const threshold = Number(process.env.COVERAGE_THRESHOLD || 0);
-          const lines = Number(summary.total.lines.pct || 0);
-          const status = lines >= threshold ? 'passed' : 'failed';
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
             '## GiroMesa coverage',
             '',
@@ -117,12 +116,9 @@ jobs:
             `| Functions | ${summary.total.functions.pct}% |`,
             `| Branches | ${summary.total.branches.pct}% |`,
             '',
-            `Threshold: ${threshold}% (${status})`,
+            'Domain floors: enforced by security/coverage-baselines.json',
             ''
           ].join('\n'));
-          if (lines < threshold) {
-            process.exit(1);
-          }
           NODE
 
       - name: Comment PR with coverage
@@ -146,6 +142,6 @@ jobs:
                 `| Functions | ${coverage.total.functions.pct}% |`,
                 `| Branches | ${coverage.total.branches.pct}% |`,
                 '',
-                `Threshold atual: ${process.env.COVERAGE_THRESHOLD}%`
+                'Pisos por domÃ­nio validados por security/coverage-baselines.json'
               ].join('\n')
             });

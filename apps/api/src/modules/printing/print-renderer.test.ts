@@ -79,19 +79,38 @@ describe("renderKitchenTicket", () => {
   it("renders a payment receipt with the same document standard", () => {
     const rendered = renderPaymentReceipt({
       tenantName: "Bar Aurora",
+      establishmentDocument: "12.345.678/0001-90",
+      branchName: "Centro",
+      address: "Rua Exemplo, 100",
       orderCode: "M03-01",
       tableCode: "M03",
       operatorName: "Caixa 01",
-      paymentMethod: "pix_manual",
-      amountCents: 6600,
+      items: [{ name: "Burger Classico", quantity: "2", unitPriceCents: 3200, totalCents: 6400 }],
+      subtotalCents: 6400,
+      discountCents: 400,
+      serviceChargeCents: 600,
+      totalCents: 6600,
+      payments: [
+        { method: "pix_manual", amountCents: 3000 },
+        { method: "cash", amountCents: 3600 },
+      ],
       paidAt: "2026-07-03T22:00:00.000Z",
       charactersPerLine: 32,
     });
 
     expect(rendered).toContain("COMPROVANTE");
+    expect(rendered).toContain("CNPJ/CPF: 12.345.678/0001-90");
+    expect(rendered).toContain("Unidade: Centro");
+    expect(rendered).toContain("FISCAL");
     expect(rendered).toContain("Emitido por GiroMesa");
-    expect(rendered).toContain("Pagamento: Pix manual");
-    expect(rendered).toContain("Valor pago");
+    expect(rendered).toContain("2x Burger Classico");
+    expect(rendered).toContain("Unitario");
+    expect(rendered).toContain("Subtotal");
+    expect(rendered).toContain("Desconto");
+    expect(rendered).toContain("Servico");
+    expect(rendered).toContain("Total");
+    expect(rendered).toContain("Pix manual");
+    expect(rendered).toContain("Dinheiro");
     expect(rendered).toContain("Via caixa");
   });
 });

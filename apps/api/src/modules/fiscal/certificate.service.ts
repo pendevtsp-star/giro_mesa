@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { auditLogs, fiscalCertificates } from "@giromesa/db";
+import { auditLogs, branches, fiscalCertificates, fiscalSettings } from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
-import { decryptSecret, encryptSecret } from "../../common/secret-vault";
+import { decryptSecret } from "../../common/secret-vault";
 import { DatabaseService } from "../database/database.service";
 
 export type CertificateUploadInput = {
@@ -28,48 +28,53 @@ export class CertificateService {
       throw new BadRequestException("Certificate file too large (max 10MB)");
     }
 
-    const dataEncrypted = encryptSecret(input.data.toString("base64"));
-
-    const metadata: Record<string, unknown> = {};
-    if (input.password) {
-      metadata.passwordHash = createHash("sha256").update(input.password).digest("hex");
-    }
-
-    const [certificate] = await this.database.db
-      .insert(fiscalCertificates)
-      .values({
-        tenantId: context.tenantId,
+    try {
+      const [branch] = await this.database.db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(and(eq(branches.tenantId, context.tenantId), eq(branches.id, input.branchId)))
+        .limit(1);
+      if (!branch) throw new NotFoundException("Branch not found");
+      if (process.env.NODE_ENV === "production") {
+        throw new BadRequestException(
+          "Certificate transmission is unavailable until the Focus provider contract is configured",
+        );
+      }
+      if (!input.password?.trim())
+        throw new BadRequestException("Certificate password is required");
+      const fingerprint = createHash("sha256").update(input.data).digest("hex");
+      const [settings] = await this.database.db
+        .update(fiscalSettings)
+        .set({
+          certificateFingerprint: fingerprint,
+          providerCertificateStatus: "simulator_accepted",
+          onboardingStatus: "provider_validation",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(fiscalSettings.tenantId, context.tenantId),
+            eq(fiscalSettings.branchId, input.branchId),
+          ),
+        )
+        .returning();
+      if (!settings) throw new NotFoundException("Start fiscal onboarding first");
+      await this.audit(context, {
         branchId: input.branchId,
-        name: input.name,
-        type: input.type ?? "a1",
-        dataEncrypted,
-        filename: input.filename,
-        isActive: true,
-        metadata,
-      })
-      .returning();
-
-    if (!certificate) {
-      throw new Error("Failed to create certificate");
+        action: "fiscal.certificate_transmitted_to_simulator",
+        entityType: "fiscal_settings",
+        entityId: settings.id,
+        metadata: { fingerprint, filename: input.filename, retained: false },
+      });
+      return {
+        branchId: input.branchId,
+        fingerprint,
+        providerStatus: "simulator_accepted",
+        retained: false,
+      };
+    } finally {
+      input.data.fill(0);
     }
-
-    await this.audit(context, {
-      branchId: input.branchId,
-      action: "fiscal.certificate_uploaded",
-      entityType: "fiscal_certificate",
-      entityId: certificate.id,
-      metadata: { name: input.name, type: input.type ?? "a1", filename: input.filename },
-    });
-
-    return {
-      id: certificate.id,
-      name: certificate.name,
-      type: certificate.type,
-      branchId: certificate.branchId,
-      filename: certificate.filename,
-      isActive: certificate.isActive,
-      createdAt: certificate.createdAt,
-    };
   }
 
   async list(context: TenantContext, branchId?: string) {
@@ -251,18 +256,6 @@ export class CertificateService {
 
     if (certificate.expiresAt && certificate.expiresAt < new Date()) {
       throw new BadRequestException("Certificate has expired");
-    }
-
-    const metadata = (certificate.metadata ?? {}) as Record<string, unknown>;
-    const passwordHash = metadata.passwordHash as string | undefined;
-
-    if (passwordHash && password) {
-      const computedHash = createHash("sha256").update(password).digest("hex");
-      if (computedHash !== passwordHash) {
-        throw new BadRequestException("Invalid certificate password");
-      }
-    } else if (passwordHash && !password) {
-      throw new BadRequestException("Certificate requires a password");
     }
 
     const decryptedBase64 = decryptSecret(certificate.dataEncrypted);

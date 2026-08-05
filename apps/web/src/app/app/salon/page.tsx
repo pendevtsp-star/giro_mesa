@@ -7,6 +7,8 @@ import { arrangeTablesForMerge, moveTablesInLayout } from "../../../features/flo
 import { TableActionPopup } from "../../../features/floor/TableActionPopup";
 import {
   acknowledgeServiceRequest,
+  activateQrTableService,
+  approveQrPresenceApproval,
   buildPosEventsUrl,
   createDiningTable,
   createFloorArea,
@@ -14,9 +16,12 @@ import {
   getFloorPlan,
   getSession,
   listFloorAreas,
+  listQrPresenceApprovals,
   listServiceRequests,
   listTables,
   mergeTables,
+  type QrPresenceApproval,
+  replayOperationalMutation,
   resolveServiceRequest,
   type ServiceRequest,
   saveFloorPlan,
@@ -24,6 +29,12 @@ import {
   updateFloorArea,
   updateTable,
 } from "../../../lib/giromesa-api";
+import {
+  createOperationalOutbox,
+  createOperationIdempotencyKey,
+  executeOperationalCommand,
+  reconcileOperationalOutbox,
+} from "../../../lib/operational-outbox";
 
 type Position = { x: number; y: number };
 const TABLE_W = 175;
@@ -54,12 +65,14 @@ export default function SalonPage() {
   const [mode, setMode] = useState<"operation" | "edit">("edit");
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [branchId, setBranchId] = useState("");
+  const [tenantId, setTenantId] = useState("");
   const [layout, setLayout] = useState<Record<string, Position>>({});
   const [savedLayout, setSavedLayout] = useState<Record<string, Position>>({});
   const [layoutHistory, setLayoutHistory] = useState<Array<Record<string, Position>>>([]);
   const [planVersion, setPlanVersion] = useState(0);
   const [message, setMessage] = useState("Carregando mapa do salão...");
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
+  const [presenceApprovals, setPresenceApprovals] = useState<QrPresenceApproval[]>([]);
   const [areas, setAreas] = useState<Array<{ id: string; name: string; isActive: boolean }>>([]);
   const [areaName, setAreaName] = useState("");
   const [form, setForm] = useState({
@@ -99,6 +112,8 @@ export default function SalonPage() {
 
   // Pan state
   const panRef = useRef({ isPanning: false, startX: 0, startY: 0 });
+  const panFrameRef = useRef<number | null>(null);
+  const panPointRef = useRef({ x: 0, y: 0 });
 
   const load = useCallback(async (id: string) => {
     const [rows, plan, areaRows] = await Promise.all([
@@ -121,6 +136,7 @@ export default function SalonPage() {
       try {
         const session = await getSession();
         if (!session.branchId) throw new Error();
+        setTenantId(session.tenantId);
         setBranchId(session.branchId);
         await load(session.branchId);
         setMessage("Arraste as mesas para organizar o salão e salve a disposição.");
@@ -131,24 +147,78 @@ export default function SalonPage() {
   }, [load]);
 
   useEffect(() => {
+    if (!tenantId || !branchId || !window.navigator.onLine) return;
+    const outbox = createOperationalOutbox({ tenantId, branchId });
+    void reconcileOperationalOutbox(outbox, replayOperationalMutation).then((summary) => {
+      if (summary.confirmed > 0) {
+        setMessage(`${summary.confirmed} alteração(ões) do salão reconciliada(s).`);
+        void load(branchId);
+      }
+    });
+  }, [branchId, load, tenantId]);
+
+  const runSalonCommand = useCallback(
+    async <T extends Record<string, unknown>>(
+      input: Parameters<ReturnType<typeof createOperationalOutbox>["enqueue"]>[0],
+      send: () => Promise<T>,
+    ) => {
+      if (!tenantId || !branchId) throw new Error("Sessão operacional indisponível.");
+      const outbox = createOperationalOutbox({ tenantId, branchId });
+      const execution = await executeOperationalCommand(outbox, input, () => send());
+      if (!execution.result) throw new Error("Alteração já confirmada. Atualize o salão.");
+      return execution.result;
+    },
+    [branchId, tenantId],
+  );
+
+  const mutateTable = useCallback(
+    (tableId: string, data: Parameters<typeof updateTable>[1]) =>
+      runSalonCommand(
+        {
+          idempotencyKey: createOperationIdempotencyKey("update-table"),
+          operation: "update_table",
+          method: "PATCH",
+          path: `/api/v1/pos/tables/${tableId}`,
+          payload: data,
+        },
+        () => updateTable(tableId, data),
+      ),
+    [runSalonCommand],
+  );
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      if (panFrameRef.current !== null) cancelAnimationFrame(panFrameRef.current);
+    };
   }, []);
 
   useEffect(() => {
     if (!branchId) return;
     const refreshRequests = () =>
-      void listServiceRequests()
-        .then((rows) =>
+      void Promise.all([listServiceRequests(), listQrPresenceApprovals()])
+        .then(([rows, approvals]) => {
           setServiceRequests(
             rows.filter((request) => ["pending", "acknowledged"].includes(request.status)),
-          ),
-        )
+          );
+          setPresenceApprovals(approvals);
+        })
         .catch(() => undefined);
     refreshRequests();
     const interval = window.setInterval(refreshRequests, 15_000);
     return () => window.clearInterval(interval);
   }, [branchId]);
+
+  async function approvePresence(request: QrPresenceApproval) {
+    try {
+      await approveQrPresenceApproval(request.id);
+      setPresenceApprovals((current) => current.filter((item) => item.id !== request.id));
+      setMessage(`Presença confirmada para a ${request.tableCode}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível confirmar a presença.");
+    }
+  }
 
   useEffect(() => {
     if (!branchId) return;
@@ -185,7 +255,17 @@ export default function SalonPage() {
   async function persist() {
     if (!branchId) return;
     try {
-      const saved = await saveFloorPlan(branchId, layout, planVersion);
+      const payload = { branchId, layout, expectedVersion: planVersion };
+      const saved = await runSalonCommand(
+        {
+          idempotencyKey: createOperationIdempotencyKey("floor-plan"),
+          operation: "save_floor_plan",
+          method: "PATCH",
+          path: "/api/v1/pos/floor-plan",
+          payload,
+        },
+        () => saveFloorPlan(branchId, layout, planVersion),
+      );
       setPlanVersion(saved.version);
       setSavedLayout(layout);
       setLayoutHistory([]);
@@ -252,7 +332,7 @@ export default function SalonPage() {
 
   async function restoreTable(table: DiningTable) {
     try {
-      const result = await updateTable(table.id, { archived: false, status: "free" });
+      const result = await mutateTable(table.id, { archived: false, status: "free" });
       setTables((current) => current.map((item) => (item.id === table.id ? result.data : item)));
       setMessage(`Mesa ${table.code} restaurada no mapa.`);
     } catch {
@@ -279,9 +359,14 @@ export default function SalonPage() {
 
   const handlePanPointerMove = useCallback((e: React.PointerEvent) => {
     if (!panRef.current.isPanning) return;
-    setPan({
-      x: e.clientX - panRef.current.startX,
-      y: e.clientY - panRef.current.startY,
+    panPointRef.current = { x: e.clientX, y: e.clientY };
+    if (panFrameRef.current !== null) return;
+    panFrameRef.current = requestAnimationFrame(() => {
+      panFrameRef.current = null;
+      setPan({
+        x: panPointRef.current.x - panRef.current.startX,
+        y: panPointRef.current.y - panRef.current.startY,
+      });
     });
   }, []);
 
@@ -452,8 +537,29 @@ export default function SalonPage() {
         case "close-account":
           window.location.href = `/app/pos?tableId=${encodeURIComponent(table.id)}`;
           break;
+        case "activate-qr": {
+          try {
+            const session = await runSalonCommand(
+              {
+                idempotencyKey: createOperationIdempotencyKey("activate-table-qr"),
+                operation: "activate_table_qr",
+                method: "POST",
+                path: `/api/v1/qr/tables/${table.id}/service-session`,
+                payload: {},
+                replayable: false,
+              },
+              () => activateQrTableService(table.id),
+            );
+            setMessage(
+              `QR da ${table.code} ativo. Código do cliente: ${session.code} (válido até ${new Date(session.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}).`,
+            );
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : "Não foi possível ativar o QR.");
+          }
+          break;
+        }
         case "reserve": {
-          const result = await updateTable(table.id, {
+          const result = await mutateTable(table.id, {
             status: "reserved",
             reservedName: (data?.reservedName as string) || null,
           });
@@ -464,7 +570,7 @@ export default function SalonPage() {
           break;
         }
         case "cancel-reserve": {
-          const result = await updateTable(table.id, {
+          const result = await mutateTable(table.id, {
             status: "free",
             reservedName: null,
           });
@@ -474,7 +580,7 @@ export default function SalonPage() {
         }
         case "edit-table": {
           try {
-            const result = await updateTable(table.id, {
+            const result = await mutateTable(table.id, {
               seats: Number(data?.seats),
               shape: (data?.shape as "rounded" | "square" | "circle" | "booth") ?? "rounded",
             });
@@ -488,7 +594,7 @@ export default function SalonPage() {
         case "block-table":
         case "unblock-table": {
           try {
-            const result = await updateTable(table.id, {
+            const result = await mutateTable(table.id, {
               status: action === "block-table" ? "blocked" : "free",
             });
             setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
@@ -504,7 +610,7 @@ export default function SalonPage() {
         }
         case "archive-table": {
           try {
-            const result = await updateTable(table.id, { archived: true });
+            const result = await mutateTable(table.id, { archived: true });
             setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
             setMessage(`Mesa ${table.code} arquivada.`);
           } catch {
@@ -513,13 +619,13 @@ export default function SalonPage() {
           break;
         }
         case "mark-cleaning": {
-          const result = await updateTable(table.id, { status: "cleaning" });
+          const result = await mutateTable(table.id, { status: "cleaning" });
           setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
           setMessage(`Mesa ${table.code} marcada como a limpar.`);
           break;
         }
         case "release-table": {
-          const result = await updateTable(table.id, { status: "free", reservedName: null });
+          const result = await mutateTable(table.id, { status: "free", reservedName: null });
           setTables((prev) => prev.map((item) => (item.id === table.id ? result.data : item)));
           setMessage(`Mesa ${table.code} liberada.`);
           break;
@@ -531,7 +637,17 @@ export default function SalonPage() {
                   .filter((candidate) => candidate.groupId === table.groupId)
                   .map((candidate) => candidate.id)
               : [];
-            const result = await unmergeTables(table.id);
+            const idempotencyKey = createOperationIdempotencyKey("unmerge-tables");
+            const result = await runSalonCommand(
+              {
+                idempotencyKey,
+                operation: "unmerge_tables",
+                method: "DELETE",
+                path: `/api/v1/pos/unmerge-tables/${table.id}`,
+                payload: {},
+              },
+              () => unmergeTables(table.id),
+            );
             setTables(result.data);
             if (groupTableIds.length > 1) {
               const nextLayout = { ...layout };
@@ -555,7 +671,7 @@ export default function SalonPage() {
         }
       }
     },
-    [layout, tables],
+    [layout, mutateTable, runSalonCommand, tables],
   );
 
   // === Merge mode ===
@@ -563,7 +679,17 @@ export default function SalonPage() {
     if (selectedTables.size < 2 || !branchId) return;
     try {
       const tableIds = Array.from(selectedTables);
-      const result = await mergeTables(branchId, tableIds);
+      const payload = { branchId, tableIds };
+      const result = await runSalonCommand(
+        {
+          idempotencyKey: createOperationIdempotencyKey("merge-tables"),
+          operation: "merge_tables",
+          method: "POST",
+          path: "/api/v1/pos/merge-tables",
+          payload,
+        },
+        () => mergeTables(branchId, tableIds),
+      );
       setTables(result.data);
       setMergeMode(false);
       setSelectedTables(new Set());
@@ -704,16 +830,19 @@ export default function SalonPage() {
               <Plus size={15} /> Nova mesa
             </strong>
             <input
+              aria-label="Código da nova mesa"
               value={form.code}
               onChange={(e) => setForm((c) => ({ ...c, code: e.target.value }))}
               placeholder="Código: M13"
             />
             <input
+              aria-label="Nome da nova mesa"
               value={form.name}
               onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
               placeholder="Nome: Varanda 1"
             />
             <input
+              aria-label="Quantidade de lugares da nova mesa"
               value={form.seats}
               onChange={(e) => setForm((c) => ({ ...c, seats: e.target.value }))}
               inputMode="numeric"
@@ -746,6 +875,7 @@ export default function SalonPage() {
             </button>
             <div className="salon-area-form">
               <input
+                aria-label="Nome do novo setor"
                 value={areaName}
                 onChange={(e) => setAreaName(e.target.value)}
                 placeholder="Novo setor"
@@ -871,6 +1001,12 @@ export default function SalonPage() {
                       ? "Precisa de ajuda"
                       : "Chamou o garçom"}
                 </span>
+                {request.assignedWaiterName ? (
+                  <span>Responsável: {request.assignedWaiterName}</span>
+                ) : null}
+                {request.attention === "escalated" ? (
+                  <span className="status attention">Atenção: excedeu o prazo</span>
+                ) : null}
               </div>
               {request.status === "pending" ? (
                 <button
@@ -887,6 +1023,28 @@ export default function SalonPage() {
                 type="button"
               >
                 Resolver
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      {presenceApprovals.length > 0 ? (
+        <section className="salon-service-requests" aria-label="Confirmações de presença pelo QR">
+          {presenceApprovals.map((request) => (
+            <article key={request.id}>
+              <div>
+                <strong>
+                  {request.tableCode} · {request.tableName}
+                </strong>
+                <span>Cliente aguardando confirmação para usar o QR</span>
+              </div>
+              <button
+                className="button primary compact"
+                onClick={() => void approvePresence(request)}
+                type="button"
+              >
+                Confirmar presença
               </button>
             </article>
           ))}

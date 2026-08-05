@@ -4,9 +4,11 @@ import {
   diningTables,
   floorAreas,
   orders,
+  qrGuestSessions,
   reservations,
   reservationTables,
   tableEvents,
+  tableServiceSessions,
   waitlistEntries,
 } from "@giromesa/db";
 import {
@@ -696,6 +698,7 @@ export class FloorService {
           updatedAt: new Date(),
         })
         .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, target.id)));
+      await this.revokeQrSessions(tx, context, [source.id, target.id], "table_transferred");
       await tx.insert(tableEvents).values({
         tenantId: context.tenantId,
         branchId,
@@ -766,6 +769,7 @@ export class FloorService {
         })
         .where(and(eq(diningTables.tenantId, context.tenantId), eq(diningTables.id, table.id)))
         .returning();
+      await this.revokeQrSessions(tx, context, [table.id], "table_released");
       await tx.insert(tableEvents).values({
         tenantId: context.tenantId,
         branchId,
@@ -798,6 +802,47 @@ export class FloorService {
       .for("update");
     if (tables.length !== tableIds.length) throw new NotFoundException("Table not found");
     return tables;
+  }
+
+  private async revokeQrSessions(
+    tx: TransactionClient,
+    context: TenantContext,
+    tableIds: string[],
+    reason: string,
+  ) {
+    const now = new Date();
+    const sessions = await tx
+      .update(tableServiceSessions)
+      .set({
+        status: "revoked",
+        revokedAt: now,
+        revokedByUserId: context.userId ?? null,
+        revokeReason: reason,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(tableServiceSessions.tenantId, context.tenantId),
+          inArray(tableServiceSessions.tableId, tableIds),
+          eq(tableServiceSessions.status, "active"),
+        ),
+      )
+      .returning({ id: tableServiceSessions.id });
+    if (!sessions.length) return;
+    await tx
+      .update(qrGuestSessions)
+      .set({
+        status: "revoked",
+        revokedAt: now,
+        revokedByUserId: context.userId ?? null,
+        updatedAt: now,
+      })
+      .where(
+        inArray(
+          qrGuestSessions.tableServiceSessionId,
+          sessions.map((session) => session.id),
+        ),
+      );
   }
 
   private async listReservationTableIds(

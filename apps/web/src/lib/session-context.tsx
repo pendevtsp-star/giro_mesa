@@ -2,8 +2,10 @@
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import {
+  getCurrentOperationalDevice,
   getSession,
   getTenantBranding,
+  type OperationalDeviceProfile,
   type TenantBranding,
   type TenantSession,
 } from "./giromesa-api";
@@ -11,6 +13,7 @@ import {
 interface SessionContextValue {
   session: TenantSession | null;
   branding: TenantBranding | null;
+  operationalDevice: OperationalDeviceProfile | null;
   isLoading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -22,6 +25,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<TenantSession | null>(null);
   const [branding, setBranding] = useState<TenantBranding | null>(null);
+  const [operationalDevice, setOperationalDevice] = useState<OperationalDeviceProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +39,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ]);
       setSession(sessionData);
       setBranding(brandingData);
+      setOperationalDevice(
+        sessionData?.branchId ? await getCurrentOperationalDevice().catch(() => null) : null,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load session");
     } finally {
@@ -53,7 +60,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <SessionContext.Provider
-      value={{ session, branding, isLoading, error, refresh: loadData, switchBranch }}
+      value={{
+        session,
+        branding,
+        operationalDevice,
+        isLoading,
+        error,
+        refresh: loadData,
+        switchBranch,
+      }}
     >
       {children}
     </SessionContext.Provider>
@@ -74,6 +89,7 @@ export function useSessionOrFallback() {
     context ?? {
       session: null,
       branding: null,
+      operationalDevice: null,
       isLoading: false,
       error: null,
       refresh: async () => {},

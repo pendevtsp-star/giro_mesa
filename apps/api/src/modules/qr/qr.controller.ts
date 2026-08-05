@@ -4,18 +4,24 @@ import {
   Get,
   Headers,
   Inject,
+  Optional,
   Param,
   Patch,
   Post,
   Query,
+  Req,
+  Res,
+  ServiceUnavailableException,
   Sse,
 } from "@nestjs/common";
-import { distinctUntilChanged, from, interval, map, startWith, switchMap } from "rxjs";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { distinctUntilChanged, filter, from, interval, map, startWith, switchMap } from "rxjs";
 import { z } from "zod";
-import { firstHeader, type HeaderRecord } from "../../common/http";
+import { firstHeader, type HeaderRecord, parseCookies } from "../../common/http";
 import { RateLimitService } from "../../common/rate-limit";
 import { rejectTenantOverride, requirePermission } from "../../common/security";
 import { AuthService } from "../auth/auth.service";
+import { OperationalRealtimeService, publicDeltaBatch } from "../pos/operational-realtime.service";
 import { QrService } from "./qr.service";
 
 const capabilities = z.enum([
@@ -30,6 +36,16 @@ const capabilities = z.enum([
 
 const settingsSchema = z
   .object({
+    mode: z.enum(["disabled", "menu_only", "waiter_assisted", "self_service"]).optional(),
+    presenceMethods: z
+      .array(z.enum(["code", "approval", "network"]))
+      .min(1)
+      .max(3)
+      .optional(),
+    tabVisibility: z.enum(["shared", "own_items"]).optional(),
+    presenceCodeTtlMinutes: z.number().int().min(1).max(120).optional(),
+    guestSessionTtlMinutes: z.number().int().min(5).max(1440).optional(),
+    trustedNetworkCidrs: z.array(z.string().max(64)).max(24).optional(),
     capabilities: z.array(capabilities).min(1).optional(),
     reviewBeforeKds: z.boolean().optional(),
     template: z
@@ -118,6 +134,7 @@ const artworkSchema = z.object({
 
 const orderSchema = z.object({
   guestLabel: z.string().trim().min(1).max(60).optional(),
+  ageConfirmationToken: z.string().min(16).max(2_048).optional(),
   items: z
     .array(
       z.object({
@@ -134,10 +151,43 @@ const orderSchema = z.object({
     .max(80),
 });
 
-const requestSchema = z.object({
-  type: z.enum(["call_waiter", "request_pre_bill", "need_help"]),
-  message: z.string().max(180).optional(),
-});
+const requestSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.enum(["call_waiter", "request_pre_bill", "need_help"]),
+      message: z.string().max(180).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("split_intent"),
+      message: z.string().max(180).optional(),
+      split: z
+        .object({
+          mode: z.enum(["equal", "by_item", "custom"]),
+          people: z.number().int().min(2).max(100).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("payment_preference"),
+      message: z.string().max(180).optional(),
+      payment: z
+        .object({
+          method: z.enum(["cash", "pix", "credit_card", "debit_card", "other"]),
+          splitMode: z.enum(["single", "equal", "by_item", "custom"]).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
+const ageConfirmationSchema = z.object({ confirmed: z.literal(true) });
+const presenceCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) });
+const presenceApprovalClaimSchema = z.object({ claimKey: z.string().min(32).max(256) });
+const revokeTableServiceSchema = z.object({ reason: z.string().trim().min(3).max(240).optional() });
 
 @Controller("qr")
 export class QrController {
@@ -145,6 +195,9 @@ export class QrController {
     @Inject(QrService) private readonly qrService: QrService,
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(RateLimitService) private readonly rateLimit: RateLimitService,
+    @Optional()
+    @Inject(OperationalRealtimeService)
+    private readonly realtime?: OperationalRealtimeService,
   ) {}
 
   @Get("settings")
@@ -171,6 +224,15 @@ export class QrController {
   async experienceDraft(@Headers() headers: HeaderRecord, @Body() body: unknown) {
     rejectTenantOverride(body);
     return this.qrService.createExperienceDraft(
+      await this.manageContext(headers),
+      qrExperienceSchema.parse(body),
+    );
+  }
+
+  @Post("experience/preview")
+  async experiencePreview(@Headers() headers: HeaderRecord, @Body() body: unknown) {
+    rejectTenantOverride(body);
+    return this.qrService.previewExperience(
       await this.manageContext(headers),
       qrExperienceSchema.parse(body),
     );
@@ -222,6 +284,31 @@ export class QrController {
     );
   }
 
+  @Post("tables/:tableId/service-session")
+  async activateTableService(@Headers() headers: HeaderRecord, @Param("tableId") tableId: string) {
+    const context = await this.operateContext(headers);
+    const expectedTableVersion = optionalExpectedVersion(headers);
+    return this.qrService.activateTableService(context, z.string().uuid().parse(tableId), {
+      idempotencyKey: optionalIdempotencyKey(headers) ?? context.requestId,
+      ...(expectedTableVersion !== undefined ? { expectedTableVersion } : {}),
+    });
+  }
+
+  @Post("tables/:tableId/service-session/revoke")
+  async revokeTableService(
+    @Headers() headers: HeaderRecord,
+    @Param("tableId") tableId: string,
+    @Body() body: unknown,
+  ) {
+    rejectTenantOverride(body);
+    const input = revokeTableServiceSchema.parse(body);
+    return this.qrService.revokeTableService(
+      await this.operateContext(headers),
+      z.string().uuid().parse(tableId),
+      input.reason,
+    );
+  }
+
   @Post("artwork")
   async artwork(@Headers() headers: HeaderRecord, @Body() body: unknown) {
     rejectTenantOverride(body);
@@ -232,27 +319,139 @@ export class QrController {
   }
 
   @Get("public/:token/context")
-  async publicContext(@Param("token") token: string) {
-    return this.qrService.getPublicContext(token);
+  async publicContext(@Param("token") token: string, @Headers() headers: HeaderRecord) {
+    return this.qrService.getPublicContext(token, publicGuestToken(headers));
+  }
+
+  @Post("public/:token/presence/code")
+  async publicValidatePresenceCode(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    await this.rateLimit.assertDistributedAllowed(headers, {
+      namespace: "qr-presence-code",
+      limit: 8,
+      windowMs: 60_000,
+      identifier: `${token}:${request.ip}`,
+    });
+    const result = await this.qrService.validatePresenceCode(
+      token,
+      presenceCodeSchema.parse(body).code,
+    );
+    response.header("set-cookie", publicGuestCookie(result.token, result.maxAgeSeconds));
+    return { expiresAt: result.expiresAt, validationMethod: result.validationMethod };
+  }
+
+  @Post("public/:token/presence/approval")
+  async publicRequestPresenceApproval(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Req() request: FastifyRequest,
+  ) {
+    await this.rateLimit.assertDistributedAllowed(headers, {
+      namespace: "qr-presence-approval-request",
+      limit: 6,
+      windowMs: 60_000,
+      identifier: `${token}:${request.ip}`,
+    });
+    return this.qrService.requestPresenceApproval(token);
+  }
+
+  @Post("public/:token/presence/network")
+  async publicValidatePresenceNetwork(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    await this.rateLimit.assertDistributedAllowed(headers, {
+      namespace: "qr-presence-network",
+      limit: 8,
+      windowMs: 60_000,
+      identifier: `${token}:${request.ip}`,
+    });
+    const result = await this.qrService.validatePresenceNetwork(token, request.ip);
+    response.header("set-cookie", publicGuestCookie(result.token, result.maxAgeSeconds));
+    return { expiresAt: result.expiresAt, validationMethod: result.validationMethod };
+  }
+
+  @Post("public/:token/presence/approval/:requestId/claim")
+  async publicClaimPresenceApproval(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Param("requestId") requestId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    await this.rateLimit.assertDistributedAllowed(headers, {
+      namespace: "qr-presence-approval-claim",
+      limit: 8,
+      windowMs: 60_000,
+      identifier: `${token}:${request.ip}`,
+    });
+    const result = await this.qrService.claimPresenceApproval(
+      token,
+      z.string().uuid().parse(requestId),
+      presenceApprovalClaimSchema.parse(body).claimKey,
+    );
+    if (result.status !== "approved") return result;
+    response.header("set-cookie", publicGuestCookie(result.token, result.maxAgeSeconds));
+    return { status: result.status, expiresAt: result.expiresAt };
+  }
+
+  @Post("presence-approvals/:requestId/approve")
+  async approvePresenceRequest(
+    @Headers() headers: HeaderRecord,
+    @Param("requestId") requestId: string,
+  ) {
+    return this.qrService.approvePresenceRequest(
+      await this.operateContext(headers),
+      z.string().uuid().parse(requestId),
+    );
+  }
+
+  @Get("presence-approvals")
+  async listPresenceApprovals(
+    @Headers() headers: HeaderRecord,
+    @Query("status") status?: "pending" | "approved" | "rejected" | "claimed" | "expired",
+  ) {
+    const parsedStatus = z
+      .enum(["pending", "approved", "rejected", "claimed", "expired"])
+      .optional()
+      .parse(status);
+    return {
+      data: await this.qrService.listPresenceApprovals(
+        await this.operateContext(headers),
+        parsedStatus,
+      ),
+    };
   }
 
   @Get("public/:token/order")
-  async publicOrder(@Param("token") token: string) {
-    return this.qrService.getPublicOrder(token);
+  async publicOrder(@Headers() headers: HeaderRecord, @Param("token") token: string) {
+    return this.qrService.getPublicOrder(token, publicGuestToken(headers));
   }
 
   @Sse("public/:token/events")
-  publicEvents(@Headers() headers: HeaderRecord, @Param("token") token: string) {
-    this.rateLimit.assertAllowed(headers, {
+  async publicEvents(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Req() request: FastifyRequest,
+  ) {
+    await this.rateLimit.assertDistributedAllowed(headers, {
       namespace: "qr-events",
       limit: 30,
       windowMs: 60_000,
-      identifier: `${token}:${firstHeader(headers["x-forwarded-for"]) ?? "direct"}`,
+      identifier: `${token}:${request.ip}`,
     });
 
     return interval(5_000).pipe(
       startWith(0),
-      switchMap(() => from(this.qrService.getPublicOrder(token))),
+      switchMap(() => from(this.qrService.getPublicOrder(token, publicGuestToken(headers)))),
       distinctUntilChanged(
         (previous, current) => JSON.stringify(previous) === JSON.stringify(current),
       ),
@@ -265,20 +464,69 @@ export class QrController {
     );
   }
 
+  @Sse("public/:token/events/delta")
+  async publicDeltaEvents(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Req() request: FastifyRequest,
+  ) {
+    await this.rateLimit.assertDistributedAllowed(headers, {
+      namespace: "qr-events-delta",
+      limit: 30,
+      windowMs: 60_000,
+      identifier: `${token}:${request.ip}`,
+    });
+    const scope = await this.qrService.getPublicRealtimeScope(token, publicGuestToken(headers));
+    if (!this.realtime) throw new ServiceUnavailableException("Realtime service is unavailable");
+    return this.realtime.stream(scope.tenantId, scope.branchId).pipe(
+      map((batch) => publicDeltaBatch(batch, scope)),
+      filter((batch) => batch !== null),
+      map((batch) => ({
+        id: String(batch.toVersion),
+        type: "qr.operation.delta",
+        retry: 1_000,
+        data: batch,
+      })),
+    );
+  }
+
   @Post("public/:token/orders")
   async publicCreateOrder(
     @Headers() headers: HeaderRecord,
     @Param("token") token: string,
     @Body() body: unknown,
+    @Req() request: FastifyRequest,
   ) {
     const idempotencyKey = requiredIdempotencyKey(headers);
-    this.rateLimit.assertAllowed(headers, {
+    await this.rateLimit.assertDistributedAllowed(headers, {
       namespace: "qr-order",
       limit: 12,
       windowMs: 60_000,
-      identifier: `${token}:${firstHeader(headers["x-forwarded-for"]) ?? "direct"}`,
+      identifier: `${token}:${request.ip}`,
     });
-    return this.qrService.createPublicOrder(token, idempotencyKey, orderSchema.parse(body));
+    return this.qrService.createPublicOrder(
+      token,
+      idempotencyKey,
+      orderSchema.parse(body),
+      publicGuestToken(headers),
+    );
+  }
+
+  @Post("public/:token/age-confirmation")
+  async publicAgeConfirmation(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    ageConfirmationSchema.parse(body);
+    await this.rateLimit.assertDistributedAllowed(headers, {
+      namespace: "qr-age-confirmation",
+      limit: 6,
+      windowMs: 60_000,
+      identifier: `${token}:${request.ip}`,
+    });
+    return this.qrService.createAgeConfirmation(token, publicGuestToken(headers));
   }
 
   @Post("public/:token/service-requests")
@@ -286,15 +534,21 @@ export class QrController {
     @Headers() headers: HeaderRecord,
     @Param("token") token: string,
     @Body() body: unknown,
+    @Req() request: FastifyRequest,
   ) {
     const idempotencyKey = requiredIdempotencyKey(headers);
-    this.rateLimit.assertAllowed(headers, {
+    await this.rateLimit.assertDistributedAllowed(headers, {
       namespace: "qr-service-request",
       limit: 6,
       windowMs: 60_000,
-      identifier: `${token}:${firstHeader(headers["x-forwarded-for"]) ?? "direct"}`,
+      identifier: `${token}:${request.ip}`,
     });
-    return this.qrService.createServiceRequest(token, idempotencyKey, requestSchema.parse(body));
+    return this.qrService.createServiceRequest(
+      token,
+      idempotencyKey,
+      requestSchema.parse(body),
+      publicGuestToken(headers),
+    );
   }
 
   @Post("public/:token/attribution")
@@ -302,12 +556,13 @@ export class QrController {
     @Headers() headers: HeaderRecord,
     @Param("token") token: string,
     @Body() body: unknown,
+    @Req() request: FastifyRequest,
   ) {
-    this.rateLimit.assertAllowed(headers, {
+    await this.rateLimit.assertDistributedAllowed(headers, {
       namespace: "qr-attribution",
       limit: 12,
       windowMs: 60_000,
-      identifier: `${token}:${firstHeader(headers["x-forwarded-for"]) ?? "direct"}`,
+      identifier: `${token}:${request.ip}`,
     });
     return this.qrService.recordCommercialAttribution(
       token,
@@ -316,8 +571,16 @@ export class QrController {
   }
 
   @Get("public/:token/service-requests/:id")
-  async publicServiceRequestStatus(@Param("token") token: string, @Param("id") id: string) {
-    return this.qrService.getPublicServiceRequest(token, z.string().uuid().parse(id));
+  async publicServiceRequestStatus(
+    @Headers() headers: HeaderRecord,
+    @Param("token") token: string,
+    @Param("id") id: string,
+  ) {
+    return this.qrService.getPublicServiceRequest(
+      token,
+      z.string().uuid().parse(id),
+      publicGuestToken(headers),
+    );
   }
 
   @Get("service-requests")
@@ -367,4 +630,25 @@ function requiredIdempotencyKey(headers: HeaderRecord) {
     ]);
   }
   return value;
+}
+
+function optionalIdempotencyKey(headers: HeaderRecord) {
+  const value = firstHeader(headers["x-idempotency-key"])?.trim();
+  if (!value) return undefined;
+  return z.string().min(8).max(180).parse(value);
+}
+
+function optionalExpectedVersion(headers: HeaderRecord) {
+  const value = firstHeader(headers["x-expected-version"])?.trim();
+  if (!value) return undefined;
+  return z.coerce.number().int().positive().parse(value);
+}
+
+function publicGuestCookie(token: string, maxAgeSeconds: number) {
+  const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
+  return `gm_qr_guest=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Lax; Path=/api/v1/qr/public; Max-Age=${maxAgeSeconds}`;
+}
+
+function publicGuestToken(headers: HeaderRecord) {
+  return parseCookies(firstHeader(headers.cookie)).get("gm_qr_guest");
 }

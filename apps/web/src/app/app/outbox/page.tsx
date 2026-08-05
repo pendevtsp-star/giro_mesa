@@ -73,6 +73,7 @@ export default function OutboxPage() {
       </section>
       <section className="outbox-toolbar">
         <select
+          aria-label="Filtrar fila de integrações por status"
           value={statusFilter}
           onChange={(event) => void handleFilterChange(event.target.value as OutboxStatusFilter)}
         >

@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog } from "@giromesa/ui";
 import { Bike, CircleX, Clock3, RefreshCw, Truck } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
@@ -346,14 +347,14 @@ export default function DeliveryPage() {
       </section>
 
       {cancelTarget ? (
-        <div
-          className="modifier-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cancel-title"
+        <Dialog
+          className="modifier-dialog-content"
+          onClose={() => setCancelTarget(null)}
+          open
+          title="Cancelar entrega"
         >
           <form
-            className="modifier-dialog-content"
+            className="delivery-cancel-form"
             onSubmit={(event) => {
               event.preventDefault();
               if (cancelReason.trim().length < 3) return;
@@ -365,7 +366,6 @@ export default function DeliveryPage() {
               }, "Entrega cancelada e auditada.");
             }}
           >
-            <h2 id="cancel-title">Cancelar entrega</h2>
             <label>
               Motivo
               <input
@@ -388,7 +388,7 @@ export default function DeliveryPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       ) : null}
     </main>
   );

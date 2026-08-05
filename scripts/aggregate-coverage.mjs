@@ -20,6 +20,7 @@ const totals = {
   branches: { total: 0, covered: 0, skipped: 0 },
 };
 const packages = [];
+const files = {};
 
 for (const summaryPath of summaries.sort()) {
   const summary = JSON.parse(await readFile(resolve(root, summaryPath), "utf8"));
@@ -34,6 +35,10 @@ for (const summaryPath of summaries.sort()) {
     totals[metric].covered += packageTotal[metric]?.covered ?? 0;
     totals[metric].skipped += packageTotal[metric]?.skipped ?? 0;
   }
+  for (const [filePath, metrics] of Object.entries(summary)) {
+    if (filePath === "total") continue;
+    files[filePath.replaceAll("\\", "/")] = metrics;
+  }
 }
 
 for (const metric of Object.keys(totals)) {
@@ -44,6 +49,7 @@ for (const metric of Object.keys(totals)) {
 const output = {
   total: totals,
   packages,
+  ...files,
 };
 
 await mkdir(resolve(root, "coverage"), { recursive: true });

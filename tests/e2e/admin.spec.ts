@@ -16,6 +16,19 @@ test.describe("Admin: tenant, user and role management", () => {
     await expect(page.getByRole("heading", { name: "Backoffice SaaS" })).toBeVisible();
   });
 
+  test("platform tenant detail fails closed when its API request fails", async ({ page }) => {
+    await skipWhenApiUnavailable();
+    await authenticatePlatformPage(page);
+    await page.route("**/api/v1/platform/tenants/fail-closed", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"forced"}' }),
+    );
+
+    await page.goto("/platform/fail-closed", { waitUntil: "domcontentloaded" });
+
+    await expect(page.getByRole("heading", { name: "Tenant indispon\u00edvel" })).toBeVisible();
+    await expect(page.getByText("Bar Aurora")).toHaveCount(0);
+  });
+
   test("platform can provision a new tenant via API", async () => {
     await skipWhenApiUnavailable();
 

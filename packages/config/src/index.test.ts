@@ -17,6 +17,10 @@ const productionEnv = {
   EMAIL_PROVIDER: "resend",
   EMAIL_FROM: "no-reply@giromesa.com.br",
   RESEND_API_KEY: "re_test_key_for_config_validation",
+  LEGAL_TERMS_VERSION: "2026-08-03",
+  LEGAL_TERMS_SHA256: "a".repeat(64),
+  LEGAL_PRIVACY_VERSION: "2026-08-03",
+  LEGAL_PRIVACY_SHA256: "b".repeat(64),
 } satisfies NodeJS.ProcessEnv;
 
 describe("loadEnv production safety", () => {
@@ -62,6 +66,27 @@ describe("loadEnv production safety", () => {
 
   it("accepts strong production configuration", () => {
     expect(loadEnv(productionEnv).NODE_ENV).toBe("production");
+  });
+
+  it("rejects production when every legal document identifier is absent", () => {
+    expect(() =>
+      loadEnv({
+        ...productionEnv,
+        LEGAL_TERMS_VERSION: undefined,
+        LEGAL_TERMS_SHA256: undefined,
+        LEGAL_PRIVACY_VERSION: undefined,
+        LEGAL_PRIVACY_SHA256: undefined,
+      }),
+    ).toThrow(/LEGAL_TERMS_VERSION: required in production/);
+  });
+
+  it("rejects a partially configured legal document in production", () => {
+    expect(() =>
+      loadEnv({
+        ...productionEnv,
+        LEGAL_PRIVACY_SHA256: undefined,
+      }),
+    ).toThrow(/LEGAL_PRIVACY_SHA256: required in production/);
   });
 
   it("requires a real Resend key when Resend is selected", () => {

@@ -73,11 +73,17 @@ export async function apiContextFromCookie(cookie: string): Promise<APIRequestCo
   });
 }
 
-export async function loginViaUi(page: Page, email: string, password: string) {
+export async function loginViaUi(
+  page: Page,
+  email: string,
+  password: string,
+  options: { acceptLegal?: boolean } = {},
+) {
   requireCredential(password, "E2E_TEST_PASSWORD/SEED_TEST_PASSWORD");
-  await expect(page.getByTestId("login-submit")).toBeEnabled();
+  await chooseCookieConsent(page, "reject");
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill(password);
+  await expect(page.getByTestId("login-submit")).toBeEnabled();
 
   // Listen for ALL responses to catch the login even if status is unexpected
   const loginResponsePromise = page
@@ -96,4 +102,66 @@ export async function loginViaUi(page: Page, email: string, password: string) {
   } else {
     console.log("[loginViaUi] No login response received within 15s");
   }
+
+  if (!loginResponse?.ok()) return;
+
+  await page.waitForURL((url) => !url.pathname.endsWith("/login"), { timeout: 10_000 });
+  const isPlatformSession = new URL(page.url()).pathname.startsWith("/platform");
+  if (!isPlatformSession && options.acceptLegal !== false) {
+    const accepted = await acceptCurrentLegalDocuments(page);
+    if (accepted) await page.reload();
+  }
+}
+
+export async function acceptCurrentLegalDocuments(page: Page) {
+  const statusResponse = await page.request.get(`${apiUrl}/api/v1/auth/legal-acceptances/status`);
+  expect(statusResponse.ok()).toBe(true);
+  const status = (await statusResponse.json()) as {
+    required: boolean;
+    complete: boolean;
+    configurationComplete: boolean;
+    documents: Array<{
+      documentType: "terms" | "privacy";
+      published: boolean;
+      accepted: boolean;
+    }>;
+  };
+
+  if (!status.required || status.complete) return false;
+  expect(status.configurationComplete).toBe(true);
+
+  const missing = status.documents.filter((document) => document.published && !document.accepted);
+  const csrfResponse = await page.request.get(`${apiUrl}/api/v1/auth/csrf`);
+  expect(csrfResponse.ok()).toBe(true);
+  const { csrfToken } = (await csrfResponse.json()) as { csrfToken: string };
+
+  for (const document of missing) {
+    const response = await page.request.post(`${apiUrl}/api/v1/auth/legal-acceptances`, {
+      headers: { "x-csrf-token": csrfToken },
+      data: {
+        documentType: document.documentType,
+        accepted: true,
+        origin: "e2e_login_helper",
+      },
+    });
+    expect(response.ok()).toBe(true);
+  }
+
+  return missing.length > 0;
+}
+
+export async function chooseCookieConsent(page: Page, choice: "accept" | "reject" = "reject") {
+  const banner = page.getByRole("region", { name: /Preferências de cookies/i });
+  const visible = await banner
+    .waitFor({ state: "visible", timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!visible) return;
+
+  await banner
+    .getByRole("button", {
+      name: choice === "accept" ? "Aceitar opcionais" : "Recusar opcionais",
+    })
+    .click();
+  await expect(banner).toBeHidden();
 }

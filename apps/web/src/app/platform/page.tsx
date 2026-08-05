@@ -104,7 +104,7 @@ const initialTenants: PlatformTenant[] = [
 const plans = [
   ["Starter", "R$ 149", "PDV, mesas e cardápio QR"],
   ["Professional", "R$ 299", "KDS, estoque e caixa completo"],
-  ["Premium", "R$ 499", "Multi-filial, WhatsApp e automações"],
+  ["Premium", "R$ 499", "Multi-filial, operação avançada e suporte prioritário"],
 ] as const;
 
 const planPrices: Record<PlatformTenant["plan"], string> = {

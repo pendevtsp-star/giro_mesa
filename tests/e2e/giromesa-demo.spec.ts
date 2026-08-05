@@ -1,6 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, request as playwrightRequest, test } from "@playwright/test";
 import { generateTotpCode } from "../../apps/api/src/common/totp";
+import { loginViaUi } from "./helpers";
 
 const apiUrl = process.env.API_URL ?? "http://localhost:3333";
 const testPassword = process.env.E2E_TEST_PASSWORD ?? process.env.SEED_TEST_PASSWORD ?? "";
@@ -13,9 +14,13 @@ test.describe("GiroMesa commercial and operational flows", () => {
     await expect(
       page.getByRole("heading", { name: "Gestão que gira. Resultados que ficam." }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: /(Testar grátis por 7 dias|Começar teste grátis)/i }).first(),
-    ).toBeVisible();
+    const pilotCta = page.getByRole("link", { name: "Solicitar acesso ao piloto", exact: true });
+    await expect(pilotCta).toBeVisible();
+    await expect(pilotCta).toHaveAttribute("href", "/contato?produto=giromesa&origin=hero");
+    await expect(page.getByRole("link", { name: "Solicitar este plano" }).first()).toHaveAttribute(
+      "href",
+      /\/contato\?produto=giromesa&plan=(starter|professional|premium)&origin=pricing/,
+    );
 
     await page.goto("/teste-gratis", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Teste grátis GiroMesa" })).toBeVisible({
@@ -72,6 +77,7 @@ test.describe("GiroMesa commercial and operational flows", () => {
         priceCents: 3900,
         costCents: 1200,
         channels: ["pos", "qr"],
+        isAlcoholic: false,
       },
     });
     expect(createdProduct.ok()).toBe(true);
@@ -154,7 +160,13 @@ test.describe("GiroMesa commercial and operational flows", () => {
     expect((await floorPlanRead.json()).layout[table.id]).toMatchObject({ x: 18, y: 24 });
 
     const opened = await api.post("/api/v1/pos/orders/open", {
-      data: { channel: "table", branchId: context.branchId, tableId: table.id, peopleCount: 2 },
+      data: {
+        channel: "table",
+        branchId: context.branchId,
+        tableId: table.id,
+        peopleCount: 2,
+        idempotencyKey: `e2e-demo-open-${Date.now()}`,
+      },
     });
     expect(opened.ok()).toBe(true);
     const order = await opened.json();
@@ -165,6 +177,7 @@ test.describe("GiroMesa commercial and operational flows", () => {
         quantity: 1,
         notes: "Sem cebola",
         modifiers: [{ optionId: modifierOptionPayload.id }],
+        idempotencyKey: `e2e-demo-item-${Date.now()}`,
       },
     });
     expect(item.ok()).toBe(true);
@@ -229,13 +242,16 @@ test.describe("GiroMesa commercial and operational flows", () => {
     expect(pending.ok()).toBe(true);
     const order = (
       (await pending.json()) as {
-        data: { id: string; tableId: string; items: { id: string }[] }[];
+        data: { id: string; tableId: string; items: { id: string; notes: string | null }[] }[];
       }
     ).data.find((row) => row.id === qrOrderPayload.orderId);
-    expect(order?.items).toHaveLength(2);
+    const submittedItems = order?.items.filter((item) => item.notes?.startsWith("E2E QR ")) ?? [];
+    expect(submittedItems).toHaveLength(2);
+    const itemToCancel = submittedItems.find((item) => item.notes === "E2E QR cancelar");
+    expect(itemToCancel?.id).toBeTruthy();
 
     const canceled = await api.post(
-      `/api/v1/pos/orders/${qrOrderPayload.orderId}/qr-items/${order?.items[1]?.id}/cancel`,
+      `/api/v1/pos/orders/${qrOrderPayload.orderId}/qr-items/${itemToCancel?.id}/cancel`,
       { data: { reason: "E2E QR item indisponível" } },
     );
     expect(canceled.ok()).toBe(true);
@@ -467,17 +483,4 @@ async function apiContextFromCookie(cookie: string): Promise<APIRequestContext> 
     baseURL: apiUrl,
     extraHTTPHeaders: { cookie, "x-csrf-token": csrfToken },
   });
-}
-
-async function loginViaUi(page: Page, email: string, password: string) {
-  await expect(page.getByTestId("login-submit")).toBeEnabled();
-  await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
-  const loginResponsePromise = page
-    .waitForResponse((response) => response.url().includes("/api/v1/auth/login"), {
-      timeout: 15_000,
-    })
-    .catch(() => null);
-  await page.getByTestId("login-submit").click();
-  await loginResponsePromise;
 }

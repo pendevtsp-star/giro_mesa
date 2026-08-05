@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   auditLogs,
   branches,
+  branchInventorySettings,
   customers,
   integrationAccounts,
   inventoryItems,
@@ -23,7 +24,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { createIntegrationApiKey } from "../../common/integration-key";
 import { DatabaseService } from "../database/database.service";
 import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "./club-whisky-events";
@@ -76,12 +77,23 @@ export type CustomerLinkInput = {
 };
 
 export type ConfigureClubWhiskyInput = {
-  branchId?: string | undefined;
+  branchId: string;
   remoteClientId?: string | undefined;
   webhookSecretRef?: string | undefined;
   webhookUrl?: string | undefined;
   rotateKey?: boolean;
 };
+
+export const CLUB_WHISKY_CONTRACT_VERSION = "2026-07-30";
+export type ClubWhiskyLifecycleInput =
+  | {
+      event: "activate";
+      expectedVersion: number;
+      contractVersion: typeof CLUB_WHISKY_CONTRACT_VERSION;
+      evidence: string;
+    }
+  | { event: "health"; expectedVersion: number; healthy: boolean; detail: string }
+  | { event: "revoke"; expectedVersion: number; reason: string };
 
 @Injectable()
 export class ClubWhiskyService {
@@ -193,7 +205,6 @@ export class ClubWhiskyService {
       if (idempotency.duplicate) {
         return idempotency;
       }
-
       const requestedProductIds =
         input.saleType === "combo_pool"
           ? [...new Set(input.eligibleProductIds ?? [])]
@@ -303,6 +314,21 @@ export class ClubWhiskyService {
       if (idempotency.duplicate) {
         return idempotency;
       }
+      const [sourceEvent] = await tx
+        .select({ id: webhookEvents.id })
+        .from(webhookEvents)
+        .where(
+          and(
+            eq(webhookEvents.provider, "club_whisky"),
+            eq(webhookEvents.tenantId, context.tenantId),
+            eq(
+              webhookEvents.externalEventId,
+              this.idempotencyEventId(context.tenantId, input.idempotencyKey),
+            ),
+          ),
+        )
+        .limit(1);
+      if (!sourceEvent) throw new Error("Failed to link club consumption idempotency event");
 
       const [product] = await tx
         .select()
@@ -321,12 +347,19 @@ export class ClubWhiskyService {
       }
 
       const target = await this.resolveClubInventoryTarget(tx, context, input.branchId, product.id);
-      await this.lockStockTarget(tx, context, input.branchId, target.inventoryItemId);
+      await this.lockStockTarget(
+        tx,
+        context,
+        input.branchId,
+        target.inventoryItemId,
+        target.stockLocationId,
+      );
       const availableMl = await this.currentStock(
         tx,
         context,
         input.branchId,
         target.inventoryItemId,
+        target.stockLocationId,
       );
 
       if (!target.allowNegative && availableMl < input.doseMl) {
@@ -349,7 +382,7 @@ export class ClubWhiskyService {
           type: "club_dose_consumed",
           quantity: String(-input.doseMl),
           sourceType: "club_whisky",
-          sourceId: product.id,
+          sourceId: sourceEvent.id,
           reason: `Consumo de ${input.doseMl}ml do clube ${input.externalClubId}; consumption=${input.externalConsumptionId}`,
         })
         .returning({ id: stockMovements.id });
@@ -446,6 +479,7 @@ export class ClubWhiskyService {
           : undefined;
 
       if (
+        !originalEvent ||
         !originalInput ||
         originalInput.branchId !== input.branchId ||
         originalInput.productId !== input.productId ||
@@ -455,6 +489,36 @@ export class ClubWhiskyService {
       ) {
         throw new ConflictException({
           error: "original_consumption_mismatch",
+          originalIdempotencyKey: input.originalIdempotencyKey,
+        });
+      }
+
+      const [originalMovement] = await tx
+        .select({
+          id: stockMovements.id,
+          inventoryItemId: stockMovements.inventoryItemId,
+          stockLocationId: stockMovements.stockLocationId,
+          quantity: stockMovements.quantity,
+        })
+        .from(stockMovements)
+        .where(
+          and(
+            eq(stockMovements.tenantId, context.tenantId),
+            eq(stockMovements.branchId, input.branchId),
+            eq(stockMovements.type, "club_dose_consumed"),
+            eq(stockMovements.sourceType, "club_whisky"),
+            eq(stockMovements.sourceId, originalEvent.id),
+          ),
+        )
+        .limit(1);
+      const originalQuantity = Math.abs(Number(originalMovement?.quantity));
+      if (
+        !originalMovement?.stockLocationId ||
+        !Number.isFinite(originalQuantity) ||
+        originalQuantity <= 0
+      ) {
+        throw new ConflictException({
+          error: "original_consumption_movement_not_found",
           originalIdempotencyKey: input.originalIdempotencyKey,
         });
       }
@@ -471,30 +535,19 @@ export class ClubWhiskyService {
       if (idempotency.duplicate) {
         return idempotency;
       }
-
-      const [product] = await tx
-        .select()
-        .from(products)
-        .where(
-          and(
-            eq(products.tenantId, context.tenantId),
-            eq(products.id, input.productId),
-            eq(products.isClubEligible, true),
-          ),
-        )
-        .limit(1);
-
-      if (!product) {
-        throw new NotFoundException("Club-eligible product not found");
-      }
-
-      const target = await this.resolveClubInventoryTarget(tx, context, input.branchId, product.id);
-      await this.lockStockTarget(tx, context, input.branchId, target.inventoryItemId);
+      await this.lockStockTarget(
+        tx,
+        context,
+        input.branchId,
+        originalMovement.inventoryItemId,
+        originalMovement.stockLocationId,
+      );
       const availableMl = await this.currentStock(
         tx,
         context,
         input.branchId,
-        target.inventoryItemId,
+        originalMovement.inventoryItemId,
+        originalMovement.stockLocationId,
       );
 
       const [movement] = await tx
@@ -502,13 +555,13 @@ export class ClubWhiskyService {
         .values({
           tenantId: context.tenantId,
           branchId: input.branchId,
-          inventoryItemId: target.inventoryItemId,
-          stockLocationId: target.stockLocationId,
+          inventoryItemId: originalMovement.inventoryItemId,
+          stockLocationId: originalMovement.stockLocationId,
           type: "club_refund",
-          quantity: String(input.doseMl),
-          sourceType: "club_whisky",
-          sourceId: product.id,
-          reason: `Estorno de ${input.doseMl}ml; consumption=${input.externalConsumptionId}; reversal=${input.externalReversalId}; ${input.reason}`,
+          quantity: String(originalQuantity),
+          sourceType: "club_whisky_reversal",
+          sourceId: originalMovement.id,
+          reason: `Estorno de ${originalQuantity}ml; consumption=${input.externalConsumptionId}; reversal=${input.externalReversalId}; ${input.reason}`,
         })
         .returning({ id: stockMovements.id });
 
@@ -516,28 +569,28 @@ export class ClubWhiskyService {
         throw new Error("Failed to create club stock reversal");
       }
 
-      const remainingMl = availableMl + input.doseMl;
+      const remainingMl = availableMl + originalQuantity;
       await tx.insert(outboxEvents).values({
         tenantId: context.tenantId,
         topic: "club.stock_movement.created",
         payload: {
           integration: "club_whisky",
           movementType: "club_refund",
-          productId: product.id,
+          productId: input.productId,
           branchId: input.branchId,
           externalClubId: input.externalClubId,
           externalConsumptionId: input.externalConsumptionId,
           externalReversalId: input.externalReversalId,
           ...(typeof originalInput.orderId === "string" ? { orderId: originalInput.orderId } : {}),
-          doseMl: input.doseMl,
+          doseMl: originalQuantity,
           unit: "ml",
-          stockQuantityEffect: input.doseMl,
+          stockQuantityEffect: originalQuantity,
           remainingMl,
         },
       });
       await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
         branchId: input.branchId,
-        inventoryItemIds: [target.inventoryItemId],
+        inventoryItemIds: [originalMovement.inventoryItemId],
         movementType: "club_refund",
         movementId: movement.id,
       });
@@ -546,16 +599,19 @@ export class ClubWhiskyService {
         branchId: input.branchId,
         action: "club_whisky.dose_consumption_reversed",
         entityType: "product",
-        entityId: product.id,
+        entityId: input.productId,
         metadata: {
           externalClubId: input.externalClubId,
           externalConsumptionId: input.externalConsumptionId,
           externalReversalId: input.externalReversalId,
           originalIdempotencyKey: input.originalIdempotencyKey,
-          inventoryItemId: target.inventoryItemId,
-          doseMl: input.doseMl,
+          inventoryItemId: originalMovement.inventoryItemId,
+          stockLocationId: originalMovement.stockLocationId,
+          originalMovementId: originalMovement.id,
+          reversalMovementId: movement.id,
+          doseMl: originalQuantity,
           reason: input.reason,
-          stockQuantityEffect: input.doseMl,
+          stockQuantityEffect: originalQuantity,
           remainingMl,
           ...(typeof originalInput.orderId === "string" ? { orderId: originalInput.orderId } : {}),
         },
@@ -565,9 +621,9 @@ export class ClubWhiskyService {
         accepted: true,
         duplicate: false,
         movementType: "club_refund",
-        inventoryItemId: target.inventoryItemId,
+        inventoryItemId: originalMovement.inventoryItemId,
         unit: "ml",
-        stockQuantityEffect: input.doseMl,
+        stockQuantityEffect: originalQuantity,
         remainingMl,
         idempotency: "original_consumption_once",
       };
@@ -629,6 +685,8 @@ export class ClubWhiskyService {
   }
 
   async ensureIntegrationAccount(context: TenantContext, input: ConfigureClubWhiskyInput) {
+    this.assertBranchAccess(context, input.branchId);
+    await this.assertExistingBranch(this.database.db, context, input.branchId);
     const [existingAccount] = await this.database.db
       .select()
       .from(integrationAccounts)
@@ -644,7 +702,7 @@ export class ClubWhiskyService {
     const issuedKey = shouldIssueKey ? createIntegrationApiKey("club_whisky") : undefined;
 
     const config = {
-      branchId: input.branchId ?? existingAccount?.config.branchId,
+      branchId: input.branchId,
       scopes: [
         "branches:read",
         "products:read",
@@ -660,8 +718,13 @@ export class ClubWhiskyService {
         input.webhookSecretRef ??
         existingAccount?.config.webhookSecretRef ??
         "CLUB_WHISKY_WEBHOOK_SECRET",
-      contractVersion: "2026-07-30",
+      contractVersion: CLUB_WHISKY_CONTRACT_VERSION,
+      lifecycleVersion: readLifecycleVersion(existingAccount?.config) + 1,
+      lifecycleReason: "configuration_requires_homologation",
       inventoryAuthority: "giromesa",
+      stateOwner: "tenant_admin",
+      dependency: "Dose Club webhook and shared inventory homologation",
+      contingency: "Use independent products and reconcile stock manually",
     };
 
     const [account] = await this.database.db
@@ -669,7 +732,7 @@ export class ClubWhiskyService {
       .values({
         tenantId: context.tenantId,
         provider: "club_whisky",
-        status: "active",
+        status: "homologation",
         config,
         secretRef: "CLUB_WHISKY_API_KEY",
         apiKeyHash: issuedKey?.tokenHash,
@@ -679,7 +742,7 @@ export class ClubWhiskyService {
       .onConflictDoUpdate({
         target: [integrationAccounts.tenantId, integrationAccounts.provider],
         set: {
-          status: "active",
+          status: "homologation",
           config,
           ...(issuedKey
             ? {
@@ -720,6 +783,12 @@ export class ClubWhiskyService {
       ...account,
       apiKey: issuedKey?.token,
       apiKeyReturnedOnce: Boolean(issuedKey),
+      owner: config.stateOwner,
+      dependency: config.dependency,
+      contingency: config.contingency,
+      lifecycleVersion: config.lifecycleVersion,
+      lifecycleReason: config.lifecycleReason,
+      lastHealthAt: null,
     };
   }
 
@@ -761,6 +830,16 @@ export class ClubWhiskyService {
         typeof account.config.remoteClientId === "string" ? account.config.remoteClientId : null,
       scopes: Array.isArray(account.config.scopes) ? account.config.scopes : [],
       webhookUrl: typeof account.config.webhookUrl === "string" ? account.config.webhookUrl : null,
+      owner:
+        typeof account.config.stateOwner === "string" ? account.config.stateOwner : "tenant_admin",
+      dependency:
+        typeof account.config.dependency === "string"
+          ? account.config.dependency
+          : "Dose Club homologation",
+      contingency:
+        typeof account.config.contingency === "string"
+          ? account.config.contingency
+          : "Use independent products and reconcile stock manually",
       contractVersion:
         typeof account.config.contractVersion === "string" ? account.config.contractVersion : null,
       inventoryAuthority:
@@ -771,7 +850,125 @@ export class ClubWhiskyService {
       apiKeyCreatedAt: account.apiKeyCreatedAt,
       hasApiKey: Boolean(account.apiKeyLastFour),
       lastSyncAt: account.lastSyncAt,
+      lifecycleVersion: readLifecycleVersion(account.config),
+      lifecycleReason:
+        typeof account.config.lifecycleReason === "string"
+          ? account.config.lifecycleReason
+          : "configuration_requires_homologation",
+      lastHealthAt:
+        typeof account.config.lastHealthAt === "string" ? account.config.lastHealthAt : null,
     };
+  }
+
+  async transitionIntegrationLifecycle(context: TenantContext, input: ClubWhiskyLifecycleInput) {
+    return this.database.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`${context.tenantId}:club_whisky:lifecycle`}))`,
+      );
+      const [account] = await tx
+        .select()
+        .from(integrationAccounts)
+        .where(
+          and(
+            eq(integrationAccounts.tenantId, context.tenantId),
+            eq(integrationAccounts.provider, "club_whisky"),
+          ),
+        )
+        .limit(1);
+      if (!account) throw new NotFoundException("Dose Club integration is not configured");
+      const currentVersion = readLifecycleVersion(account.config);
+      if (input.expectedVersion !== currentVersion) {
+        throw new ConflictException("Integration lifecycle version is stale");
+      }
+
+      const now = new Date();
+      let nextStatus = account.status;
+      let reason: string;
+      const lifecycleMetadata: Record<string, unknown> = {};
+      if (input.event === "activate") {
+        if (account.status !== "homologation") {
+          throw new BadRequestException("Only a homologated integration can be activated");
+        }
+        if (input.contractVersion !== account.config.contractVersion) {
+          throw new ConflictException("Integration contract version does not match");
+        }
+        nextStatus = "active";
+        reason = "homologation_approved";
+        lifecycleMetadata.activatedAt = now.toISOString();
+        lifecycleMetadata.homologationEvidence = input.evidence;
+      } else if (input.event === "health") {
+        if (account.status !== "active" && account.status !== "degraded") {
+          throw new BadRequestException("Health transitions require an active integration");
+        }
+        nextStatus = input.healthy ? "active" : "degraded";
+        reason = input.healthy ? "health_check_passed" : "health_check_failed";
+        lifecycleMetadata.lastHealthAt = now.toISOString();
+        lifecycleMetadata.healthDetail = input.detail;
+      } else {
+        if (account.status === "revoked") {
+          throw new BadRequestException("Integration is already revoked");
+        }
+        nextStatus = "revoked";
+        reason = "revoked_by_tenant_admin";
+        lifecycleMetadata.revokedAt = now.toISOString();
+        lifecycleMetadata.revocationReason = input.reason;
+      }
+
+      const nextVersion = currentVersion + 1;
+      const config = {
+        ...account.config,
+        ...lifecycleMetadata,
+        lifecycleVersion: nextVersion,
+        lifecycleReason: reason,
+        lifecycleUpdatedAt: now.toISOString(),
+        lifecycleUpdatedBy: context.userId,
+      };
+      const [updated] = await tx
+        .update(integrationAccounts)
+        .set({
+          status: nextStatus,
+          config,
+          lastSyncAt: input.event === "health" ? now : account.lastSyncAt,
+          updatedAt: now,
+        })
+        .where(eq(integrationAccounts.id, account.id))
+        .returning({
+          id: integrationAccounts.id,
+          status: integrationAccounts.status,
+          lastSyncAt: integrationAccounts.lastSyncAt,
+        });
+      await this.audit(tx, context, {
+        action: `club_whisky.integration_${input.event}`,
+        entityType: "integration_account",
+        entityId: account.id,
+        metadata: {
+          previousStatus: account.status,
+          nextStatus,
+          previousVersion: currentVersion,
+          nextVersion,
+          reason,
+        },
+      });
+      return {
+        ...updated,
+        provider: "club_whisky",
+        lifecycleVersion: nextVersion,
+        lifecycleReason: reason,
+        lastHealthAt:
+          input.event === "health"
+            ? now.toISOString()
+            : typeof account.config.lastHealthAt === "string"
+              ? account.config.lastHealthAt
+              : null,
+        contractVersion: account.config.contractVersion,
+        owner:
+          typeof account.config.stateOwner === "string"
+            ? account.config.stateOwner
+            : "tenant_admin",
+        dependency: account.config.dependency,
+        contingency: account.config.contingency,
+      };
+    });
   }
 
   private async reserveIdempotency(
@@ -921,16 +1118,33 @@ export class ClubWhiskyService {
 
     const [stockLocation] = await client
       .select({ id: stockLocations.id })
-      .from(stockLocations)
+      .from(branchInventorySettings)
+      .innerJoin(
+        stockLocations,
+        and(
+          eq(stockLocations.tenantId, branchInventorySettings.tenantId),
+          eq(stockLocations.branchId, branchInventorySettings.branchId),
+          eq(stockLocations.id, branchInventorySettings.consumptionLocationId),
+          isNull(stockLocations.archivedAt),
+          ne(stockLocations.type, "transit"),
+        ),
+      )
       .where(
-        and(eq(stockLocations.tenantId, context.tenantId), eq(stockLocations.branchId, branchId)),
+        and(
+          eq(branchInventorySettings.tenantId, context.tenantId),
+          eq(branchInventorySettings.branchId, branchId),
+        ),
       )
       .limit(1);
+
+    if (!stockLocation) {
+      throw new ConflictException("Configure the branch consumption stock location");
+    }
 
     return {
       inventoryItemId: targets[0].inventoryItemId,
       allowNegative: targets[0].allowNegative,
-      stockLocationId: stockLocation?.id,
+      stockLocationId: stockLocation.id,
     };
   }
 
@@ -939,9 +1153,10 @@ export class ClubWhiskyService {
     context: TenantContext,
     branchId: string,
     inventoryItemId: string,
+    stockLocationId: string,
   ) {
-    const lockKey = `club-stock:${context.tenantId}:${branchId}:${inventoryItemId}`;
-    await client.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    const lockKey = `${context.tenantId}:${branchId}:${inventoryItemId}:${stockLocationId}`;
+    await client.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
   }
 
   private async currentStock(
@@ -949,6 +1164,7 @@ export class ClubWhiskyService {
     context: TenantContext,
     branchId: string,
     inventoryItemId: string,
+    stockLocationId: string,
   ) {
     const [result] = await client
       .select({
@@ -960,9 +1176,15 @@ export class ClubWhiskyService {
           eq(stockMovements.tenantId, context.tenantId),
           eq(stockMovements.branchId, branchId),
           eq(stockMovements.inventoryItemId, inventoryItemId),
+          eq(stockMovements.stockLocationId, stockLocationId),
         ),
       );
 
     return Number(result?.quantity ?? 0);
   }
+}
+
+function readLifecycleVersion(config: Record<string, unknown> | undefined) {
+  const version = config?.lifecycleVersion;
+  return typeof version === "number" && Number.isInteger(version) && version >= 0 ? version : 0;
 }

@@ -1,12 +1,29 @@
-import { auditLogs, products } from "@giromesa/db";
+import { createHash } from "node:crypto";
+import {
+  auditLogs,
+  inventoryItems,
+  operationalShifts,
+  operationIdempotency,
+  type orders,
+  payments,
+  products,
+  qrGuestSessions,
+  returnableMappings,
+  staffServicePolicies,
+  stockMovements,
+  tableServiceSessions,
+  tableWaiterAssignments,
+} from "@giromesa/db";
 import type { TenantContext } from "@giromesa/domain";
 import { calculateOrderTotal, resolveProductionRouting, stateMachines } from "@giromesa/domain";
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DatabaseService } from "../database/database.service";
@@ -15,6 +32,7 @@ import { enqueueClubWhiskyStockUpdatedForInventoryItems } from "../integrations/
 import { createPrintProvider } from "../printing/print-provider";
 import { OrderRepository } from "./order.repository";
 import { PosRepository } from "./pos.repository";
+import { WaiterAssignmentService } from "./waiter-assignment.service";
 
 type OpenOrderInput = {
   channel: "counter" | "table" | "tab" | "delivery" | "qr";
@@ -22,13 +40,17 @@ type OpenOrderInput = {
   tableId?: string | undefined;
   customerId?: string | undefined;
   peopleCount?: number | undefined;
+  idempotencyKey: string;
 };
+
+type OpenOrderResult = typeof orders.$inferSelect & { audit: "order.opened" };
 
 type AddItemInput = {
   productId: string;
   quantity: number;
   notes?: string | undefined;
   modifiers?: Record<string, unknown>[] | undefined;
+  idempotencyKey: string;
 };
 
 type TransactionClient = Parameters<Parameters<DatabaseService["db"]["transaction"]>[0]>[0];
@@ -44,6 +66,77 @@ function readMetadataNumber(metadata: Record<string, unknown>, key: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+type PlannedStockMovement = Omit<typeof stockMovements.$inferInsert, "tenantId">;
+
+export function planOrderInventoryMovements(input: {
+  order: { id: string; branchId: string };
+  items: Array<{ id: string; productId: string; quantity: string }>;
+  recipes: Array<{ id: string; productId: string }>;
+  ingredients: Array<{ recipeId: string; inventoryItemId: string; quantity: string }>;
+  returnables: Array<{
+    productId: string;
+    fullInventoryItemId: string;
+    emptyInventoryItemId: string;
+  }>;
+  location: { id: string; name: string };
+}): PlannedStockMovement[] {
+  const returnableByProduct = new Map(
+    input.returnables.map((mapping) => [mapping.productId, mapping]),
+  );
+  const movements: PlannedStockMovement[] = [];
+
+  for (const item of input.items) {
+    const recipe = input.recipes.find((entry) => entry.productId === item.productId);
+    const itemQuantity = Number(item.quantity);
+    const recipeIngredients = recipe
+      ? input.ingredients.filter((entry) => entry.recipeId === recipe.id)
+      : [];
+    for (const ingredient of recipeIngredients) {
+      movements.push({
+        branchId: input.order.branchId,
+        inventoryItemId: ingredient.inventoryItemId,
+        stockLocationId: input.location.id,
+        type: "sale",
+        quantity: String(-Number(ingredient.quantity) * itemQuantity),
+        sourceType: "order_item",
+        sourceId: item.id,
+        reason: `Baixa automática do item ${item.id} do pedido ${input.order.id} em ${input.location.name}`,
+      });
+    }
+
+    const returnable = returnableByProduct.get(item.productId);
+    if (!returnable) continue;
+    if (
+      !recipeIngredients.some(
+        (ingredient) => ingredient.inventoryItemId === returnable.fullInventoryItemId,
+      )
+    ) {
+      movements.push({
+        branchId: input.order.branchId,
+        inventoryItemId: returnable.fullInventoryItemId,
+        stockLocationId: input.location.id,
+        type: "returnable_consumption",
+        quantity: String(-itemQuantity),
+        sourceType: "order_item",
+        sourceId: item.id,
+        reason: `Retornável cheio consumido pelo item ${item.id} do pedido ${input.order.id} em ${input.location.name}`,
+      });
+    }
+    movements.push({
+      branchId: input.order.branchId,
+      inventoryItemId: returnable.emptyInventoryItemId,
+      stockLocationId: input.location.id,
+      type: "returnable_consumption",
+      quantity: String(itemQuantity),
+      sourceType: "order_item",
+      sourceId: item.id,
+      reason: `Retornável vazio gerado pelo item ${item.id} do pedido ${input.order.id} em ${input.location.name}`,
+    });
+  }
+
+  return movements;
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -51,11 +144,60 @@ export class OrdersService {
     @Inject(PosRepository) readonly _posRepository: PosRepository,
     @Inject(OrderRepository) private readonly orderRepository: OrderRepository,
     @Inject(FiscalService) private readonly fiscalService: FiscalService,
+    @Optional()
+    @Inject(WaiterAssignmentService)
+    private readonly waiterAssignments?: WaiterAssignmentService,
   ) {}
 
-  async openOrder(context: TenantContext, input: OpenOrderInput) {
+  async openOrder(context: TenantContext, input: OpenOrderInput): Promise<OpenOrderResult> {
     await this._posRepository.ensureBranchBelongsToTenant(context, input.branchId);
     return this.database.db.transaction(async (tx) => {
+      const requestHash = createHash("sha256")
+        .update(
+          JSON.stringify({
+            branchId: input.branchId,
+            channel: input.channel,
+            customerId: input.customerId ?? null,
+            peopleCount: input.peopleCount ?? 1,
+            tableId: input.tableId ?? null,
+          }),
+        )
+        .digest("hex");
+      const [reservation] = await tx
+        .insert(operationIdempotency)
+        .values({
+          tenantId: context.tenantId,
+          branchId: input.branchId,
+          scope: "pos.open_order",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+        })
+        .onConflictDoNothing()
+        .returning({ id: operationIdempotency.id });
+      if (!reservation) {
+        const [existing] = await tx
+          .select()
+          .from(operationIdempotency)
+          .where(
+            and(
+              eq(operationIdempotency.tenantId, context.tenantId),
+              eq(operationIdempotency.branchId, input.branchId),
+              eq(operationIdempotency.scope, "pos.open_order"),
+              eq(operationIdempotency.idempotencyKey, input.idempotencyKey),
+            ),
+          )
+          .limit(1);
+        if (!existing || existing.requestHash !== requestHash) {
+          throw new ConflictException(
+            "A chave de idempotência já foi usada para outra abertura de comanda",
+          );
+        }
+        if (existing.status !== "completed" || !existing.response) {
+          throw new ConflictException("A abertura desta comanda ainda está sendo processada");
+        }
+        return existing.response as OpenOrderResult;
+      }
+
       if (input.tableId) {
         const table = await this.orderRepository.findDiningTable(context, input.tableId, tx);
 
@@ -65,6 +207,11 @@ export class OrdersService {
         if (table.branchId !== input.branchId) {
           throw new BadRequestException("Table does not belong to the selected branch");
         }
+        await this.waiterAssignments?.assertOrderAccess(
+          context,
+          { branchId: input.branchId, tableId: table.id },
+          tx,
+        );
 
         await this.orderRepository.updateDiningTable(
           context,
@@ -87,6 +234,29 @@ export class OrdersService {
         if (!customer) throw new NotFoundException("Customer not found");
       }
 
+      const [shift] = await tx
+        .select({ id: operationalShifts.id })
+        .from(operationalShifts)
+        .where(
+          and(
+            eq(operationalShifts.tenantId, context.tenantId),
+            eq(operationalShifts.branchId, input.branchId),
+            eq(operationalShifts.status, "open"),
+          ),
+        )
+        .limit(1);
+      const [servicePolicy] = await tx
+        .select()
+        .from(staffServicePolicies)
+        .where(
+          and(
+            eq(staffServicePolicies.tenantId, context.tenantId),
+            eq(staffServicePolicies.branchId, input.branchId),
+            eq(staffServicePolicies.isActive, true),
+          ),
+        )
+        .limit(1);
+
       const order = await this.orderRepository.insertOrder(
         context,
         {
@@ -96,6 +266,18 @@ export class OrdersService {
           channel: input.channel,
           status: "opened",
           peopleCount: input.peopleCount ?? 1,
+          shiftId: shift?.id ?? null,
+          serviceChargeStatus: servicePolicy ? "suggested" : "not_configured",
+          serviceChargePolicySnapshot: servicePolicy
+            ? {
+                policyId: servicePolicy.id,
+                version: servicePolicy.version,
+                attributionMode: servicePolicy.attributionMode,
+                serviceRateBps: servicePolicy.serviceRateBps,
+                serviceBase: servicePolicy.serviceBase,
+                poolRules: servicePolicy.poolRules,
+              }
+            : {},
           openedAt: new Date(),
         },
         tx,
@@ -104,6 +286,7 @@ export class OrdersService {
       if (!order) {
         throw new Error("Failed to open order");
       }
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
 
       await this.orderRepository.insertAuditLog(
         context,
@@ -119,10 +302,20 @@ export class OrdersService {
         tx,
       );
 
-      return {
+      const result = {
         ...order,
-        audit: "order.opened",
+        audit: "order.opened" as const,
       };
+      await tx
+        .update(operationIdempotency)
+        .set({
+          status: "completed",
+          response: JSON.parse(JSON.stringify(result)) as Record<string, unknown>,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(operationIdempotency.id, reservation.id));
+      return result;
     });
   }
 
@@ -206,11 +399,33 @@ export class OrdersService {
 
   async addItem(context: TenantContext, orderId: string, input: AddItemInput) {
     return this.database.db.transaction(async (tx) => {
+      const replay = await this.orderRepository.findOrderItemByIdempotencyKey(
+        context,
+        input.idempotencyKey,
+        tx,
+      );
+      if (replay) {
+        const replayModifierIds = readModifierOptionIds(replay.modifiers);
+        const requestedModifierIds = readModifierOptionIds(input.modifiers ?? []);
+        if (
+          replay.orderId !== orderId ||
+          replay.productId !== input.productId ||
+          Number(replay.quantity) !== input.quantity ||
+          (replay.notes ?? undefined) !== input.notes ||
+          replayModifierIds.join("|") !== requestedModifierIds.join("|")
+        ) {
+          throw new ConflictException(
+            "Idempotency key was already used with a different order item",
+          );
+        }
+        return { ...replay, audit: "order.item_added", replayed: true };
+      }
       const order = await this.orderRepository.findOrderById(context, orderId, tx);
 
       if (!order) {
         throw new NotFoundException("Order not found");
       }
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
 
       const product = await this.orderRepository.findProduct(context, input.productId, tx);
 
@@ -258,6 +473,22 @@ export class OrdersService {
         ],
       });
 
+      const [assignment] =
+        order.tableId && order.shiftId
+          ? await tx
+              .select({ waiterUserId: tableWaiterAssignments.waiterUserId })
+              .from(tableWaiterAssignments)
+              .where(
+                and(
+                  eq(tableWaiterAssignments.tenantId, context.tenantId),
+                  eq(tableWaiterAssignments.tableId, order.tableId),
+                  eq(tableWaiterAssignments.shiftId, order.shiftId),
+                  sql`${tableWaiterAssignments.endedAt} is null`,
+                ),
+              )
+              .limit(1)
+          : [];
+
       const item = await this.orderRepository.insertOrderItem(
         context,
         {
@@ -274,16 +505,45 @@ export class OrdersService {
             name: option.name,
             priceDeltaCents: option.priceDeltaCents,
           })),
+          idempotencyKey: input.idempotencyKey,
+          registeredByUserId: context.userId ?? null,
+          shiftId: order.shiftId,
+          responsibleWaiterUserId: assignment?.waiterUserId ?? null,
         },
         tx,
       );
 
+      if (!item) {
+        const replay = await this.orderRepository.findOrderItemByIdempotencyKey(
+          context,
+          input.idempotencyKey,
+          tx,
+        );
+        if (replay) return { ...replay, audit: "order.item_added", replayed: true };
+        throw new Error("Failed to add order item");
+      }
+
       const nextSubtotal = order.subtotalCents + total.totalCents;
+      const frozenPolicy = order.serviceChargePolicySnapshot as {
+        serviceRateBps?: number;
+        serviceBase?: "net_consumption" | "gross_consumption" | "manual";
+      };
+      const suggestedBase =
+        frozenPolicy.serviceBase === "gross_consumption"
+          ? nextSubtotal
+          : Math.max(0, nextSubtotal - order.discountCents);
+      const serviceChargeSuggestedCents =
+        frozenPolicy.serviceBase === "manual"
+          ? order.serviceChargeSuggestedCents
+          : Math.floor(
+              (suggestedBase * Math.max(0, frozenPolicy.serviceRateBps ?? 0) + 5_000) / 10_000,
+            );
       const updatedOrder = await this.orderRepository.updateOrder(
         context,
         order.id,
         {
           subtotalCents: nextSubtotal,
+          serviceChargeSuggestedCents,
           totalCents:
             nextSubtotal - order.discountCents + order.serviceChargeCents + order.deliveryFeeCents,
           version: order.version + 1,
@@ -295,6 +555,40 @@ export class OrdersService {
         throw new ConflictException("Order was updated concurrently");
       }
 
+      await this.orderRepository.insertAuditLog(
+        context,
+        {
+          branchId: order.branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "order.item_added",
+          entityType: "order_item",
+          entityId: item.id,
+          metadata: {
+            orderId: order.id,
+            productId: product.id,
+            quantity: input.quantity,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+        tx,
+      );
+      await this.orderRepository.insertOutboxEvent(
+        context,
+        {
+          topic: "order.item_added",
+          payload: {
+            orderId: order.id,
+            orderItemId: item.id,
+            branchId: order.branchId,
+            productId: product.id,
+            quantity: input.quantity,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+        tx,
+      );
+
       return {
         ...item,
         audit: "order.item_added",
@@ -302,12 +596,27 @@ export class OrdersService {
     });
   }
 
-  async sendToKitchen(context: TenantContext, orderId: string) {
+  async autoSendQrOrder(context: TenantContext, orderId: string) {
+    return this.sendToKitchen(context, orderId, { systemQrDispatch: true });
+  }
+
+  async sendToKitchen(
+    context: TenantContext,
+    orderId: string,
+    options: { systemQrDispatch?: boolean } = {},
+  ) {
     return this.database.db.transaction(async (tx) => {
       const order = await this.orderRepository.findOrderById(context, orderId, tx);
 
       if (!order) {
         throw new NotFoundException("Order not found");
+      }
+      if (options.systemQrDispatch) {
+        if (order.channel !== "qr") {
+          throw new ForbiddenException("System dispatch is only available for QR orders");
+        }
+      } else {
+        await this.waiterAssignments?.assertOrderAccess(context, order, tx);
       }
 
       if (order.status === "opened") {
@@ -323,6 +632,17 @@ export class OrdersService {
       );
 
       if (pendingItems.length === 0) {
+        if (["sent_to_kitchen", "preparing", "ready", "served"].includes(order.status)) {
+          return {
+            orderId,
+            status: order.status,
+            ticketsCreated: [],
+            printJobsCreated: [],
+            routing: { destinations: [], unroutedItems: [] },
+            audit: "order.sent_to_kitchen",
+            replayed: true,
+          };
+        }
         throw new BadRequestException("Order has no pending items to send");
       }
 
@@ -582,26 +902,35 @@ export class OrdersService {
   }
 
   async assignCustomer(context: TenantContext, orderId: string, customerId: string) {
-    const customer = await this.orderRepository.findCustomer(context, customerId);
-    if (!customer) throw new NotFoundException("Customer not found");
-
-    const order = await this.orderRepository.updateOrder(context, orderId, {
-      customerId,
+    return this.database.db.transaction(async (tx) => {
+      const customer = await this.orderRepository.findCustomer(context, customerId, tx);
+      if (!customer) throw new NotFoundException("Customer not found");
+      const current = await this.orderRepository.findOrderById(context, orderId, tx);
+      if (!current) throw new NotFoundException("Order not found");
+      await this.waiterAssignments?.assertOrderAccess(context, current, tx);
+      const order = await this.orderRepository.updateOrder(
+        context,
+        orderId,
+        { customerId },
+        undefined,
+        tx,
+      );
+      if (!order) throw new NotFoundException("Order not found");
+      await this.orderRepository.insertAuditLog(
+        context,
+        {
+          branchId: order.branchId,
+          userId: context.userId,
+          requestId: context.requestId,
+          action: "order.customer_assigned",
+          entityType: "order",
+          entityId: order.id,
+          metadata: { customerId },
+        },
+        tx,
+      );
+      return { ...order, audit: "order.customer_assigned" };
     });
-
-    if (!order) throw new NotFoundException("Order not found");
-
-    await this.orderRepository.insertAuditLog(context, {
-      branchId: order.branchId,
-      userId: context.userId,
-      requestId: context.requestId,
-      action: "order.customer_assigned",
-      entityType: "order",
-      entityId: order.id,
-      metadata: { customerId },
-    });
-
-    return { ...order, audit: "order.customer_assigned" };
   }
 
   async closeOrder(context: TenantContext, orderId: string) {
@@ -611,6 +940,7 @@ export class OrdersService {
       if (!order) {
         throw new NotFoundException("Order not found");
       }
+      await this.waiterAssignments?.assertOrderAccess(context, order, tx);
 
       if (order.closedAt) {
         return {
@@ -655,45 +985,91 @@ export class OrdersService {
       );
       const recipeIds = productRecipes.map((recipe) => recipe.id);
       const ingredients = await this.orderRepository.findRecipeItems(context, recipeIds, tx);
+      const returnables = productIds.length
+        ? await tx
+            .select()
+            .from(returnableMappings)
+            .where(
+              and(
+                eq(returnableMappings.tenantId, context.tenantId),
+                inArray(returnableMappings.productId, productIds),
+              ),
+            )
+        : [];
       const defaultLocation = await this.orderRepository.findStockLocation(
         context,
         order.branchId,
         tx,
       );
-
       let stockMovementsCreated = 0;
       const changedInventoryItemIds = new Set<string>();
-      for (const item of activeItems) {
-        const recipe = productRecipes.find((entry) => entry.productId === item.productId);
-        if (!recipe) {
-          continue;
-        }
+      const plannedMovements = defaultLocation
+        ? planOrderInventoryMovements({
+            order,
+            items: activeItems,
+            recipes: productRecipes,
+            ingredients,
+            returnables,
+            location: defaultLocation,
+          })
+        : [];
 
-        const itemQuantity = Number(item.quantity);
-        for (const ingredient of ingredients.filter((entry) => entry.recipeId === recipe.id)) {
-          await this.orderRepository.insertStockMovement(
-            context,
-            {
-              branchId: order.branchId,
-              inventoryItemId: ingredient.inventoryItemId,
-              stockLocationId: defaultLocation?.id,
-              type: "sale",
-              quantity: String(-Number(ingredient.quantity) * itemQuantity),
-              sourceType: "order_item",
-              sourceId: item.id,
-              reason: `Baixa automatica do item ${item.id} do pedido ${order.id}`,
-            },
-            tx,
+      const deductions = new Map<string, number>();
+      for (const movement of plannedMovements) {
+        const quantity = Number(movement.quantity);
+        if (quantity < 0) {
+          deductions.set(
+            movement.inventoryItemId,
+            (deductions.get(movement.inventoryItemId) ?? 0) + Math.abs(quantity),
           );
-          stockMovementsCreated += 1;
-          changedInventoryItemIds.add(ingredient.inventoryItemId);
         }
+      }
+      for (const [inventoryItemId, quantity] of [...deductions.entries()].sort(([left], [right]) =>
+        left.localeCompare(right),
+      )) {
+        if (!defaultLocation) break;
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`${context.tenantId}:${order.branchId}:${inventoryItemId}:${defaultLocation.id}`}))`,
+        );
+        const [itemPolicy] = await tx
+          .select({ allowNegative: inventoryItems.allowNegative })
+          .from(inventoryItems)
+          .where(
+            and(
+              eq(inventoryItems.tenantId, context.tenantId),
+              eq(inventoryItems.id, inventoryItemId),
+            ),
+          )
+          .limit(1);
+        if (!itemPolicy) throw new NotFoundException("Inventory item not found");
+        if (!itemPolicy.allowNegative) {
+          const [balance] = await tx
+            .select({ quantity: sql<string>`coalesce(sum(${stockMovements.quantity}), 0)` })
+            .from(stockMovements)
+            .where(
+              and(
+                eq(stockMovements.tenantId, context.tenantId),
+                eq(stockMovements.branchId, order.branchId),
+                eq(stockMovements.inventoryItemId, inventoryItemId),
+                eq(stockMovements.stockLocationId, defaultLocation.id),
+              ),
+            );
+          if (Number(balance?.quantity ?? 0) < quantity) {
+            throw new ConflictException(`Insufficient stock at ${defaultLocation.name}`);
+          }
+        }
+      }
+      for (const movement of plannedMovements) {
+        await this.orderRepository.insertStockMovement(context, movement, tx);
+        stockMovementsCreated += 1;
+        changedInventoryItemIds.add(movement.inventoryItemId);
       }
 
       await enqueueClubWhiskyStockUpdatedForInventoryItems(tx, context, {
         branchId: order.branchId,
         inventoryItemIds: [...changedInventoryItemIds],
         movementType: "sale",
+        movementId: order.id,
       });
 
       const tableStatusAfterClose = order.tableId
@@ -710,6 +1086,40 @@ export class OrdersService {
           tx,
         );
       }
+      if (order.tableId) {
+        const closedSessions = await tx
+          .update(tableServiceSessions)
+          .set({
+            status: "closed",
+            closedByUserId: context.userId ?? null,
+            closedAt,
+            updatedAt: closedAt,
+          })
+          .where(
+            and(
+              eq(tableServiceSessions.tenantId, context.tenantId),
+              eq(tableServiceSessions.tableId, order.tableId),
+              eq(tableServiceSessions.status, "active"),
+            ),
+          )
+          .returning({ id: tableServiceSessions.id });
+        if (closedSessions.length) {
+          await tx
+            .update(qrGuestSessions)
+            .set({
+              status: "revoked",
+              revokedAt: closedAt,
+              revokedByUserId: context.userId ?? null,
+              updatedAt: closedAt,
+            })
+            .where(
+              inArray(
+                qrGuestSessions.tableServiceSessionId,
+                closedSessions.map((session) => session.id),
+              ),
+            );
+        }
+      }
 
       await this.orderRepository.insertAuditLog(
         context,
@@ -724,6 +1134,7 @@ export class OrdersService {
             tableId: order.tableId,
             totalCents: order.totalCents,
             stockMovementsCreated,
+            inventorySkipped: !defaultLocation,
             tableStatusAfterClose,
           },
         },
@@ -746,10 +1157,26 @@ export class OrdersService {
         tx,
       );
 
+      let fiscalDocument: { id: string; status: string } | undefined;
+      let fiscalError: string | undefined;
+      try {
+        fiscalDocument = await this.fiscalService.createPendingOrderDocumentInTransaction(
+          context,
+          orderId,
+          undefined,
+          tx,
+        );
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) throw error;
+        fiscalError = error instanceof Error ? error.message : "Fiscal pending creation failed";
+      }
+
       return {
         orderId,
         status: "paid",
-        fiscalStatus: "pending",
+        fiscalStatus: fiscalDocument?.status ?? "not_queued",
+        ...(fiscalDocument ? { fiscalDocumentId: fiscalDocument.id } : {}),
+        ...(fiscalError ? { fiscalError } : {}),
         audit: "order.closed",
         replayed: false,
       };
@@ -760,23 +1187,123 @@ export class OrdersService {
       return response;
     }
 
-    try {
-      const fiscalDocument = await this.fiscalService.createPendingOrderDocument(context, orderId);
-      const { replayed, ...response } = closedOrder;
-      return {
-        ...response,
-        fiscalDocumentId: fiscalDocument.id,
-        fiscalStatus: fiscalDocument.status,
-      };
-    } catch (error) {
-      const { replayed, ...response } = closedOrder;
-      return {
-        ...response,
-        fiscalStatus: "error",
-        fiscalError: error instanceof Error ? error.message : "Fiscal pending creation failed",
-      };
-    }
+    const { replayed, ...response } = closedOrder;
+    return response;
   }
+
+  async writeOffOrder(
+    context: TenantContext,
+    orderId: string,
+    input: { expectedVersion: number; reason: string },
+  ) {
+    return this.database.db.transaction((tx) =>
+      this.writeOffOrderInTransaction(context, orderId, input, tx),
+    );
+  }
+
+  async writeOffOrderInTransaction(
+    context: TenantContext,
+    orderId: string,
+    input: { expectedVersion: number; reason: string },
+    tx: TransactionClient,
+  ) {
+    const order = await this.orderRepository.findOrderById(context, orderId, tx);
+    if (!order) throw new NotFoundException("Order not found");
+    if (context.branchId && order.branchId !== context.branchId)
+      throw new ForbiddenException("Branch is not authorized");
+    if (order.version !== input.expectedVersion)
+      throw new ConflictException("Order was updated concurrently");
+    if (order.closedAt || ["paid", "canceled", "refunded", "written_off"].includes(order.status))
+      throw new BadRequestException("Only an open unpaid order can be written off");
+    const [paid] = await tx
+      .select({ total: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int` })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.tenantId, context.tenantId),
+          eq(payments.orderId, order.id),
+          eq(payments.status, "confirmed"),
+        ),
+      );
+    if (Number(paid?.total ?? 0) > 0)
+      throw new BadRequestException("A paid order cannot be written off");
+    const closedAt = new Date();
+    const updated = await this.orderRepository.updateOrder(
+      context,
+      order.id,
+      { status: "written_off", closedAt, version: order.version + 1 },
+      order.version,
+      tx,
+    );
+    if (!updated) throw new ConflictException("Order was updated concurrently");
+    if (order.tableId) {
+      await this.orderRepository.updateDiningTable(context, order.tableId, { status: "free" }, tx);
+      const closedSessions = await tx
+        .update(tableServiceSessions)
+        .set({
+          status: "closed",
+          closedByUserId: context.userId ?? null,
+          closedAt,
+          updatedAt: closedAt,
+        })
+        .where(
+          and(
+            eq(tableServiceSessions.tenantId, context.tenantId),
+            eq(tableServiceSessions.tableId, order.tableId),
+            eq(tableServiceSessions.status, "active"),
+          ),
+        )
+        .returning({ id: tableServiceSessions.id });
+      if (closedSessions.length) {
+        await tx
+          .update(qrGuestSessions)
+          .set({
+            status: "revoked",
+            revokedAt: closedAt,
+            revokedByUserId: context.userId ?? null,
+            updatedAt: closedAt,
+          })
+          .where(
+            inArray(
+              qrGuestSessions.tableServiceSessionId,
+              closedSessions.map((session) => session.id),
+            ),
+          );
+      }
+    }
+    await this.orderRepository.insertAuditLog(
+      context,
+      {
+        branchId: order.branchId,
+        userId: context.userId,
+        requestId: context.requestId,
+        action: "order.written_off",
+        entityType: "order",
+        entityId: order.id,
+        metadata: { reason: input.reason, tableId: order.tableId },
+      },
+      tx,
+    );
+    await this.orderRepository.insertOutboxEvent(
+      context,
+      {
+        topic: "order.written_off",
+        payload: { orderId: order.id, branchId: order.branchId, reason: input.reason },
+      },
+      tx,
+    );
+    return updated;
+  }
+}
+
+function readModifierOptionIds(modifiers: readonly Record<string, unknown>[] | undefined) {
+  return [
+    ...new Set(
+      (modifiers ?? []).flatMap((modifier) =>
+        typeof modifier.optionId === "string" ? [modifier.optionId] : [],
+      ),
+    ),
+  ].sort();
 }
 
 function readTenantDisplayName(
