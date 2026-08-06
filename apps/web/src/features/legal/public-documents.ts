@@ -15,7 +15,7 @@ type LegalDocumentSource = Omit<PublicLegalDocument, "hash">;
 
 const termsSource: LegalDocumentSource = {
   documentType: "terms",
-  version: "draft-2026-08-03",
+  version: "draft-2026-08-06",
   status: "draft",
   title: "Termos de uso",
   summary: "Minuta das condições de acesso ao GiroMesa para empresas e suas equipes.",
@@ -24,6 +24,13 @@ const termsSource: LegalDocumentSource = {
       heading: "Status desta minuta",
       paragraphs: [
         "Este texto organiza as condições operacionais pretendidas para o GiroMesa, mas ainda depende da identificação cadastral da fornecedora e de validação jurídica. Enquanto estiver marcado como minuta, não substitui o contrato comercial assinado com o estabelecimento.",
+      ],
+    },
+    {
+      heading: "Identificação da fornecedora",
+      paragraphs: [
+        "Razão social: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX. CNPJ: XX.XXX.XXX/XXXX-XX. Endereço: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX, Maceió/AL. E-mail jurídico: XXXXXXXXXXXXXXXXXXXXXXXXX. Encarregado de dados: XXXXXXXXXXXXXXXXXXXXXXXXX.",
+        "Esses campos são intencionalmente visíveis como marcadores no piloto e devem ser substituídos e revisados antes de qualquer oferta comercial.",
       ],
     },
     {
@@ -40,6 +47,13 @@ const termsSource: LegalDocumentSource = {
       ],
     },
     {
+      heading: "Pedidos, pagamentos e integrações",
+      paragraphs: [
+        "O GiroMesa registra pedidos, pagamentos, descontos, cancelamentos, produção, estoque e auditoria conforme as permissões configuradas. O estabelecimento é responsável por conferir valores, autorizações, fechamento de caixa e documentos emitidos.",
+        "Integrações como Focus NFe, Resend, Google, iFood, WhatsApp e DoseClub somente operam quando a unidade possui credenciais válidas, consentimentos e políticas próprias. O WhatsApp por QR, quando disponibilizado, é transporte não oficial e pode ser revogado ou ficar indisponível.",
+      ],
+    },
+    {
       heading: "Operação e disponibilidade",
       paragraphs: [
         "A plataforma registra eventos e aplica controles de idempotência, auditoria e isolamento entre estabelecimentos. Janelas de manutenção, níveis de serviço, suporte, exportação e encerramento contratual serão definidos no contrato comercial definitivo.",
@@ -49,6 +63,18 @@ const termsSource: LegalDocumentSource = {
       heading: "QR e atendimento ao consumidor",
       paragraphs: [
         "O estabelecimento escolhe quais recursos do QR ficam disponíveis e é responsável por conferir pedidos, restrições de idade, disponibilidade e cobrança. O GiroMesa não processa o pagamento do consumo do cliente final por padrão.",
+      ],
+    },
+    {
+      heading: "Uso aceitável e propriedade intelectual",
+      paragraphs: [
+        "É proibido fraudar pedidos, burlar permissões, compartilhar credenciais, inserir conteúdo ilícito, explorar vulnerabilidades ou usar o serviço para finalidade diferente da operação autorizada. Marcas, software, textos e interfaces permanecem protegidos por seus respectivos titulares.",
+      ],
+    },
+    {
+      heading: "Vigência, suporte e responsabilidade",
+      paragraphs: [
+        "A minuta se aplica somente ao piloto controlado. Regras de preço, suporte, níveis de serviço, suspensão, encerramento, foro e limites de responsabilidade serão definidos no contrato definitivo. Nenhuma tela do sistema substitui orientação contábil, fiscal, trabalhista, sanitária ou jurídica.",
       ],
     },
     {
@@ -62,7 +88,7 @@ const termsSource: LegalDocumentSource = {
 
 const privacySource: LegalDocumentSource = {
   documentType: "privacy",
-  version: "draft-2026-08-03",
+  version: "draft-2026-08-06",
   status: "draft",
   title: "Aviso de privacidade",
   summary: "Minuta sobre o tratamento de dados pessoais necessários à operação do GiroMesa.",
@@ -71,6 +97,13 @@ const privacySource: LegalDocumentSource = {
       heading: "Status desta minuta",
       paragraphs: [
         "Este aviso descreve o desenho atual de privacidade, mas ainda depende da identificação cadastral da fornecedora, da definição do canal do encarregado e de validação jurídica. Ele não deve ser publicado como aviso definitivo enquanto estiver marcado como minuta.",
+      ],
+    },
+    {
+      heading: "Identificação e contato",
+      paragraphs: [
+        "Controlador da plataforma: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX. CNPJ: XX.XXX.XXX/XXXX-XX. Endereço: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX, Maceió/AL. Canal de privacidade: XXXXXXXXXXXXXXXXXXXXXXXXX. Encarregado: XXXXXXXXXXXXXXXXXXXXXXXXX.",
+        "Os marcadores devem ser preenchidos e aprovados antes da publicação comercial.",
       ],
     },
     {
@@ -87,6 +120,13 @@ const privacySource: LegalDocumentSource = {
       ],
     },
     {
+      heading: "Bases legais e dados de terceiros",
+      paragraphs: [
+        "A base legal de cada finalidade será confirmada com o responsável jurídico do controlador. Em geral, o tratamento pode ser necessário para executar o contrato, cumprir obrigação legal ou regulatória, exercer direitos e proteger a segurança; consentimento será usado quando aplicável e separado.",
+        "O estabelecimento deve inserir somente dados necessários de clientes, equipe e fornecedores, manter sua própria transparência e atender solicitações relacionadas aos dados sob sua decisão.",
+      ],
+    },
+    {
       heading: "Compartilhamento e suboperadores",
       paragraphs: [
         "Dados podem ser compartilhados com provedores estritamente necessários para hospedagem, comunicação, observabilidade, cobrança da assinatura e integrações ativadas pelo estabelecimento. A lista pública de suboperadores deverá identificar os provedores efetivamente contratados antes da produção.",
@@ -97,6 +137,13 @@ const privacySource: LegalDocumentSource = {
       paragraphs: [
         "Os prazos de retenção devem considerar a finalidade, o contrato e as obrigações legais aplicáveis. O produto utiliza controles de acesso, registros de auditoria, segregação por estabelecimento e medidas de proteção compatíveis com o risco.",
         "Titulares poderão solicitar confirmação, acesso, correção e os demais direitos previstos na legislação aplicável. O canal oficial e o fluxo entre o titular, o estabelecimento e a plataforma serão publicados após validação cadastral.",
+      ],
+    },
+    {
+      heading: "Incidentes, cookies e transferências",
+      paragraphs: [
+        "Incidentes de segurança serão registrados, tratados e comunicados conforme a avaliação de risco e a legislação aplicável. Cookies estritamente necessários sustentam sessão e segurança; qualquer medição ou marketing não essencial dependerá de configuração apropriada.",
+        "Hospedagem, e-mail, autenticação, emissão fiscal, cobrança e conectores podem processar dados em outras localidades. A lista de suboperadores, transferências e salvaguardas será publicada antes da produção.",
       ],
     },
     {
@@ -122,10 +169,10 @@ export function canonicalLegalDocumentText(document: LegalDocumentSource) {
 export const publicLegalDocuments = {
   terms: {
     ...termsSource,
-    hash: "f56b723169070d0a68ff3aad28877350fc2b2f71f074c579a7d00f187886b8ad",
+    hash: "41be70b84ebd2e647445bd7e7c158bcb72f0f77231c2ebd8778fbbafdace9acf",
   },
   privacy: {
     ...privacySource,
-    hash: "50ba75a087a0ef0c2a010795d4ae55e95ece96c4e135a2d6ca6a6d19af96c0d9",
+    hash: "498219ee8d29c5a6d83f34b38b74f5223bdafd4f6dbf55285a52e566d35e6d7a",
   },
 } satisfies Record<"terms" | "privacy", PublicLegalDocument>;

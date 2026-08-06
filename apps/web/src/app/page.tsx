@@ -470,6 +470,8 @@ export default function HomePage() {
           <nav aria-label="Links institucionais">
             <a href="/manual">Manual</a>
             <a href="/login">Acessar sistema</a>
+            <a href="/termos">Termos</a>
+            <a href="/privacidade">Privacidade</a>
             <a href="https://doseclube.giromesa.com.br" target="_blank" rel="noreferrer">
               DoseClub
             </a>
