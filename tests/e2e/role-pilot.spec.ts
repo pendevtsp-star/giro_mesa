@@ -38,7 +38,7 @@ test.describe("Piloto guiado por perfil", () => {
     await authenticateBrowserPage(page, roles.owner.email, roles.owner.password);
 
     await expect(page.locator(".user-avatar-role")).toHaveText("Dono ou administrador");
-    await expect(navLink(page, "/app/qr")).toBeVisible();
+    await expectVisibleNavLink(page, "/app/qr");
     await expect(navLink(page, "/app/team")).toBeVisible();
 
     await page.goto("/app/qr", { waitUntil: "networkidle" });
@@ -59,7 +59,7 @@ test.describe("Piloto guiado por perfil", () => {
     await expect(page.locator(".user-avatar-role")).toHaveText("Gerente");
     await expect(navLink(page, "/app/salon")).toBeVisible();
     await expect(navLink(page, "/app/reports")).toBeVisible();
-    await expect(navLink(page, "/app/settings/operation")).toBeVisible();
+    await expectVisibleNavLink(page, "/app/settings/operation");
     await expect(navLink(page, "/app/team")).toHaveCount(0);
     expect(forbiddenResponses).toEqual([]);
   });
@@ -148,4 +148,12 @@ test.describe("Piloto guiado por perfil", () => {
 
 function navLink(page: import("@playwright/test").Page, href: string) {
   return page.locator(`.sidebar nav a[href="${href}"]`);
+}
+
+async function expectVisibleNavLink(page: import("@playwright/test").Page, href: string) {
+  const link = navLink(page, href);
+  if (!(await link.isVisible())) {
+    await link.locator("xpath=ancestor::details/summary").click();
+  }
+  await expect(link).toBeVisible();
 }
