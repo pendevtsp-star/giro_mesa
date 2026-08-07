@@ -1556,6 +1556,26 @@ export type PrinterConnectorConfigureResponse = PrinterConnectorConfig & {
   apiKeyReturnedOnce: boolean;
 };
 
+export type WhatsappQrConfig = {
+  provider: string;
+  status: string;
+  branchId: string | null;
+  connection: "connecting" | "open" | "closed" | "logged_out" | "not_paired";
+  qr?: string;
+  phone?: string;
+  apiKeyLastFour?: string | null;
+  apiKeyCreatedAt?: string | null;
+  lastSyncAt?: string | null;
+  hasApiKey: boolean;
+  unofficial: true;
+  disclaimer: string;
+};
+
+export type WhatsappQrConfigureResponse = WhatsappQrConfig & {
+  apiKey?: string;
+  apiKeyReturnedOnce: boolean;
+};
+
 export type ClubWhiskyIntegrationConfig = {
   id?: string;
   provider: "club_whisky";
@@ -4031,6 +4051,26 @@ export function revokePrinterConnector() {
   return apiRequest<PrinterConnectorConfig>("/api/v1/printing/connectors/revoke", {
     method: "POST",
   });
+}
+
+export function getWhatsappQrConfig(branchId: string) {
+  return apiRequest<WhatsappQrConfig>(
+    `/api/v1/integrations/whatsapp-qr/config?branchId=${encodeURIComponent(branchId)}`,
+  );
+}
+
+export function configureWhatsappQr(branchId: string, rotateKey = false) {
+  return apiRequest<WhatsappQrConfigureResponse>("/api/v1/integrations/whatsapp-qr/configure", {
+    method: "POST",
+    body: { branchId, rotateKey },
+  });
+}
+
+export function revokeWhatsappQr(branchId: string) {
+  return apiRequest<WhatsappQrConfig>(
+    `/api/v1/integrations/whatsapp-qr/revoke/${encodeURIComponent(branchId)}`,
+    { method: "POST" },
+  );
 }
 
 export function getClubWhiskyConfig() {

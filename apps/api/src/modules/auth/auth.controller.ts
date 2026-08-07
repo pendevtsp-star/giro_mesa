@@ -169,7 +169,7 @@ export class AuthController {
     const parsed = googleStartSchema.parse(query);
     if (parsed.mode === "link") {
       const context = await this.authService.resolveContext(headers);
-      return reply.redirect(
+      return reply.code(302).redirect(
         this.authService.googleAuthorizationUrl({
           mode: "link",
           ...(context.userId ? { userId: context.userId } : {}),
@@ -178,7 +178,7 @@ export class AuthController {
       );
     }
 
-    return reply.redirect(
+    return reply.code(302).redirect(
       this.authService.googleAuthorizationUrl({
         mode: "login",
         ...(parsed.returnTo ? { returnTo: parsed.returnTo } : {}),
@@ -205,9 +205,11 @@ export class AuthController {
       if (result.token) {
         reply.header("set-cookie", sessionCookie(result.token, result.maxAgeSeconds));
       }
-      return reply.redirect(result.redirectTo);
+      return reply.code(302).redirect(result.redirectTo);
     } catch {
-      return reply.redirect(this.authService.googleFailureRedirect("google_sign_in_failed"));
+      return reply
+        .code(302)
+        .redirect(this.authService.googleFailureRedirect("google_sign_in_failed"));
     }
   }
 

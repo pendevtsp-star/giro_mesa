@@ -44,14 +44,14 @@ type MediaMessage = {
 export type WhatsAppMessage = TextMessage | TemplateMessage | MediaMessage;
 
 export type WhatsAppDelivery = {
-  provider: "whatsapp_cloud" | "disabled";
+  provider: "whatsapp_cloud" | "whatsapp_qr_unofficial" | "disabled";
   messageId: string;
   status: "sent" | "queued" | "disabled";
   to: string;
 };
 
 export interface WhatsAppProvider {
-  send(message: WhatsAppMessage): Promise<WhatsAppDelivery>;
+  send(message: WhatsAppMessage, options?: { idempotencyKey?: string }): Promise<WhatsAppDelivery>;
 }
 
 /** Test-only transport; the factory never selects it. */
@@ -72,6 +72,39 @@ export class DisabledWhatsAppProvider implements WhatsAppProvider {
       provider: "disabled",
       messageId: "",
       status: "disabled",
+      to: message.to,
+    };
+  }
+}
+
+export class WhatsappQrConnectorProvider implements WhatsAppProvider {
+  constructor(
+    private readonly connectorUrl: string,
+    private readonly connectorKey: string,
+  ) {}
+
+  async send(
+    message: WhatsAppMessage,
+    options?: { idempotencyKey?: string },
+  ): Promise<WhatsAppDelivery> {
+    if (message.type !== "text") {
+      throw new Error("O conector QR suporta somente mensagens de texto nesta versão");
+    }
+    const response = await safeFetch(`${this.connectorUrl.replace(/\/$/, "")}/messages`, {
+      method: "POST",
+      headers: {
+        "x-giromesa-connector-key": this.connectorKey,
+        ...(options?.idempotencyKey ? { "x-idempotency-key": options.idempotencyKey } : {}),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(message),
+    });
+    if (!response.ok) throw new Error(`WhatsApp QR connector error ${response.status}`);
+    const result = (await response.json()) as { messageId?: string; status?: "sent" | "queued" };
+    return {
+      provider: "whatsapp_qr_unofficial",
+      messageId: result.messageId ?? `qr-${Date.now()}`,
+      status: result.status ?? "sent",
       to: message.to,
     };
   }
@@ -203,6 +236,14 @@ export class WhatsAppCloudProvider implements WhatsAppProvider {
 
 export function createWhatsAppProvider(): WhatsAppProvider {
   const transport = process.env.WHATSAPP_TRANSPORT ?? "disabled";
+  if (transport === "qr_unofficial") {
+    const connectorUrl = process.env.WHATSAPP_QR_CONNECTOR_URL;
+    const connectorKey = process.env.WHATSAPP_QR_CONNECTOR_KEY;
+    if (connectorUrl && connectorKey && !isPlaceholderValue(connectorKey)) {
+      return new WhatsappQrConnectorProvider(connectorUrl, connectorKey);
+    }
+    return new DisabledWhatsAppProvider();
+  }
   if (transport !== "meta_legacy") {
     return new DisabledWhatsAppProvider();
   }

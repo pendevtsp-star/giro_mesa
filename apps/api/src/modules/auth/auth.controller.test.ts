@@ -7,6 +7,11 @@ function createReply() {
   return {
     headers: [] as Array<[string, string]>,
     redirectUrl: "" as string,
+    statusCode: 200,
+    code(statusCode: number) {
+      this.statusCode = statusCode;
+      return this;
+    },
     header(key: string, value: string) {
       this.headers.push([key, value]);
       return this;
@@ -108,6 +113,7 @@ describe("AuthController Google OAuth", () => {
       returnTo: "/app",
     });
     expect(reply.redirectUrl).toContain("accounts.google.com/mock");
+    expect(reply.statusCode).toBe(302);
   });
 
   it("starts google link flow with authenticated user", async () => {
@@ -136,6 +142,7 @@ describe("AuthController Google OAuth", () => {
     );
     expect(reply.headers.some(([key]) => key === "set-cookie")).toBe(true);
     expect(reply.redirectUrl).toBe("http://localhost:3002/app");
+    expect(reply.statusCode).toBe(302);
   });
 
   it("redirects to failure url when google callback fails", async () => {
@@ -149,6 +156,7 @@ describe("AuthController Google OAuth", () => {
 
     expect(authService.googleFailureRedirect).toHaveBeenCalledWith("google_sign_in_failed");
     expect(reply.redirectUrl).toContain("oauth=google_sign_in_failed");
+    expect(reply.statusCode).toBe(302);
   });
 
   it("completes google mfa flow and sets session cookie", async () => {

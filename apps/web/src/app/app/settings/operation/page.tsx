@@ -332,6 +332,9 @@ export default function OperationSettingsPage() {
           <span className="brand-mark">G</span>
           <span>GiroMesa</span>
         </a>
+        <a className="button secondary compact" href="/app/settings/whatsapp">
+          WhatsApp por QR
+        </a>
       </header>
 
       <section className="workspace-heading">

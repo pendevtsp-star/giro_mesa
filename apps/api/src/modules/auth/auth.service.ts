@@ -1907,19 +1907,36 @@ export class AuthService {
 
       const resetUrl = this.publicAppUrl(`/reset/${token}`);
       const branding = await this.emailBranding(user.tenantId);
-      const emailDelivery = await sendEmail(this.database, {
-        tenantId: user.tenantId,
-        to: user.email,
-        subject: `Reset de senha - ${branding.displayName}`,
-        text: `Use este link temporario para redefinir sua senha em ${branding.displayName}: ${resetUrl}`,
-        html: renderBrandedEmail({
-          branding,
-          title: "Redefinir senha",
-          body: `Use este link temporario para recuperar seu acesso ao ambiente ${branding.displayName}.`,
-          actionLabel: "Redefinir senha",
-          actionUrl: resetUrl,
-        }),
-      });
+      let emailDelivery: Awaited<ReturnType<typeof sendEmail>>;
+      try {
+        emailDelivery = await sendEmail(this.database, {
+          tenantId: user.tenantId,
+          to: user.email,
+          subject: `Reset de senha - ${branding.displayName}`,
+          text: `Use este link temporario para redefinir sua senha em ${branding.displayName}: ${resetUrl}`,
+          html: renderBrandedEmail({
+            branding,
+            title: "Redefinir senha",
+            body: `Use este link temporario para recuperar seu acesso ao ambiente ${branding.displayName}.`,
+            actionLabel: "Redefinir senha",
+            actionUrl: resetUrl,
+          }),
+        });
+      } catch {
+        await this.database.db
+          .delete(passwordResetTokens)
+          .where(eq(passwordResetTokens.tokenHash, issuedToken.tokenHash));
+        await this.database.db.insert(auditLogs).values({
+          tenantId: user.tenantId,
+          userId: user.id,
+          requestId: requestIdFromHeaders(headers),
+          action: "password.reset_delivery_failed",
+          entityType: "user",
+          entityId: user.id,
+          metadata: { delivery: "failed" },
+        });
+        return { requested: true, delivery: "failed" };
+      }
 
       await this.database.db.insert(auditLogs).values({
         tenantId: user.tenantId,

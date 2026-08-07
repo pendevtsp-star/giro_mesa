@@ -146,7 +146,7 @@ const handlers: Record<string, QueueHandler> = {
     const message = buildWhatsAppMessage(data, to);
 
     try {
-      const result = await provider.send(message);
+      const result = await provider.send(message, { idempotencyKey: `gm-wa-${String(job.id)}` });
       if (result.status === "disabled") {
         logger.warn("whatsapp delivery disabled", {
           jobId: job.id,

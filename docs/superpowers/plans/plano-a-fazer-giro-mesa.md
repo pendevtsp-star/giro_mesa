@@ -1,6 +1,6 @@
 # GiroMesa — plano a fazer
 
-> Visão operacional gerada do plano mestre. Pendências atuais: **168**.
+> Visão operacional gerada do plano mestre. Pendências atuais: **174**.
 > O plano mestre continua sendo a autoridade; não edite checkboxes somente aqui.
 
 ## Fluxo de sincronização
@@ -416,11 +416,39 @@
 - [ ] Manter laboratório Web/QR em processo separado, sessão criptografada por
   tenant/filial, outbox, QR de pareamento, revogação e sem acesso aos bancos dos produtos.
 
+<!-- task-id:87e7682bced0874d -->
+- [ ] Publicar o processo do conector como serviço independente (container ou systemd),
+  com reinício automático, healthcheck, volume persistente protegido, backup/restauração
+  da sessão e comunicação somente por rede privada; a porta do conector nunca fica pública.
+
+<!-- task-id:b34db2e32aba71ff -->
+- [ ] Configurar, fora do repositório, `GIROMESA_API_URL`, `GIROMESA_CONNECTOR_KEY`,
+  `WHATSAPP_SESSION_DIR`, `WHATSAPP_CONNECTOR_PORT`, `WHATSAPP_TRANSPORT`,
+  `WHATSAPP_QR_CONNECTOR_URL` e `WHATSAPP_QR_CONNECTOR_KEY`, com rotação e revogação
+  documentadas.
+
 <!-- task-id:de930b4fba644dde -->
 - [ ] Implementar status, reconexão, revogação, cooldown, rate limit, opt-out e fila.
 
+<!-- task-id:4020122da395d16d -->
+- [ ] Persistir outbox, idempotência, rate limit, cooldown e estado de entrega; um reinício
+  do conector não pode apagar deduplicação nem deixar mensagem em estado desconhecido.
+
+<!-- task-id:3b2a7baa700a761a -->
+- [ ] Implementar roteamento por tenant/filial no worker; a configuração atual usa uma chave
+  global e atende somente uma conexão por processo até este item ser concluído.
+
+<!-- task-id:d65166e5794eb233 -->
+- [ ] Restringir e sinalizar o escopo inicial a mensagens de texto; templates, mídia, campanhas
+  e automações em massa permanecem bloqueados até haver suporte e homologação próprios.
+
 <!-- task-id:c966defdb48c7adc -->
 - [ ] Cobrir reserva, fila, pedido, delivery, pré-conta e comprovante sem bloquear o núcleo.
+
+<!-- task-id:de2fe6dfdd06d0c5 -->
+- [ ] Homologar número dedicado, pareamento, envio controlado, duplicidade, retry, logout,
+  revogação, indisponibilidade, bloqueio e recuperação; registrar aceite jurídico do risco
+  de uso não oficial antes de qualquer ativação produtiva.
 
 ## Fase 15 — hardening de produção, jurídico e integrações externas › Hardware, fiscal e infraestrutura
 

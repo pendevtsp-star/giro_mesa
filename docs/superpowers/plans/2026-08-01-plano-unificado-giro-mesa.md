@@ -1773,11 +1773,31 @@ além de `packages/db/src/schema.ts` e `apps/api/src/modules/auth/`.
 
 ### WhatsApp não oficial
 
+- [x] Criar pacote separado `apps/whatsapp-connector` com Baileys, sessão local,
+  QR no terminal, reconexão e endpoint local de texto autenticado.
+- [x] Criar configuração por filial, chave de curta exposição, heartbeat, status,
+  QR vigente e revogação em `/app/settings/whatsapp`.
 - [ ] Manter laboratório Web/QR em processo separado, sessão criptografada por
   tenant/filial, outbox, QR de pareamento, revogação e sem acesso aos bancos dos produtos.
+- [ ] Publicar o processo do conector como serviço independente (container ou systemd),
+  com reinício automático, healthcheck, volume persistente protegido, backup/restauração
+  da sessão e comunicação somente por rede privada; a porta do conector nunca fica pública.
+- [ ] Configurar, fora do repositório, `GIROMESA_API_URL`, `GIROMESA_CONNECTOR_KEY`,
+  `WHATSAPP_SESSION_DIR`, `WHATSAPP_CONNECTOR_PORT`, `WHATSAPP_TRANSPORT`,
+  `WHATSAPP_QR_CONNECTOR_URL` e `WHATSAPP_QR_CONNECTOR_KEY`, com rotação e revogação
+  documentadas.
 - [x] Exibir claramente “integração não oficial da Meta” na documentação e na interface.
 - [ ] Implementar status, reconexão, revogação, cooldown, rate limit, opt-out e fila.
+- [ ] Persistir outbox, idempotência, rate limit, cooldown e estado de entrega; um reinício
+  do conector não pode apagar deduplicação nem deixar mensagem em estado desconhecido.
+- [ ] Implementar roteamento por tenant/filial no worker; a configuração atual usa uma chave
+  global e atende somente uma conexão por processo até este item ser concluído.
+- [ ] Restringir e sinalizar o escopo inicial a mensagens de texto; templates, mídia, campanhas
+  e automações em massa permanecem bloqueados até haver suporte e homologação próprios.
 - [ ] Cobrir reserva, fila, pedido, delivery, pré-conta e comprovante sem bloquear o núcleo.
+- [ ] Homologar número dedicado, pareamento, envio controlado, duplicidade, retry, logout,
+  revogação, indisponibilidade, bloqueio e recuperação; registrar aceite jurídico do risco
+  de uso não oficial antes de qualquer ativação produtiva.
 - [x] Proibir sucesso falso no transporte desabilitado; marketing em massa, opt-out, retry e entrega incerta ainda dependem do conector QR e sua fila/outbox homologados.
 - [x] No piloto, usar `WHATSAPP_TRANSPORT=disabled` e CTA manual `wa.me`; automação Web/QR
   não é gate e só pode ser ativada após decisão jurídica documentada e aceite explícito do risco.
