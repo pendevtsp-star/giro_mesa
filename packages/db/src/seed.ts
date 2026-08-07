@@ -19,6 +19,7 @@ import {
   diningTables,
   fiscalDocuments,
   fiscalSettings,
+  federationHandoffs,
   floorAreas,
   floorPlans,
   integrationAccounts,
@@ -63,6 +64,7 @@ import {
   suppliers,
   tableEvents,
   tabs,
+  tenantEntitlements,
   tenants,
   userOperationalPreferences,
   userRoles,
@@ -178,6 +180,7 @@ async function resetDemoTenant() {
     .where(eq(userOperationalPreferences.tenantId, tenantId));
   await db.delete(userRoles).where(eq(userRoles.tenantId, tenantId));
   await db.delete(roles).where(eq(roles.tenantId, tenantId));
+  await db.delete(federationHandoffs).where(eq(federationHandoffs.tenantId, tenantId));
   await db.delete(users).where(eq(users.tenantId, tenantId));
   await db.delete(integrationAccounts).where(eq(integrationAccounts.tenantId, tenantId));
   await db.delete(subscriptions).where(eq(subscriptions.tenantId, tenantId));
@@ -189,6 +192,7 @@ async function resetDemoTenant() {
     .delete(branchOperationalSettings)
     .where(eq(branchOperationalSettings.tenantId, tenantId));
   await db.delete(branches).where(eq(branches.tenantId, tenantId));
+  await db.delete(tenantEntitlements).where(eq(tenantEntitlements.tenantId, tenantId));
   await db.delete(tenants).where(eq(tenants.id, tenantId));
 }
 
