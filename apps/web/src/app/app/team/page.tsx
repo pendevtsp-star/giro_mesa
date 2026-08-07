@@ -2,6 +2,7 @@
 
 import { ArrowLeft, KeyRound, ShieldCheck, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { readOperationalStatusLabel } from "../../../lib/formatters/app-dashboard";
 import {
   ApiError,
   assignUserRole,
@@ -237,7 +238,8 @@ export default function TeamPage() {
                 <div>
                   <strong>{invitation.email}</strong>
                   <span>
-                    {invitation.roleName ?? "Sem cargo"} - {invitation.status}
+                    {invitation.roleName ?? "Sem cargo"} -{" "}
+                    {readOperationalStatusLabel(invitation.status)}
                   </span>
                   {invitation.acceptUrl ? <code>{invitation.acceptUrl}</code> : null}
                 </div>

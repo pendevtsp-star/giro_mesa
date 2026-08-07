@@ -1166,6 +1166,50 @@ async function upsertDemo() {
     });
   }
 
+  const [deliveryOrder] = await db
+    .insert(orders)
+    .values({
+      tenantId: tenant.id,
+      branchId: branch.id,
+      customerId: rafael.id,
+      channel: "delivery",
+      status: "preparing",
+      peopleCount: 1,
+      subtotalCents: pizza.priceCents,
+      totalCents: pizza.priceCents,
+      openedAt: new Date(Date.now() - 12 * 60 * 1000),
+    })
+    .returning();
+
+  if (!deliveryOrder) {
+    throw new Error("Failed to seed the delivery order");
+  }
+
+  await db.insert(orderItems).values({
+    tenantId: tenant.id,
+    orderId: deliveryOrder.id,
+    productId: pizza.id,
+    nameSnapshot: pizza.name,
+    quantity: "1",
+    unitPriceCents: pizza.priceCents,
+    totalCents: pizza.priceCents,
+    status: "preparing",
+    sentToKitchenAt: deliveryOrder.openedAt,
+  });
+
+  await db.insert(deliveryOrders).values({
+    tenantId: tenant.id,
+    orderId: deliveryOrder.id,
+    channel: "phone",
+    status: "preparing",
+    customerName: rafael.name,
+    customerPhone: rafael.phone,
+    deliveryAddress: "Rua do Sol, 120 - Centro, Maceió/AL",
+    deliveryFee: 0,
+    estimatedMinutes: 35,
+    notes: "Pedido demonstrativo para conferência do fluxo de entrega",
+  });
+
   const [pointGroup] = await db
     .insert(modifierGroups)
     .values({

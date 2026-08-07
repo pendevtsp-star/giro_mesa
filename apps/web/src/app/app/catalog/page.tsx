@@ -33,6 +33,7 @@ const initialProduct = {
   cost: "",
   channels: ["pos", "qr"],
   isAlcoholic: false,
+  usesReturnablePackaging: false,
   isClubEligible: false,
   bottleVolumeMl: "750",
   defaultDoseMl: "50",
@@ -49,6 +50,7 @@ export default function CatalogPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [bulkMode, setBulkMode] = useState(false);
   const [updatingAlcoholId, setUpdatingAlcoholId] = useState<string | null>(null);
+  const [updatingReturnableId, setUpdatingReturnableId] = useState<string | null>(null);
 
   const toggleProductSelection = useCallback((productId: string) => {
     setSelectedProducts((current) => {
@@ -149,6 +151,7 @@ export default function CatalogPage() {
         costCents: moneyToCents(product.cost),
         channels: product.channels,
         isAlcoholic: product.isAlcoholic,
+        usesReturnablePackaging: product.usesReturnablePackaging,
         isClubEligible: product.isClubEligible,
         ...(product.categoryId ? { categoryId: product.categoryId } : {}),
         ...(product.description.trim() ? { description: product.description.trim() } : {}),
@@ -193,6 +196,23 @@ export default function CatalogPage() {
       setMessage("Não foi possível atualizar a classificação 18+ deste produto.");
     } finally {
       setUpdatingAlcoholId(null);
+    }
+  }
+
+  async function setReturnableClassification(item: Product, usesReturnablePackaging: boolean) {
+    setUpdatingReturnableId(item.id);
+    try {
+      const updated = await updateProduct(item.id, { usesReturnablePackaging });
+      setProducts((current) =>
+        current.map((productItem) => (productItem.id === item.id ? updated : productItem)),
+      );
+      setMessage(
+        `${item.name}: embalagem ${usesReturnablePackaging ? "retornável" : "descartável"} salva.`,
+      );
+    } catch {
+      setMessage("Não foi possível atualizar o tipo de embalagem.");
+    } finally {
+      setUpdatingReturnableId(null);
     }
   }
 
@@ -345,6 +365,19 @@ export default function CatalogPage() {
                 type="checkbox"
               />{" "}
               Produto alcoólico (ativa confirmação 18+ no QR)
+            </label>
+            <label className="check-label">
+              <input
+                checked={product.usesReturnablePackaging}
+                onChange={(event) =>
+                  setProduct((current) => ({
+                    ...current,
+                    usesReturnablePackaging: event.target.checked,
+                  }))
+                }
+                type="checkbox"
+              />{" "}
+              Usa vasilhame retornável (ex.: cerveja ou refrigerante retornável)
             </label>
             <label className="check-label">
               <input
@@ -510,6 +543,7 @@ export default function CatalogPage() {
                     <small>
                       {item.channels.join(" · ")}
                       {item.isClubEligible ? " · Dose Club" : ""}
+                      {item.usesReturnablePackaging ? " · Retornável" : ""}
                     </small>
                   </div>
                   <label
@@ -526,6 +560,21 @@ export default function CatalogPage() {
                       type="checkbox"
                     />
                     18+
+                  </label>
+                  <label
+                    className="check-label product-alcohol-toggle"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      checked={item.usesReturnablePackaging ?? false}
+                      disabled={updatingReturnableId === item.id}
+                      onChange={(event) =>
+                        void setReturnableClassification(item, event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    Retornável
                   </label>
                 </div>
               ))}
@@ -615,6 +664,21 @@ export default function CatalogPage() {
                         type="checkbox"
                       />
                       18+
+                    </label>
+                    <label
+                      className="check-label product-alcohol-toggle"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        checked={item.usesReturnablePackaging ?? false}
+                        disabled={updatingReturnableId === item.id}
+                        onChange={(event) =>
+                          void setReturnableClassification(item, event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      Retornável
                     </label>
                   </div>
                 ))}

@@ -7,13 +7,13 @@
   color-scheme: light;
 
   /* Semantic colors */
-  --color-canvas: #fffaf0;
+  --color-canvas: #f4f7f9;
   --color-surface: #ffffff;
-  --color-surface-raised: #fff6e6;
-  --color-surface-muted: #f5f7f7;
+  --color-surface-raised: #f8fafb;
+  --color-surface-muted: #edf2f5;
   --color-text: #0d1b2a;
   --color-text-muted: #526474;
-  --color-border: #d6e0df;
+  --color-border: #d8e1e7;
   --color-action: #facc15;
   --color-action-hover: #eab308;
   --color-on-action: #0d1b2a;
@@ -52,8 +52,8 @@
   --violet: #6658b7;
 
   /* Shadows */
-  --shadow: 0 18px 46px rgba(13, 27, 42, 0.14);
-  --tight-shadow: 0 1px 2px rgba(13, 27, 42, 0.09);
+  --shadow: 0 18px 44px rgba(13, 27, 42, 0.1);
+  --tight-shadow: 0 1px 2px rgba(13, 27, 42, 0.07);
 
   /* Border Radius */
   --radius-sm: 8px;

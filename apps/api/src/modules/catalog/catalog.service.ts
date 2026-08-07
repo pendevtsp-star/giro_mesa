@@ -40,6 +40,7 @@ export type CreateProductInput = {
   isAvailable?: boolean | undefined;
   isActive?: boolean | undefined;
   isAlcoholic: boolean;
+  usesReturnablePackaging?: boolean | undefined;
   isClubEligible?: boolean | undefined;
   bottleVolumeMl?: number | undefined;
   defaultDoseMl?: number | undefined;
@@ -64,6 +65,7 @@ export type UpdateProductInput = {
   isAvailable?: boolean | undefined;
   isActive?: boolean | undefined;
   isAlcoholic?: boolean | undefined;
+  usesReturnablePackaging?: boolean | undefined;
   isClubEligible?: boolean | undefined;
   bottleVolumeMl?: number | undefined;
   defaultDoseMl?: number | undefined;
@@ -151,6 +153,7 @@ export class CatalogService {
         isActive: products.isActive,
         isAvailable: products.isAvailable,
         isAlcoholic: products.isAlcoholic,
+        usesReturnablePackaging: products.usesReturnablePackaging,
         isClubEligible: products.isClubEligible,
         bottleVolumeMl: products.bottleVolumeMl,
         defaultDoseMl: products.defaultDoseMl,
@@ -217,6 +220,7 @@ export class CatalogService {
           imageUrl: input.imageUrl,
           isAvailable: input.isAvailable ?? true,
           isAlcoholic: input.isAlcoholic,
+          usesReturnablePackaging: input.usesReturnablePackaging ?? false,
           isClubEligible: input.isClubEligible ?? false,
           bottleVolumeMl: input.bottleVolumeMl,
           defaultDoseMl: input.defaultDoseMl ?? 50,
@@ -268,6 +272,9 @@ export class CatalogService {
           ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
           ...(input.isAvailable !== undefined ? { isAvailable: input.isAvailable } : {}),
           ...(input.isAlcoholic !== undefined ? { isAlcoholic: input.isAlcoholic } : {}),
+          ...(input.usesReturnablePackaging !== undefined
+            ? { usesReturnablePackaging: input.usesReturnablePackaging }
+            : {}),
           ...(input.isClubEligible !== undefined ? { isClubEligible: input.isClubEligible } : {}),
           ...(input.bottleVolumeMl !== undefined ? { bottleVolumeMl: input.bottleVolumeMl } : {}),
           ...(input.defaultDoseMl !== undefined ? { defaultDoseMl: input.defaultDoseMl } : {}),

@@ -556,7 +556,8 @@ export default function FiscalPage() {
                         {item.environment === "production" ? "Produção" : "Homologação"}
                       </strong>
                       <small>
-                        Final {item.tokenLastFour ?? "indisponível"} · {item.status}
+                        Final {item.tokenLastFour ?? "indisponível"} ·{" "}
+                        {credentialStatusLabel(item.status)}
                       </small>
                     </div>
                     {item.status === "active" ? (
@@ -795,5 +796,12 @@ function statusLabel(status: string) {
         canceled: "Cancelado",
       } as Record<string, string>
     )[status] ?? status
+  );
+}
+
+function credentialStatusLabel(status: string) {
+  return (
+    ({ active: "Ativa", revoked: "Revogada" } as Record<string, string>)[status] ??
+    status.replaceAll("_", " ")
   );
 }

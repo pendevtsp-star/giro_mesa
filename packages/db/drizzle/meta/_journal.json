@@ -316,6 +316,13 @@
       "when": 1785988800000,
       "tag": "0044_repair_skipped_operational_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786129961878,
+      "tag": "0045_blushing_living_mummy",
+      "breakpoints": true
     }
   ]
 }

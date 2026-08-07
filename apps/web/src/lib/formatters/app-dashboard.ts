@@ -300,6 +300,81 @@ export function readAuditOperator(event: AuditEvent) {
   return "sistema";
 }
 
+export function readAuditActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    "order.opened": "Comanda aberta",
+    "order.item_added": "Item adicionado à comanda",
+    "order.item_removed": "Item removido da comanda",
+    "order.sent_to_kitchen": "Pedido enviado para produção",
+    "order.closed": "Conta fechada",
+    "payment.confirmed": "Pagamento confirmado",
+    "waiter_assignment.created": "Responsável pela mesa definido",
+    "waiter_assignment.transferred": "Mesa transferida entre atendentes",
+    "floor.reservation_created": "Reserva criada",
+    "floor.reservation_updated": "Reserva atualizada",
+    "floor.reservation_seated": "Reserva acomodada",
+    "floor.waitlist_created": "Cliente adicionado à espera",
+    "floor.waitlist_seated": "Cliente da espera acomodado",
+    "inventory.movement_created": "Movimento de estoque registrado",
+    "inventory.transfer_created": "Transferência de estoque criada",
+    "inventory.returnable_recorded": "Movimento de retornável registrado",
+    "qr.settings_updated": "Configuração do QR atualizada",
+    "qr.token_rotated": "QR da mesa renovado",
+    "approval.requested": "Aprovação solicitada",
+    "approval.approved": "Aprovação concedida",
+    "approval.rejected": "Aprovação recusada",
+    "approval.application_completed": "Decisão gerencial aplicada",
+    "role.updated": "Cargo atualizado",
+    "invitation.created": "Convite de acesso criado",
+    "user.role_assigned": "Cargo atribuído a usuário",
+  };
+  return labels[action] ?? action.replaceAll("_", " ").replaceAll(".", " · ");
+}
+
+export function readAuditEntityLabel(entityType: string) {
+  const labels: Record<string, string> = {
+    order: "Comanda",
+    order_item: "Item da comanda",
+    payment: "Pagamento",
+    reservation: "Reserva",
+    waitlist: "Fila de espera",
+    table_waiter_assignment: "Responsabilidade da mesa",
+    inventory_movement: "Movimento de estoque",
+    inventory_transfer: "Transferência de estoque",
+    user: "Usuário",
+    role: "Cargo",
+    qr_settings: "Configuração do QR",
+    approval_request: "Solicitação gerencial",
+  };
+  return labels[entityType] ?? entityType.replaceAll("_", " ");
+}
+
+export function readOperationalStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    active: "Ativo",
+    accepted: "Aceito",
+    authorized: "Autorizado",
+    canceled: "Cancelado",
+    cancelled: "Cancelado",
+    closed: "Fechado",
+    confirmed: "Confirmado",
+    disputed: "Em análise",
+    expired: "Expirado",
+    failed: "Falhou",
+    open: "Aberto",
+    paid: "Pago",
+    pending: "Pendente",
+    preparing: "Em preparo",
+    ready: "Pronto",
+    reconciled: "Conferido",
+    rejected: "Rejeitado",
+    revoked: "Revogado",
+    served: "Entregue",
+    waiting_payment: "Aguardando pagamento",
+  };
+  return labels[status] ?? status.replaceAll("_", " ");
+}
+
 export function readAuditSummary(event: AuditEvent) {
   const metadata = event.metadata ?? {};
   if (event.action === "role.updated") {
@@ -309,7 +384,10 @@ export function readAuditSummary(event: AuditEvent) {
     return `Convite enviado para ${readMetadataValue(metadata, "email", "novo usuario")}.`;
   }
   if (event.action === "user.role_assigned") {
-    return `Cargo aplicado ao usuario ${readMetadataValue(metadata, "email", "selecionado")}.`;
+    return `Cargo aplicado ao usuário ${readMetadataValue(metadata, "email", "selecionado")}.`;
+  }
+  if (event.action.startsWith("approval.")) {
+    return "Solicitação gerencial atualizada.";
   }
   if (event.action === "payment.confirmed") {
     return `Pagamento auditado em ${formatMoney(readMetadataNumber(metadata, "amountCents"))}.`;
@@ -317,7 +395,7 @@ export function readAuditSummary(event: AuditEvent) {
   if (event.action === "order.closed") {
     return `Conta fechada em ${formatMoney(readMetadataNumber(metadata, "totalCents"))}.`;
   }
-  return `${event.entityType} atualizado.`;
+  return `${readAuditEntityLabel(event.entityType)} atualizado.`;
 }
 
 export function readHistoryOperator(event: TableHistoryEvent) {

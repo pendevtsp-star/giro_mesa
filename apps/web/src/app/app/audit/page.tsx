@@ -3,6 +3,7 @@
 import { Gauge, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
+  readAuditActionLabel,
   readAuditOperator,
   readAuditSummary,
   readRelativeTime,
@@ -108,7 +109,7 @@ export default function AuditPage() {
             onChange={(event) =>
               setFilters((current) => ({ ...current, action: event.target.value }))
             }
-            placeholder="payment.confirmed"
+            placeholder="Ex.: pagamento, comanda, reserva"
           />
         </label>
         <label>
@@ -134,7 +135,7 @@ export default function AuditPage() {
             onChange={(event) =>
               setFilters((current) => ({ ...current, entityType: event.target.value }))
             }
-            placeholder="order"
+            placeholder="Ex.: comanda ou pagamento"
           />
         </label>
         <label>
@@ -183,14 +184,18 @@ export default function AuditPage() {
         </div>
         {events.length > 0 ? (
           events.map((event) => (
-            <div className="inventory-row" key={event.id}>
-              <div>
-                <strong>{readRelativeTime(event.createdAt)}</strong>
-                <small>
-                  {readAuditSummary(event)} · {event.action} por {readAuditOperator(event)}
-                </small>
+            <article className="audit-event-row" key={event.id}>
+              <div className="audit-event-heading">
+                <strong>{readAuditActionLabel(event.action)}</strong>
+                <time dateTime={event.createdAt}>{readRelativeTime(event.createdAt)}</time>
               </div>
-            </div>
+              <p>{readAuditSummary(event)}</p>
+              <small>Realizado por {readAuditOperator(event)}</small>
+              <details>
+                <summary>Detalhes técnicos</summary>
+                <code>{event.action}</code>
+              </details>
+            </article>
           ))
         ) : (
           <p className="muted-copy">Nenhum evento de auditoria registrado.</p>

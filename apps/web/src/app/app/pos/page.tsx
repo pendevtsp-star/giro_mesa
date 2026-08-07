@@ -16,7 +16,7 @@ import {
   Wine,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OperationalAttentionPanel } from "../../../components/operational-attention/OperationalAttentionPanel";
 import { resolvePosShortcut } from "../../../features/pos/pos-shortcuts";
 import {
@@ -161,6 +161,8 @@ export default function PosPage() {
   const [cancelItemId, setCancelItemId] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const modifierTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const productionTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const selectedTable = tables.find((table) => table.id === selectedTableId);
   const ticketItems = currentOrder?.items ?? [];
@@ -181,6 +183,16 @@ export default function PosPage() {
     setOrderStatus(order?.status ?? "opened");
     setOrderPayments(order?.payments ?? []);
     setSelectedCustomerId(order?.customerId ?? "");
+  }, []);
+
+  const closeModifierDialog = useCallback(() => {
+    setSelectedProduct(null);
+    window.requestAnimationFrame(() => modifierTriggerRef.current?.focus());
+  }, []);
+
+  const closeProductionDialog = useCallback(() => {
+    setProductionPreview(null);
+    window.requestAnimationFrame(() => productionTriggerRef.current?.focus());
   }, []);
 
   const loadOrder = useCallback(
@@ -414,13 +426,18 @@ export default function PosPage() {
           })()
         : Promise.reject(new Error("Selecione uma mesa antes de lançar o pedido."))
       : openNewOrder());
-    applyOrder(opened as OrderSnapshot);
+    const snapshot: OrderSnapshot = {
+      ...opened,
+      items: "items" in opened && Array.isArray(opened.items) ? opened.items : [],
+      payments: "payments" in opened && Array.isArray(opened.payments) ? opened.payments : [],
+    };
+    applyOrder(snapshot);
     if (serviceMode === "counter") {
       setCounterOrderId(opened.id);
       localStorage.setItem("gm_pos_counter_order", opened.id);
     }
     setMessage(`Comanda ${serviceMode === "table" ? selectedTable?.code : "de balcão"} pronta.`);
-    return opened as OrderSnapshot;
+    return snapshot;
 
     function openNewOrder() {
       const tableId = serviceMode === "table" ? selectedTable?.id : undefined;
@@ -508,7 +525,7 @@ export default function PosPage() {
       items: [...order.items, item],
       payments: order.payments,
     });
-    setSelectedProduct(null);
+    closeModifierDialog();
     setQuantity(1);
     setMessage(`${item.nameSnapshot} confirmado na comanda.`);
   }
@@ -995,7 +1012,10 @@ export default function PosPage() {
                     type="button"
                     data-testid="pos-add-item"
                     disabled={busy || !canOperate}
-                    onClick={() => selectProduct(product)}
+                    onClick={(event) => {
+                      modifierTriggerRef.current = event.currentTarget;
+                      selectProduct(product);
+                    }}
                   >
                     <strong>{product.name}</strong>
                     <span>{formatMoney(product.priceCents)}</span>
@@ -1168,6 +1188,7 @@ export default function PosPage() {
             <button
               className="button primary"
               type="button"
+              ref={productionTriggerRef}
               aria-keyshortcuts="F8"
               disabled={busy || !currentOrder || !ticketItems.length || !canSend}
               onClick={() => void runAction(previewProduction)}
@@ -1272,7 +1293,7 @@ export default function PosPage() {
       {selectedProduct ? (
         <Dialog
           className="modifier-dialog-content"
-          onClose={() => setSelectedProduct(null)}
+          onClose={closeModifierDialog}
           open
           title={selectedProduct.name}
         >
@@ -1321,7 +1342,7 @@ export default function PosPage() {
             </fieldset>
           ))}
           <div className="modifier-actions">
-            <button className="button ghost" type="button" onClick={() => setSelectedProduct(null)}>
+            <button className="button ghost" type="button" onClick={closeModifierDialog}>
               Cancelar
             </button>
             <button
@@ -1338,7 +1359,7 @@ export default function PosPage() {
       {productionPreview ? (
         <Dialog
           className="modifier-dialog-content"
-          onClose={() => setProductionPreview(null)}
+          onClose={closeProductionDialog}
           open
           title="Conferir envio"
         >
@@ -1365,11 +1386,7 @@ export default function PosPage() {
             </p>
           ) : (
             <div className="modifier-actions">
-              <button
-                className="button ghost"
-                type="button"
-                onClick={() => setProductionPreview(null)}
-              >
+              <button className="button ghost" type="button" onClick={closeProductionDialog}>
                 Voltar
               </button>
               <button

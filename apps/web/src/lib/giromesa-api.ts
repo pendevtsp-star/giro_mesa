@@ -50,6 +50,7 @@ export type Product = {
   isActive?: boolean;
   isAvailable: boolean;
   isAlcoholic: boolean;
+  usesReturnablePackaging?: boolean;
   isClubEligible?: boolean;
   bottleVolumeMl?: number | null;
   defaultDoseMl?: number;
@@ -2277,6 +2278,7 @@ export function createProduct(input: {
   imageUrl?: string;
   isAvailable?: boolean;
   isAlcoholic: boolean;
+  usesReturnablePackaging?: boolean;
   isClubEligible?: boolean;
   bottleVolumeMl?: number;
   defaultDoseMl?: number;

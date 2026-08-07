@@ -13,6 +13,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  readAuditActionLabel,
+  readAuditEntityLabel,
+  readOperationalStatusLabel,
+} from "../../../lib/formatters/app-dashboard";
+import {
   type AuditEvent,
   type CashSessionSummary,
   type FinancialReport,
@@ -1019,7 +1024,7 @@ export default function ReportsPage() {
                         <div>
                           <strong>{session.operatorName}</strong>
                           <span>
-                            {session.status} - aberto em{" "}
+                            {readOperationalStatusLabel(session.status)} - aberto em{" "}
                             {new Date(session.openedAt).toLocaleString("pt-BR")}
                           </span>
                         </div>
@@ -1051,9 +1056,10 @@ export default function ReportsPage() {
                   audit.map((event) => (
                     <div className="status-row rich" key={event.id}>
                       <div>
-                        <strong>{event.action}</strong>
+                        <strong>{readAuditActionLabel(event.action)}</strong>
                         <span>
-                          {event.entityType} - {event.userName ?? event.userEmail ?? "sistema"}
+                          {readAuditEntityLabel(event.entityType)} -{" "}
+                          {event.userName ?? event.userEmail ?? "sistema"}
                         </span>
                       </div>
                       <small>{new Date(event.createdAt).toLocaleString("pt-BR")}</small>

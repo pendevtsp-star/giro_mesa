@@ -1,5 +1,6 @@
 import {
   Banknote,
+  Building2,
   Cable,
   ChefHat,
   ClipboardList,
@@ -9,6 +10,7 @@ import {
   LayoutDashboard,
   type LucideIcon,
   MapPinned,
+  MessageCircle,
   PackageOpen,
   Palette,
   Printer,
@@ -156,6 +158,20 @@ export const appNavigationItems = [
     icon: Palette,
     labelKey: "nav.branding",
     href: "/app/settings/branding",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "settings",
+    icon: Building2,
+    labelKey: "nav.branchStructure",
+    href: "/app/settings/branch-structure",
+    permissions: ["tenant:manage"],
+  },
+  {
+    group: "ecosystem",
+    icon: MessageCircle,
+    labelKey: "nav.whatsapp",
+    href: "/app/settings/whatsapp",
     permissions: ["tenant:manage"],
   },
   {

@@ -60,23 +60,33 @@ export function AppNavigation({
         id="app-primary-navigation"
       >
         {groups.map((group) => (
-          <div className="nav-group" key={group.group}>
-            <span className="nav-group-label">{t(`nav.${group.group}`)}</span>
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              return (
-                <a
-                  className={isNavigationItemActive(item, currentPath) ? "active" : ""}
-                  href={item.href}
-                  key={item.labelKey}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <Icon size={18} />
-                  {t(item.labelKey)}
-                </a>
-              );
-            })}
-          </div>
+          <details
+            className="nav-group"
+            key={group.group}
+            open={
+              group.group === "operation" ||
+              group.group === "management" ||
+              group.items.some((item) => isNavigationItemActive(item, currentPath))
+            }
+          >
+            <summary className="nav-group-label">{t(`nav.${group.group}`)}</summary>
+            <div className="nav-group-items">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <a
+                    className={isNavigationItemActive(item, currentPath) ? "active" : ""}
+                    href={item.href}
+                    key={item.labelKey}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <Icon size={18} />
+                    <span>{t(item.labelKey)}</span>
+                  </a>
+                );
+              })}
+            </div>
+          </details>
         ))}
       </nav>
     </aside>

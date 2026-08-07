@@ -12,6 +12,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { readOperationalStatusLabel } from "../../../../lib/formatters/app-dashboard";
 import { apiRequest, getSession, listUsers } from "../../../../lib/giromesa-api";
 
 type Settlement = {
@@ -576,7 +577,7 @@ export default function TeamSettlementsPage() {
                   {orders.map((order) => (
                     <option key={order.id} value={order.id}>
                       {order.tableId ? "Mesa" : "Balcão"} · {money(order.totalCents)} ·{" "}
-                      {order.status}
+                      {readOperationalStatusLabel(order.status)}
                     </option>
                   ))}
                 </select>
@@ -1307,6 +1308,7 @@ const settlementStatus = (value: string) =>
   });
 const serviceChargeStatus = (value: string) =>
   translate(value, {
+    not_configured: "Aguardando decisão",
     suggested: "Sugerida",
     accepted: "Aceita",
     removed: "Retirada",

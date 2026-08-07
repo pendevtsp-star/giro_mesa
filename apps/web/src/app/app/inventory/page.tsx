@@ -464,8 +464,8 @@ export default function InventoryPage() {
         </a>
         <a className="workspace-panel" href="#vasilhames">
           <Recycle size={18} />
-          <strong>Controlar vasilhames</strong>
-          <small>Acompanhe cheios, vazios e perdas.</small>
+          <strong>Embalagens retornáveis</strong>
+          <small>Controle apenas vasilhames de bebidas retornáveis.</small>
         </a>
       </section>
       <section className="inventory-metrics">
@@ -730,7 +730,7 @@ export default function InventoryPage() {
           {transfers.slice(0, 8).map((transferRow) => (
             <div className="inventory-row" key={transferRow.id}>
               <div>
-                <strong>{transferRow.status.replaceAll("_", " ")}</strong>
+                <strong>{readTransferStatus(transferRow.status)}</strong>
                 <small>{transferRow.reason}</small>
               </div>
               <span>
@@ -987,16 +987,52 @@ export default function InventoryPage() {
           {!items.length ? <p className="muted-copy">Ainda não há insumos cadastrados.</p> : null}
         </div>
       </section>
+      <section
+        className="workspace-list-section inventory-alerts-section"
+        aria-label="Alertas gerais do estoque"
+      >
+        <div className="panel-heading">
+          <div>
+            <span className="section-kicker">
+              <TriangleAlert size={15} /> Atenção necessária
+            </span>
+            <h2>Alertas gerais do estoque</h2>
+          </div>
+          <span className="gm-status-pill gm-status-pill-warn">{alerts.length} ativo(s)</span>
+        </div>
+        <p className="muted-copy">
+          Insumos abaixo do mínimo aparecem aqui. Embalagens retornáveis são controladas
+          separadamente na seção seguinte.
+        </p>
+        <div className="inventory-table">
+          {alerts.length ? (
+            alerts.map((item) => (
+              <div className="inventory-row" key={item.id}>
+                <span>{item.name}</span>
+                <strong className="stock-low">
+                  Faltam {item.shortage} {item.unit}
+                </strong>
+              </div>
+            ))
+          ) : (
+            <p className="muted-copy">Nenhum insumo abaixo do estoque mínimo.</p>
+          )}
+        </div>
+      </section>
       <section className="inventory-bottom">
         <article className="workspace-list-section" id="vasilhames">
           <div className="panel-heading">
             <div>
               <span className="section-kicker">
-                <TriangleAlert size={15} /> Atenção
+                <Recycle size={15} /> Retornáveis
               </span>
-              <h2>Vasilhames e alertas</h2>
+              <h2>Embalagens retornáveis</h2>
             </div>
           </div>
+          <p className="muted-copy">
+            Use somente para garrafas, engradados e outros vasilhames que retornam ao fornecedor.
+            Embalagens descartáveis e alertas gerais não entram neste controle.
+          </p>
           <form className="workspace-form compact-form" onSubmit={saveReturnableMapping}>
             <label>
               Produto
@@ -1007,12 +1043,19 @@ export default function InventoryPage() {
                 }
               >
                 <option value="">Selecione</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}
-                  </option>
-                ))}
+                {products
+                  .filter((product) => product.usesReturnablePackaging)
+                  .map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
               </select>
+              {!products.some((product) => product.usesReturnablePackaging) ? (
+                <span className="muted-copy">
+                  Marque o produto como “Usa vasilhame retornável” no catálogo antes de mapear.
+                </span>
+              ) : null}
             </label>
             <div className="workspace-form-grid">
               <label>
@@ -1158,7 +1201,7 @@ export default function InventoryPage() {
               />
             </label>
             <button className="button primary" disabled={busy} type="submit">
-              Registrar vasilhames
+              Registrar movimento
             </button>
           </form>
           <p className="muted-copy">
@@ -1188,21 +1231,6 @@ export default function InventoryPage() {
                 ).toLocaleString("pt-BR")
               : "nenhuma registrada"}
           </p>
-          {alerts.length ? (
-            alerts.map((item) => (
-              <div className="inventory-row" key={item.id}>
-                <span>{item.name}</span>
-                <strong className="stock-low">
-                  Faltam {item.shortage} {item.unit}
-                </strong>
-              </div>
-            ))
-          ) : (
-            <p className="muted-copy">
-              Nenhum alerta ativo. Registre quebras, extravios e trocas com fornecedor no movimento
-              auditado.
-            </p>
-          )}
         </article>
         <article className="workspace-list-section">
           <div className="panel-heading">
@@ -1216,13 +1244,15 @@ export default function InventoryPage() {
               <div>
                 <strong>{item.inventoryItemName}</strong>
                 <small>
-                  {movementLabels[item.type] ?? item.type.replaceAll("_", " ")} ·{" "}
-                  {item.reason || "Sem justificativa"}
+                  {movementLabels[item.type] ?? "Movimentação"} · {readMovementReason(item.reason)}
                 </small>
               </div>
               <strong className={Number(item.quantity) < 0 ? "stock-low" : ""}>
                 {Number(item.quantity) > 0 ? "+" : ""}
-                {item.quantity}
+                {formatInventoryQuantity(
+                  item.quantity,
+                  items.find((inventoryItem) => inventoryItem.id === item.inventoryItemId)?.unit,
+                )}
               </strong>
             </div>
           ))}
@@ -1231,4 +1261,32 @@ export default function InventoryPage() {
       </section>
     </main>
   );
+}
+
+function readTransferStatus(status: string) {
+  const labels: Record<string, string> = {
+    draft: "Em preparação",
+    awaiting_receipt: "Aguardando recebimento",
+    completed: "Concluída",
+    canceled: "Cancelada",
+    reversed: "Estornada",
+  };
+  return labels[status] ?? "Em acompanhamento";
+}
+
+function readMovementReason(reason: string | null) {
+  if (!reason) return "Sem observação";
+  return reason
+    .replace(/^initial balance\s*[·-]?\s*/i, "Saldo inicial · ")
+    .replace(/Seed demo/gi, "Base de demonstração");
+}
+
+function formatInventoryQuantity(quantity: string, unit?: string) {
+  const value = Number(quantity);
+  if (!Number.isFinite(value)) return quantity;
+  if (unit === "ml" && Math.abs(value) >= 1000) {
+    return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value / 1000)} L`;
+  }
+  const formatted = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(value);
+  return unit ? `${formatted} ${unit}` : formatted;
 }

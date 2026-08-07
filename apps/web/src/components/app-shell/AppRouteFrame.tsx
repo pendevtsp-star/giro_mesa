@@ -232,6 +232,17 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
         }),
     [navigation, quickQuery, t],
   );
+  const activeNavigationItem = useMemo(
+    () =>
+      [...navigation]
+        .sort((first, second) => second.href.length - first.href.length)
+        .find((item) =>
+          item.href === "/app"
+            ? pathname === "/app"
+            : pathname === item.href || pathname.startsWith(`${item.href}/`),
+        ),
+    [navigation, pathname],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -268,7 +279,7 @@ function AdministrativeShell({ children }: { children: ReactNode }) {
           </button>
           <div>
             <strong>{activeBranding.displayName}</strong>
-            <span>Administração</span>
+            <span>{activeNavigationItem ? t(activeNavigationItem.labelKey) : "Administração"}</span>
           </div>
           <div className="gm-admin-actions">
             <button

@@ -547,229 +547,241 @@ export default function QrManagementPage() {
               </details>
             ) : null}
 
-            <div className="form-grid two-columns">
-              <label>
-                Modelo visual
-                <select
-                  value={settings.template}
-                  onChange={(event) =>
-                    setSettings({
-                      ...settings,
-                      template: event.target.value as QrBranchSettings["template"],
-                    })
-                  }
-                >
-                  <option value="classic">Clássico</option>
-                  <option value="minimal">Minimalista</option>
-                  <option value="premium">Premium</option>
-                  <option value="gastronomia">Gastronomia</option>
-                  <option value="bar_noturno">Bar noturno</option>
-                  <option value="cafe">Café</option>
-                  <option value="doseclub">DoseClub</option>
-                </select>
-              </label>
-              <label>
-                Fonte da experiência
-                <select
-                  value={settings.fontPreset ?? "system"}
-                  onChange={(event) =>
-                    setSettings({
-                      ...settings,
-                      fontPreset: event.target.value as NonNullable<QrBranchSettings["fontPreset"]>,
-                    })
-                  }
-                >
-                  <option value="system">Sistema (Poppins)</option>
-                  <option value="serif">Serifada editorial</option>
-                  <option value="display">Display acolhedora</option>
-                </select>
-                <span className="muted-copy">
-                  A fonte é aplicada ao publicar a experiência; não aceita CSS ou fontes externas.
+            <details className="qr-personalization-details">
+              <summary>
+                <span>
+                  <strong>Personalização da experiência</strong>
+                  <small>Aparência, conteúdo e destaques exibidos ao cliente</small>
                 </span>
-              </label>
+              </summary>
+              <div className="form-grid two-columns">
+                <label>
+                  Modelo visual
+                  <select
+                    value={settings.template}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        template: event.target.value as QrBranchSettings["template"],
+                      })
+                    }
+                  >
+                    <option value="classic">Clássico</option>
+                    <option value="minimal">Minimalista</option>
+                    <option value="premium">Premium</option>
+                    <option value="gastronomia">Gastronomia</option>
+                    <option value="bar_noturno">Bar noturno</option>
+                    <option value="cafe">Café</option>
+                    <option value="doseclub">DoseClub</option>
+                  </select>
+                </label>
+                <label>
+                  Fonte da experiência
+                  <select
+                    value={settings.fontPreset ?? "system"}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        fontPreset: event.target.value as NonNullable<
+                          QrBranchSettings["fontPreset"]
+                        >,
+                      })
+                    }
+                  >
+                    <option value="system">Sistema (Poppins)</option>
+                    <option value="serif">Serifada editorial</option>
+                    <option value="display">Display acolhedora</option>
+                  </select>
+                  <span className="muted-copy">
+                    A fonte é aplicada ao publicar a experiência; não aceita CSS ou fontes externas.
+                  </span>
+                </label>
+                <label>
+                  Cor principal
+                  <input
+                    aria-label="Cor principal"
+                    onChange={(event) =>
+                      setSettings({ ...settings, primaryColor: event.target.value })
+                    }
+                    type="color"
+                    value={settings.primaryColor}
+                  />
+                </label>
+              </div>
               <label>
-                Cor principal
-                <input
-                  aria-label="Cor principal"
-                  onChange={(event) =>
-                    setSettings({ ...settings, primaryColor: event.target.value })
-                  }
-                  type="color"
-                  value={settings.primaryColor}
-                />
-              </label>
-            </div>
-            <label>
-              Instrução impressa
-              <input
-                maxLength={180}
-                onChange={(event) => setSettings({ ...settings, instruction: event.target.value })}
-                value={settings.instruction}
-              />
-            </label>
-            <div className="form-grid two-columns">
-              <label>
-                Título do cardápio
-                <input
-                  maxLength={120}
-                  onChange={(event) =>
-                    setSettings({ ...settings, menuHeadline: event.target.value })
-                  }
-                  placeholder="Pedido da mesa"
-                  value={settings.menuHeadline ?? ""}
-                />
-              </label>
-              <label>
-                Mensagem de boas-vindas
+                Instrução impressa
                 <input
                   maxLength={180}
                   onChange={(event) =>
-                    setSettings({ ...settings, welcomeMessage: event.target.value })
+                    setSettings({ ...settings, instruction: event.target.value })
                   }
-                  placeholder="Bem-vindo ao nosso atendimento"
-                  value={settings.welcomeMessage ?? ""}
+                  value={settings.instruction}
                 />
               </label>
-            </div>
-            <div className="form-grid two-columns">
+              <div className="form-grid two-columns">
+                <label>
+                  Título do cardápio
+                  <input
+                    maxLength={120}
+                    onChange={(event) =>
+                      setSettings({ ...settings, menuHeadline: event.target.value })
+                    }
+                    placeholder="Pedido da mesa"
+                    value={settings.menuHeadline ?? ""}
+                  />
+                </label>
+                <label>
+                  Mensagem de boas-vindas
+                  <input
+                    maxLength={180}
+                    onChange={(event) =>
+                      setSettings({ ...settings, welcomeMessage: event.target.value })
+                    }
+                    placeholder="Bem-vindo ao nosso atendimento"
+                    value={settings.welcomeMessage ?? ""}
+                  />
+                </label>
+              </div>
+              <div className="form-grid two-columns">
+                <label>
+                  Imagem de capa
+                  <input
+                    maxLength={500}
+                    onChange={(event) =>
+                      setSettings({ ...settings, coverUrl: event.target.value || null })
+                    }
+                    placeholder="https://... ou /uploads/capa.webp"
+                    value={settings.coverUrl ?? ""}
+                  />
+                  <span className="muted-copy">Somente HTTPS ou arquivos em /uploads/.</span>
+                </label>
+                <label>
+                  Idioma da experiência pública
+                  <select
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        language: event.target.value as NonNullable<QrBranchSettings["language"]>,
+                      })
+                    }
+                    value={settings.language ?? "pt-BR"}
+                  >
+                    <option value="pt-BR">Português (Brasil)</option>
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                  </select>
+                </label>
+              </div>
+              <div className="form-grid two-columns">
+                <label>
+                  Destaques da casa
+                  <input
+                    maxLength={500}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        highlights: event.target.value
+                          .split(",")
+                          .map((value) => value.trim())
+                          .filter(Boolean)
+                          .slice(0, 6),
+                      })
+                    }
+                    placeholder="Happy hour, música ao vivo, varanda"
+                    value={settings.highlights?.join(", ") ?? ""}
+                  />
+                </label>
+                <label>
+                  Mensagem de campanha
+                  <input
+                    maxLength={180}
+                    onChange={(event) =>
+                      setSettings({ ...settings, campaignMessage: event.target.value })
+                    }
+                    placeholder="Hoje: rodada dupla até 20h"
+                    value={settings.campaignMessage ?? ""}
+                  />
+                </label>
+              </div>
               <label>
-                Imagem de capa
+                Informações da casa
+                <textarea
+                  maxLength={300}
+                  onChange={(event) => setSettings({ ...settings, houseInfo: event.target.value })}
+                  placeholder="Wi-Fi, acessibilidade, horários ou orientações úteis"
+                  rows={3}
+                  value={settings.houseInfo ?? ""}
+                />
+              </label>
+              <label>
+                Motivos rápidos para chamar atendimento
                 <input
-                  maxLength={500}
-                  onChange={(event) =>
-                    setSettings({ ...settings, coverUrl: event.target.value || null })
-                  }
-                  placeholder="https://... ou /uploads/capa.webp"
-                  value={settings.coverUrl ?? ""}
-                />
-                <span className="muted-copy">Somente HTTPS ou arquivos em /uploads/.</span>
-              </label>
-              <label>
-                Idioma da experiência pública
-                <select
+                  maxLength={640}
                   onChange={(event) =>
                     setSettings({
                       ...settings,
-                      language: event.target.value as NonNullable<QrBranchSettings["language"]>,
-                    })
-                  }
-                  value={settings.language ?? "pt-BR"}
-                >
-                  <option value="pt-BR">Português (Brasil)</option>
-                  <option value="en">English</option>
-                  <option value="es">Español</option>
-                </select>
-              </label>
-            </div>
-            <div className="form-grid two-columns">
-              <label>
-                Destaques da casa
-                <input
-                  maxLength={500}
-                  onChange={(event) =>
-                    setSettings({
-                      ...settings,
-                      highlights: event.target.value
+                      serviceRequestReasons: event.target.value
                         .split(",")
                         .map((value) => value.trim())
                         .filter(Boolean)
-                        .slice(0, 6),
+                        .slice(0, 8),
                     })
                   }
-                  placeholder="Happy hour, música ao vivo, varanda"
-                  value={settings.highlights?.join(", ") ?? ""}
+                  placeholder="Mais guardanapos, Repor bebida, Dúvida no cardápio"
+                  value={settings.serviceRequestReasons?.join(", ") ?? ""}
                 />
+                <span className="muted-copy">Até 8 motivos; nenhum dado pessoal é solicitado.</span>
               </label>
-              <label>
-                Mensagem de campanha
+              {categories.length ? (
+                <fieldset className="qr-category-labels">
+                  <legend>Nomes das categorias na experiência pública</legend>
+                  {categories.map((category) => (
+                    <label key={category.id}>
+                      <span>{category.name}</span>
+                      <input
+                        maxLength={80}
+                        onChange={(event) => setCategoryLabel(category.id, event.target.value)}
+                        placeholder={category.name}
+                        value={settings.categoryLabels?.[category.id] ?? ""}
+                      />
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+              {products.length ? (
+                <fieldset className="qr-capabilities">
+                  <legend>Recomendações em destaque (até 12)</legend>
+                  {products.map((product) => (
+                    <label key={product.id}>
+                      <input
+                        checked={settings.recommendedProductIds?.includes(product.id) ?? false}
+                        onChange={() => toggleRecommendation(product.id)}
+                        type="checkbox"
+                      />
+                      <span>{product.name}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+              <label className="qr-switch-row">
                 <input
-                  maxLength={180}
+                  checked={settings.marketingEnabled !== false}
                   onChange={(event) =>
-                    setSettings({ ...settings, campaignMessage: event.target.value })
+                    setSettings({ ...settings, marketingEnabled: event.target.checked })
                   }
-                  placeholder="Hoje: rodada dupla até 20h"
-                  value={settings.campaignMessage ?? ""}
+                  type="checkbox"
                 />
+                <span>Exibir a assinatura discreta Tecnologia GiroMesa na experiência pública</span>
               </label>
-            </div>
-            <label>
-              Informações da casa
-              <textarea
-                maxLength={300}
-                onChange={(event) => setSettings({ ...settings, houseInfo: event.target.value })}
-                placeholder="Wi-Fi, acessibilidade, horários ou orientações úteis"
-                rows={3}
-                value={settings.houseInfo ?? ""}
-              />
-            </label>
-            <label>
-              Motivos rápidos para chamar atendimento
-              <input
-                maxLength={640}
-                onChange={(event) =>
-                  setSettings({
-                    ...settings,
-                    serviceRequestReasons: event.target.value
-                      .split(",")
-                      .map((value) => value.trim())
-                      .filter(Boolean)
-                      .slice(0, 8),
-                  })
-                }
-                placeholder="Mais guardanapos, Repor bebida, Dúvida no cardápio"
-                value={settings.serviceRequestReasons?.join(", ") ?? ""}
-              />
-              <span className="muted-copy">Até 8 motivos; nenhum dado pessoal é solicitado.</span>
-            </label>
-            {categories.length ? (
-              <fieldset className="qr-category-labels">
-                <legend>Nomes das categorias na experiência pública</legend>
-                {categories.map((category) => (
-                  <label key={category.id}>
-                    <span>{category.name}</span>
-                    <input
-                      maxLength={80}
-                      onChange={(event) => setCategoryLabel(category.id, event.target.value)}
-                      placeholder={category.name}
-                      value={settings.categoryLabels?.[category.id] ?? ""}
-                    />
-                  </label>
-                ))}
-              </fieldset>
-            ) : null}
-            {products.length ? (
-              <fieldset className="qr-capabilities">
-                <legend>Recomendações em destaque (até 12)</legend>
-                {products.map((product) => (
-                  <label key={product.id}>
-                    <input
-                      checked={settings.recommendedProductIds?.includes(product.id) ?? false}
-                      onChange={() => toggleRecommendation(product.id)}
-                      type="checkbox"
-                    />
-                    <span>{product.name}</span>
-                  </label>
-                ))}
-              </fieldset>
-            ) : null}
-            <label className="qr-switch-row">
-              <input
-                checked={settings.marketingEnabled !== false}
-                onChange={(event) =>
-                  setSettings({ ...settings, marketingEnabled: event.target.checked })
-                }
-                type="checkbox"
-              />
-              <span>Exibir a assinatura discreta Tecnologia GiroMesa na experiência pública</span>
-            </label>
-            <label className="qr-switch-row">
-              <input
-                checked={settings.showLogo}
-                onChange={(event) => setSettings({ ...settings, showLogo: event.target.checked })}
-                type="checkbox"
-              />
-              <span>Exibir a marca do estabelecimento no material e na experiência pública</span>
-            </label>
+              <label className="qr-switch-row">
+                <input
+                  checked={settings.showLogo}
+                  onChange={(event) => setSettings({ ...settings, showLogo: event.target.checked })}
+                  type="checkbox"
+                />
+                <span>Exibir a marca do estabelecimento no material e na experiência pública</span>
+              </label>
+            </details>
 
             <details>
               <summary>Recursos avançados do QR</summary>

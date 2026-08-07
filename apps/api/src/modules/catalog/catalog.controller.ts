@@ -27,6 +27,7 @@ const createProductSchema = z.object({
   imageUrl: z.string().optional(),
   isAvailable: z.boolean().optional(),
   isAlcoholic: z.boolean(),
+  usesReturnablePackaging: z.boolean().optional(),
   isClubEligible: z.boolean().optional(),
   bottleVolumeMl: z.number().int().positive().optional(),
   defaultDoseMl: z.number().int().positive().optional(),

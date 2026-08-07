@@ -38,7 +38,7 @@ describe("app shell navigation", () => {
     expect(settingsItems).toContain("nav.team");
     const ecosystemItems =
       groups.find((group) => group.group === "ecosystem")?.items.map((item) => item.labelKey) ?? [];
-    expect(ecosystemItems).toEqual(["nav.billing", "nav.doseClub"]);
+    expect(ecosystemItems).toEqual(["nav.billing", "nav.doseClub", "nav.whatsapp"]);
   });
 
   it("marks dashboard, POS and nested routes without false positives", () => {
@@ -89,6 +89,6 @@ describe("app shell navigation", () => {
     ).toContain("/app/delivery");
     expect(
       groups.find((group) => group.group === "ecosystem")?.items.map((item) => item.href),
-    ).toEqual(["/app/billing", "/app/integrations/dose-club"]);
+    ).toEqual(["/app/billing", "/app/integrations/dose-club", "/app/settings/whatsapp"]);
   });
 });

@@ -962,6 +962,7 @@ export const products = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     isAvailable: boolean("is_available").notNull().default(true),
     isAlcoholic: boolean("is_alcoholic").notNull().default(false),
+    usesReturnablePackaging: boolean("uses_returnable_packaging").notNull().default(false),
     isClubEligible: boolean("is_club_eligible").notNull().default(false),
     bottleVolumeMl: integer("bottle_volume_ml"),
     defaultDoseMl: integer("default_dose_ml").notNull().default(50),
